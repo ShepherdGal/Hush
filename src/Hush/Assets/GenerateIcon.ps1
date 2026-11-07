@@ -1,6 +1,6 @@
 # Builds Hush.ico (16-256 px) and Hush-mark*.png from Assets\Hush-icon-source.png.
 #
-# The source is the user's ice-blue brush artwork, prepared once from the supplied picture (-FromArtwork): the black surround is keyed
+# The source is the user's brush artwork, recolored to the app's aqua accent, prepared once from the supplied picture (-FromArtwork): the black surround is keyed
 # out to real transparency so the rounded square has a crisp edge and no outer glow, and the square is cropped to its exact bounds.
 # Re-run without arguments to regenerate the icon frames; pass -FromArtwork <png> to prepare a new source first.
 param([string]$FromArtwork)
@@ -62,6 +62,19 @@ if ($FromArtwork) {
     $bytes = [byte[]]::new($data.Stride * $canvas)
     [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
     $stride = $data.Stride
+    # Recolor: rotate every hue toward the app's aqua accent (#3CCFD9, hue 184 degrees; the artwork is a bluer ice blue around 192-203).
+    $theta = -8.0 * [Math]::PI / 180.0; $ca = [Math]::Cos($theta); $sa = [Math]::Sin($theta)
+    $m = @((0.213 + 0.787 * $ca - 0.213 * $sa), (0.715 - 0.715 * $ca - 0.715 * $sa), (0.072 - 0.072 * $ca + 0.928 * $sa),
+           (0.213 - 0.213 * $ca + 0.143 * $sa), (0.715 + 0.285 * $ca + 0.140 * $sa), (0.072 - 0.072 * $ca - 0.283 * $sa),
+           (0.213 - 0.213 * $ca - 0.787 * $sa), (0.715 - 0.715 * $ca + 0.715 * $sa), (0.072 + 0.928 * $ca + 0.072 * $sa))
+    for ($y = 0; $y -lt $canvas; $y++) { for ($x = 0; $x -lt $canvas; $x++) {
+        $i = $y * $stride + $x * 4
+        if ($bytes[$i + 3] -eq 0) { continue }
+        $b = [double]$bytes[$i]; $g = [double]$bytes[$i + 1]; $r = [double]$bytes[$i + 2]
+        $bytes[$i + 2] = [byte][Math]::Max(0, [Math]::Min(255, $m[0] * $r + $m[1] * $g + $m[2] * $b))
+        $bytes[$i + 1] = [byte][Math]::Max(0, [Math]::Min(255, $m[3] * $r + $m[4] * $g + $m[5] * $b))
+        $bytes[$i]     = [byte][Math]::Max(0, [Math]::Min(255, $m[6] * $r + $m[7] * $g + $m[8] * $b))
+    } }
     $big = 1000000
     $dist = [int[]]::new($canvas * $canvas)
     for ($y = 0; $y -lt $canvas; $y++) { for ($x = 0; $x -lt $canvas; $x++) { $dist[$y * $canvas + $x] = if ($bytes[$y * $stride + $x * 4 + 3] -gt 127) { $big } else { 0 } } }
@@ -83,7 +96,9 @@ if ($FromArtwork) {
         if ($d -le 0 -or $d -gt $glowWidth) { continue }
         $i = $y * $stride + $x * 4
         $t = [Math]::Min(1.0, [Math]::Max(0.0, ($x + $y) / (2.0 * $canvas)))
-        $rimR = 127 + (43 - 127) * $t; $rimG = 224 + (143 - 224) * $t; $rimB = 246 + (191 - 246) * $t
+        # The rim is the accent itself (#3CCFD9) across the lit top-left and fades to a deeper aqua toward the bottom-right.
+        $tt = [Math]::Max(0.0, ($t - 0.3) / 0.7)
+        $rimR = 60 + (22 - 60) * $tt; $rimG = 207 + (112 - 207) * $tt; $rimB = 217 + (140 - 217) * $tt
         if ($d -le $rimWidth) {
             $bytes[$i + 2] = [byte]$rimR; $bytes[$i + 1] = [byte]$rimG; $bytes[$i] = [byte]$rimB
         } elseif ($d -le $rimWidth + 1.0) {
@@ -91,7 +106,7 @@ if ($FromArtwork) {
             $bytes[$i + 2] = [byte]($rimR * (1 - $m) + $bytes[$i + 2] * $m); $bytes[$i + 1] = [byte]($rimG * (1 - $m) + $bytes[$i + 1] * $m); $bytes[$i] = [byte]($rimB * (1 - $m) + $bytes[$i] * $m)
         } else {
             $k = 0.6 * (1.0 - ($d - $rimWidth - 1.0) / ($glowWidth - $rimWidth - 1.0))
-            $bytes[$i + 2] = [byte]($bytes[$i + 2] * (1 - $k) + 6 * $k); $bytes[$i + 1] = [byte]($bytes[$i + 1] * (1 - $k) + 32 * $k); $bytes[$i] = [byte]($bytes[$i] * (1 - $k) + 52 * $k)
+            $bytes[$i + 2] = [byte]($bytes[$i + 2] * (1 - $k) + 6 * $k); $bytes[$i + 1] = [byte]($bytes[$i + 1] * (1 - $k) + 34 * $k); $bytes[$i] = [byte]($bytes[$i] * (1 - $k) + 46 * $k)
         }
     } }
     [System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $data.Scan0, $bytes.Length)

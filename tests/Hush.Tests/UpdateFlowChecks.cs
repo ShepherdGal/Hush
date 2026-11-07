@@ -80,24 +80,41 @@ internal static class UpdateFlowChecks
                 new Uri($"https://api.github.com/repos/{UpdateService.Repository}/releases/assets/1"), 10, new string('0', 64));
             client.Check = _ => Task.FromResult<AppRelease?>(release);
             Click("CheckUpdateButton"); Until(() => !window.IsUpdateBusy);
-            Require(check.Content.ToString() == "Download & install" && hint.Visibility == Visibility.Visible && status.Text.Contains("is available")
+            Require(check.Content.ToString() == "Update now" && hint.Visibility == Visibility.Visible && status.Text.Contains("is available")
                 && notes.Text.Contains("Clearer controls") && !notes.Text.Contains("**") && !notes.Text.Contains("https://"),
-                "An available update shows its version, plain release notes, what will happen and one Download & install action");
+                "An available update shows its version, plain release notes, what will happen and one Update now action");
+            var accentColor = (Color)Application.Current.Resources["PrimaryAccentColor"];
+            Require(((SolidColorBrush)status.Foreground).Color == accentColor && status.FontWeight == FontWeights.SemiBold && hint.Text.Contains("Update now"),
+                "A new version is announced in the main accent color and semibold");
+            Layout(new Size(800, 740)); Capture("about-update-found-" + (window.IsLightTheme ? "light" : "dark"));
+            var consent = (FrameworkElement)window.FindName("ConsentOverlay");
+            void Ask() { Click("CheckUpdateButton"); Until(() => consent.Visibility == Visibility.Visible); }
+            void Answer(string button) { Click(button); Until(() => consent.Visibility == Visibility.Collapsed); }
+            int downloads = 0;
+            client.Download = (_, _, _) => { downloads++; throw new InvalidDataException("Download verification failed; the current app was left unchanged."); };
+            Ask(); Wait(360); Layout(new Size(800, 740)); Capture("about-update-confirm-" + (window.IsLightTheme ? "light" : "dark"));
+            var panel = (Panel)consent.Parent;
+            Require(panel.Children.IndexOf(consent) > panel.Children.IndexOf((UIElement)about) && ((TextBlock)window.FindName("ConsentTitle")).Text.Contains("9.0")
+                && ((TextBlock)window.FindName("ConsentText")).Text.Contains("backup") && ((Button)window.FindName("ConsentConfirmButton")).Content.ToString() == "Update now"
+                && downloads == 0 && installs == 0, "Clicking Update now first asks Are you sure, above the About card, naming the version and the backup, before anything downloads");
+            Answer("ConsentCancelButton");
+            Require(downloads == 0 && installs == 0 && check.Content.ToString() == "Update now" && status.Text.Contains("is available") && !window.IsUpdateBusy
+                && !((FrameworkElement)window.FindName("AppSurface")).IsEnabled && about.Visibility == Visibility.Visible,
+                "Answering Not now downloads nothing, keeps the update offered and keeps About open and blocking the background");
             Require(!TextBlocks(card).Concat(new[] { status, hint }).Any(text => text.Text.Contains("GitHub", StringComparison.OrdinalIgnoreCase)),
                 "People never see the word GitHub in the update flow");
-            client.Download = (_, _, _) => throw new InvalidDataException("Download verification failed; the current app was left unchanged.");
-            Click("CheckUpdateButton"); Until(() => !window.IsUpdateBusy);
-            Require(installs == 0 && status.Text.Contains("verification failed") && check.Content.ToString() == "Download & install" && check.IsEnabled,
+            Ask(); Answer("ConsentConfirmButton"); Until(() => downloads == 1 && !window.IsUpdateBusy && status.Text.Contains("verification failed"));
+            Require(installs == 0 && status.Text.Contains("verification failed") && ((SolidColorBrush)status.Foreground).Color != accentColor && check.Content.ToString() == "Update now" && check.IsEnabled,
                 "A failed verification cannot start an updater and leaves the download action available for a retry");
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Download = async (_, progress, _) => { progress?.Report(0.4); await gate.Task; progress?.Report(1); return Path.Combine(fixture, "verified-client-contract.exe"); };
-            Click("CheckUpdateButton"); Until(() => !double.IsNaN(sweep.Progress)); Wait(320); Layout(new Size(800, 740));
+            Ask(); Answer("ConsentConfirmButton"); Until(() => !double.IsNaN(sweep.Progress)); Wait(320); Layout(new Size(800, 740));
             Require(window.IsUpdateBusy && Math.Abs(sweep.Progress - 0.4) < 0.001 && status.Text.Contains("40%") && installs == 0,
                 "One click starts the download and the bar and text show the real fraction without installing yet");
             Capture("about-downloading-" + (window.IsLightTheme ? "light" : "dark"));
             gate.SetResult(); Until(() => !window.IsUpdateBusy); Wait(50);
             Require(installs == 1 && about.Visibility == Visibility.Visible && status.Text.Contains("Couldn't start the installation")
-                && check.IsEnabled && check.Content.ToString() == "Download & install" && !status.Text.Contains("Downloading"),
+                && check.IsEnabled && check.Content.ToString() == "Update now" && !status.Text.Contains("Downloading"),
                 "A verified download goes straight to the updater; a hand-over failure keeps the app open and unchanged without claiming success");
             foreach (bool light in new[] { false, true })
             {

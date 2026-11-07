@@ -297,14 +297,21 @@ public partial class MainWindow
     }
 
     // ----- One-time consent dialog -----
-    private Task<bool> AskConsent(string title, string body, string confirmLabel)
+    // The dialog can open above another popup (About), so it remembers and restores the blur, enabled state and focus it found.
+    private bool consentSurfaceWasEnabled = true;
+    private double consentBlurRadius;
+    private IInputElement? consentReturnFocus;
+
+    private Task<bool> AskConsent(string title, string body, string confirmLabel, string cancelLabel = "Not now")
     {
         consent?.TrySetResult(false);
         consent = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        ConsentTitle.Text = title; ConsentText.Text = body; ConsentConfirmButton.Content = confirmLabel;
-        confirmationReturnFocus = Keyboard.FocusedElement;
+        ConsentTitle.Text = title; ConsentText.Text = body; ConsentConfirmButton.Content = confirmLabel; ConsentCancelButton.Content = cancelLabel;
+        consentReturnFocus = Keyboard.FocusedElement;
+        consentSurfaceWasEnabled = AppSurface.IsEnabled;
+        consentBlurRadius = BackgroundBlur.Radius;
         AppSurface.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
+        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, Math.Max(7, consentBlurRadius), 280));
         ConsentOverlay.Visibility = Visibility.Visible;
         Motion.Reveal(ConsentOverlay);
         ConsentCancelButton.Focus();
@@ -316,12 +323,12 @@ public partial class MainWindow
     {
         var pending = consent; consent = null;
         ConsentOverlay.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 0, 160));
+        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, consentBlurRadius, 160));
         await Motion.FadeOut(ConsentOverlay);
         ConsentOverlay.Visibility = Visibility.Collapsed;
         ConsentOverlay.IsEnabled = true;
-        AppSurface.IsEnabled = true;
-        if (confirmationReturnFocus != null) Keyboard.Focus(confirmationReturnFocus);
+        AppSurface.IsEnabled = consentSurfaceWasEnabled;
+        if (consentReturnFocus != null) Keyboard.Focus(consentReturnFocus);
         pending?.TrySetResult(agreed);
     }
 

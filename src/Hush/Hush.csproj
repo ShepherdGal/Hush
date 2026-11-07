@@ -12,6 +12,8 @@
     <ApplicationIcon>Assets\Hush.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The same icon the executable carries, available to the windows themselves (taskbar, Alt+Tab). -->
+    <Resource Include="Assets\Hush.ico" />
     <InternalsVisibleTo Include="Hush.Tests" />
   </ItemGroup>
 </Project>

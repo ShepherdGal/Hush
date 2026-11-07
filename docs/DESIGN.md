@@ -100,8 +100,8 @@ Inter, Segoe UI; Cascadia Mono/Consolas for bytes only. Medium body/support, Sem
 | Heading | #D8DFE9 | #344156 |
 | Body | #C6CFDC | #48566C |
 | Supporting | #9BA8BA | #627086 |
-| Primary accent text (and gauge) | #7FE0F6 ice blue | #4C7BC8 soft blue (same token as the gauge) |
-| Safe line / checkbox / switch / checked text | #7FE0F6 | #4C7BC8 |
+| Primary accent text (and gauge) | #3CCFD9 aqua | #4C7BC8 soft blue (same token as the gauge) |
+| Safe line / checkbox / switch / checked text | #3CCFD9 | #4C7BC8 |
 | Review line / checkbox / checked text | #FF795C | #B54428 |
 | Caution line / checkbox / checked text | #FF795C | #B54428 |
 | Clean text / outline | #FF795C | #B54428 |
@@ -109,7 +109,7 @@ Inter, Segoe UI; Cascadia Mono/Consolas for bytes only. Medium body/support, Sem
 
 Within each theme, vertical safety lines, checkbox accents and checked primary text match exactly. Light uses the darker red-orange variant for readability. The primary accent is one exact token per theme: aqua Cyan in Dark and, by the user's direction, a soft, silky blue in Light (#4C7BC8: about 4:1 contrast on the #F9FAFC panel by calculation, readable without being bright; the hover is the deeper #3A66AE). Do not reintroduce Cyan in Light. Safe stays default-selected; Review and Caution remain opt-in, distinguished by their written labels.
 
-PrimaryAccentColor is set per theme in ApplyTheme (`SafetyPalette.Accent`): #7FE0F6 in Dark, #4C7BC8 soft blue in Light. TealBrush, TealTextBrush and SafetyGreenBrush always resolve to exactly this color for the active theme (enforced by tests/Hush.Tests/ThemeMotionChecks.cs) and ease between the two with the 320 ms theme transition. Gauge stroke and bloom, wordmark, result link, scanner glyphs, caret and ordinary action glow all use it. Only hover has a second Cyan shade (AccentHoverBrush). Legacy TealBrush/TealTextBrush resource names are retained internally. Dark/light action fills are neutral #252C38 / #E4E8F0 (ActionFillBrush). The unused aqua/coral/purple fill and legacy accent brushes were removed; add a brush only when a screen consumes it. Safety accents and the red-orange Clean treatment remain separate functional colors.
+PrimaryAccentColor is set per theme in ApplyTheme (`SafetyPalette.Accent`): #3CCFD9 in Dark, #4C7BC8 soft blue in Light. TealBrush, TealTextBrush and SafetyGreenBrush always resolve to exactly this color for the active theme (enforced by tests/Hush.Tests/ThemeMotionChecks.cs) and ease between the two with the 320 ms theme transition. Gauge stroke and bloom, wordmark, result link, scanner glyphs, caret and ordinary action glow all use it. Only hover has a second Cyan shade (AccentHoverBrush). Legacy TealBrush/TealTextBrush resource names are retained internally. Dark/light action fills are neutral #252C38 / #E4E8F0 (ActionFillBrush). The unused aqua/coral/purple fill and legacy accent brushes were removed; add a brush only when a screen consumes it. Safety accents and the red-orange Clean treatment remain separate functional colors.
 
 ## Global UI rules
 
@@ -152,12 +152,11 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 - The Smart Boost card shows its details on the closed card: summary line, three thin meters (processor, memory, system drive; transform-animated), Hush's own memory and the last junk check. Opening it reveals only controls: Quick Boost, Watch for junk, Automatic Boost, threshold and interval `ChoiceChip` pills (the chosen pill sits on RaisedBrush in the accent), Low-resource mode and the startup-apps list with switches and Undo. Automatic Boost opens a consent dialog (ConsentOverlay) the first time.
 - Review Files is the flat category list (no section headers). The Clean confirmation shows a red consent checkbox when any Advanced item is selected.
 
-## Icon and ice-blue accent (0.8)
+## Icon and accent (0.8)
 
-- The app icon is the user's ice-blue brush on a navy rounded square. Its black surround is keyed to real transparency and the border is a thin, solid ice-blue line (brighter top-left, dimmer bottom-right) with the soft inner glow toned down, so the edge is crisp and not glowing. Source: `src/Hush/Assets/Hush-icon-source.png`; `GenerateIcon.ps1` builds `Hush.ico` (16-256 px) and `Hush-mark*.png`.
-- The Dark primary accent is the icon's rim color #7FE0F6 (hover #B5EEFB); Light stays #4C7BC8. Everything that was aqua (gauge, accent text, Safe lines, checkboxes, switches, glows, links) follows the single token.
+- The app icon is the user's brush artwork recolored to the same aqua as the accent: hue-rotated toward #3CCFD9, black surround keyed to real transparency, and a thin solid #3CCFD9 border (deeper aqua toward the bottom-right) with the soft inner glow toned down, so the edge is crisp and not glowing. Source: `src/Hush/Assets/Hush-icon-source.png`; `GenerateIcon.ps1` builds `Hush.ico` (16-256 px) and `Hush-mark*.png`.
+- An ice-blue accent (#7FE0F6) was tried in 0.8 and rejected: the Dark accent is aqua #3CCFD9 (hover #80E0E6) and Light is soft blue #4C7BC8.
 - The header wordmark "Hush" is Inter Italic Medium 500.
-
 ## The one red (0.8)
 
 - The Clean button's red (#FF795C Dark, #B54428 Light) is the only red in Hush. Advanced items in Review, the Advanced consent checkbox and the Clean button all use it. Review stays orange (#FFA24D, #B35F0C in Light); high resource readings use that orange. `ColorRuleChecks` fails the build on any other red.
@@ -165,3 +164,7 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 ## Settings: Info card (0.8)
 
 - Settings now opens with an **Info** card (not an accordion): a one-line smart summary ("Everything looks light.", "Memory is busy right now.", "The system drive is almost full.", "The processor is busy right now."), the processor, memory and system-drive bars, Hush's own memory and the last junk check. Smart Boost is its own collapsed card below with only controls. Title weights on the page are Medium 500.
+
+## Update popup (0.8)
+
+- A new version is announced in the accent color, semibold ("Version X is available."); every other status line is plain text. The primary action then reads **Update now** and opens an "Update Hush to X?" confirmation (the shared consent dialog, drawn above the About card, with Update now / Not now). Nothing downloads before the person confirms; Not now keeps the update offered.

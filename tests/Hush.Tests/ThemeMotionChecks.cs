@@ -69,7 +69,7 @@ internal static class ThemeMotionChecks
                     foreach (string role in roles)
                         Require(roleFrames[role].Distinct().Count() >= 4 && roleFrames[role].Any(color => color != roleStarts[role] && color != Resource(role)),
                             "Surfaces, headings, support text and accents share gradual palette motion");
-                    Color accent = (Color)ColorConverter.ConvertFromString(light ? "#4C7BC8" : "#7FE0F6");
+                    Color accent = (Color)ColorConverter.ConvertFromString(light ? "#4C7BC8" : "#3CCFD9");
                     Require((Color)Application.Current.Resources["PrimaryAccentColor"] == accent
                         && Resource("TealTextBrush") == accent && Resource("SafetyGreenBrush") == accent
                         && ((SolidColorBrush)Application.Current.Resources["TealBrush"]).Color == accent,

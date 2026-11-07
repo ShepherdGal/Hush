@@ -13,14 +13,14 @@
     <SolidColorBrush x:Key="MutedBrush" Color="#9BA8BA"/>
     <SolidColorBrush x:Key="FaintBrush" Color="#8794A8"/>
     <SolidColorBrush x:Key="HeadingBrush" Color="#D8DFE9"/>
-    <Color x:Key="PrimaryAccentColor">#7FE0F6</Color>
+    <Color x:Key="PrimaryAccentColor">#3CCFD9</Color>
     <SolidColorBrush x:Key="TealBrush" Color="{DynamicResource PrimaryAccentColor}"/>
-    <SolidColorBrush x:Key="TealTextBrush" Color="#7FE0F6"/>
+    <SolidColorBrush x:Key="TealTextBrush" Color="#3CCFD9"/>
     <!-- Hover state of the one primary Cyan: lighter in Dark, deeper in Light. Set per theme in ApplyTheme. -->
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#B5EEFB"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#80E0E6"/>
     <SolidColorBrush x:Key="ActionFillBrush" Color="#252C38"/>
     <SolidColorBrush x:Key="ModalShadeBrush" Color="#750C1016"/>
-    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#7FE0F6"/>
+    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#3CCFD9"/>
     <!-- Resource meters turn Review-orange (never red) when a reading is high. -->
     <SolidColorBrush x:Key="MeterWarnBrush" Color="#FFA24D"/>
     <SolidColorBrush x:Key="CleanFillBrush" Color="#08FF795C"/>

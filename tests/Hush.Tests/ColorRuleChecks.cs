@@ -1,9 +1,10 @@
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Hush;
 
-// Locks the colour rules: the Clean button's red is the ONLY red in Hush, and the dark accent is the icon's ice blue.
+// Locks the colour rules: the Clean button's red is the ONLY red in Hush, and the app icon is drawn in the same aqua as the dark accent.
 // Source files are scanned as text, so nobody can add a second red (or a "slightly different" one) without this suite failing.
 internal static class ColorRuleChecks
 {
@@ -58,10 +59,39 @@ internal static class ColorRuleChecks
             check(!IsRedFamily(SafetyPalette.Text(SafetyLevel.Review, light).TrimStart('#')) && !IsRedFamily(SafetyPalette.Accent(light).TrimStart('#')),
                 $"Review (orange) and the accent are never red in {(light ? "Light" : "Dark")}");
         }
-        check(SafetyPalette.Color(SafetyLevel.Advanced) == SafetyPalette.Danger(false) && SafetyPalette.Accent(false) == "#7FE0F6" && SafetyPalette.Accent(true) == "#4C7BC8",
-            "The dark accent is the icon's ice blue (#7FE0F6) and the light accent is unchanged");
+        check(SafetyPalette.Color(SafetyLevel.Advanced) == SafetyPalette.Danger(false) && SafetyPalette.Accent(false) == "#3CCFD9" && SafetyPalette.Accent(true) == "#4C7BC8",
+            "The dark accent is the aqua #3CCFD9 and the light accent is the soft blue #4C7BC8");
         string app = File.ReadAllText(Path.Combine(source, "App.xaml"));
-        check(app.Contains("<Color x:Key=\"PrimaryAccentColor\">#7FE0F6</Color>") && !app.Contains("3CCFD9"), "App.xaml starts in the ice-blue accent and no longer contains the old aqua");
-        check(!files.Any(path => File.ReadAllText(path).Contains("3CCFD9", StringComparison.OrdinalIgnoreCase)), "The old aqua accent appears nowhere in the source");
+        check(app.Contains("<Color x:Key=\"PrimaryAccentColor\">#3CCFD9</Color>"), "App.xaml starts in the aqua accent");
+        check(!files.Any(path => { string text = File.ReadAllText(path); return text.Contains("7FE0F6", StringComparison.OrdinalIgnoreCase) || text.Contains("B5EEFB", StringComparison.OrdinalIgnoreCase); }),
+            "The rejected ice-blue accent appears nowhere in the source");
+
+        // The icon is drawn in the accent: its crisp rim carries #3CCFD9, its corners are truly transparent and the ICO holds every size.
+        string assets = Path.Combine(source, "Assets");
+        var decoder = new PngBitmapDecoder(new Uri(Path.Combine(assets, "Hush-icon-source.png")), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        var frame = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+        int width = frame.PixelWidth, stride = width * 4;
+        byte[] pixels = new byte[stride * frame.PixelHeight];
+        frame.CopyPixels(pixels, stride, 0);
+        // Average the rim across the lit top-left stretch of the top edge (the rim is the accent itself there).
+        long sumR = 0, sumG = 0, sumB = 0; int count = 0;
+        for (int x = 120; x <= 280; x++)
+        {
+            int i = 9 * stride + x * 4;
+            if (pixels[i + 3] < 250) continue;
+            sumB += pixels[i]; sumG += pixels[i + 1]; sumR += pixels[i + 2]; count++;
+        }
+        int bestR = count == 0 ? 0 : (int)(sumR / count), bestG = count == 0 ? 0 : (int)(sumG / count), bestB = count == 0 ? 0 : (int)(sumB / count);
+        check(Math.Abs(bestR - 0x3C) <= 16 && Math.Abs(bestG - 0xCF) <= 16 && Math.Abs(bestB - 0xD9) <= 16,
+            $"The icon's crisp rim is the app's aqua accent (found #{bestR:X2}{bestG:X2}{bestB:X2})");
+        check(pixels[3] == 0 && pixels[stride - 1] == 0 && pixels[(frame.PixelHeight - 1) * stride + 3] == 0 && width == 512, "The icon's corners are real transparency, not a black or glowing surround");
+        byte[] ico = File.ReadAllBytes(Path.Combine(assets, "Hush.ico"));
+        int frames = BitConverter.ToUInt16(ico, 4);
+        check(ico[0] == 0 && ico[2] == 1 && frames == 7 && ico.Length > 20000 && !File.Exists(Path.Combine(assets, "Icon-layout.json")),
+            "Hush.ico holds the seven sizes (16 to 256) of the new icon and the old icon's layout file is gone");
+        check(File.ReadAllText(Path.Combine(source, "Hush.csproj")).Contains(@"<ApplicationIcon>Assets\Hush.ico</ApplicationIcon>")
+            && File.ReadAllText(Path.Combine(source, "MainWindow.xaml")).Contains("Hush;component/Assets/Hush.ico")
+            && File.ReadAllText(Path.Combine(source, "Setup", "SetupWindow.xaml")).Contains("Hush;component/Assets/Hush.ico"),
+            "The executable and both windows use the new icon");
     }
 }

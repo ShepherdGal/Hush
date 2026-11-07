@@ -773,7 +773,7 @@ public partial class MainWindow : Window
         Application.Current.Resources["PrimaryAccentColor"] = (Color)ColorConverter.ConvertFromString(accent);
         Set("TealBrush", accent);
         Set("TealTextBrush", accent);
-        Set("AccentHoverBrush", light ? "#3A66AE" : "#B5EEFB");
+        Set("AccentHoverBrush", light ? "#3A66AE" : "#80E0E6");
         Set("MeterWarnBrush", SafetyPalette.Text(SafetyLevel.Review, light));
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
         if (!busy) ApplyPrimaryAppearance(CanClean && SelectedCount > 0);
@@ -793,7 +793,7 @@ public partial class MainWindow : Window
         AboutUpdatesButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Show release notes");
         PatchNotesHeading.Text = $"Installed release {UpdateService.DisplayVersion}";
         PatchNotes.Text = ReleaseNotes.Current;
-        UpdateStatus.Text = "Check for the latest release.";
+        SetUpdateStatus("Check for the latest release.");
         UpdateDetailsScroll.ScrollToTop();
         Motion.Reveal(AboutOverlay);
         CloseAboutButton.Focus();
@@ -831,6 +831,14 @@ public partial class MainWindow : Window
         SetUpdateBusy(false);
     }
 
+    // A new version is announced in the main accent color (and semibold) so it cannot be missed; every other message is plain text.
+    private void SetUpdateStatus(string text, bool notice = false)
+    {
+        UpdateStatus.Text = text;
+        UpdateStatus.SetResourceReference(TextBlock.ForegroundProperty, notice ? "TealTextBrush" : "TextBrush");
+        UpdateStatus.FontWeight = notice ? FontWeights.SemiBold : FontWeights.Medium;
+    }
+
     private bool IsCurrentAbout(int session) => session == aboutSession && AboutOverlay.Visibility == Visibility.Visible;
 
     private void SetUpdateBusy(bool value)
@@ -841,8 +849,8 @@ public partial class MainWindow : Window
         CancelUpdateButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         AboutUpdatesButton.IsEnabled = !value;
         CheckUpdateButton.IsEnabled = !value;
-        CheckUpdateButton.Content = availableRelease == null ? "Check for updates" : "Download & install";
-        CheckUpdateButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, availableRelease == null ? "Check for updates" : "Download and install the update");
+        CheckUpdateButton.Content = availableRelease == null ? "Check for updates" : "Update now";
+        CheckUpdateButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, availableRelease == null ? "Check for updates" : "Update now: download and install the update");
     }
 
     private async Task HideAbout()
@@ -866,6 +874,16 @@ public partial class MainWindow : Window
     {
         if (updateBusy) return;
         RevealUpdateDetails();
+        // Installing replaces the running app and restarts it, so it is only ever done after an explicit "Are you sure".
+        if (availableRelease != null)
+        {
+            int askedSession = aboutSession;
+            string version = UpdateService.Display(availableRelease.Version);
+            bool agreed = await AskConsent($"Update Hush to {version}?",
+                $"Hush will download version {version}, check it against the published checksum, then close and restart to finish the update.\n\nYour current version is kept as a backup, and Hush returns to it by itself if the new version does not start.",
+                "Update now", "Not now");
+            if (!agreed || !IsCurrentAbout(askedSession) || availableRelease == null) return;
+        }
         using var operation = new CancellationTokenSource();
         updateCancellation = operation;
         int session = aboutSession;
@@ -877,15 +895,15 @@ public partial class MainWindow : Window
             if (availableRelease == null)
             {
                 UpdateHint.Visibility = Visibility.Collapsed;
-                UpdateStatus.Text = "Looking for a newer version…";
+                SetUpdateStatus("Looking for a newer version…");
                 var release = await service.CheckAsync(operation.Token);
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 availableRelease = release;
-                if (release == null) UpdateStatus.Text = $"You're up to date. Installed version {UpdateService.DisplayVersion}.";
+                if (release == null) SetUpdateStatus($"You're up to date. Installed version {UpdateService.DisplayVersion}.");
                 else
                 {
-                    UpdateStatus.Text = $"Version {UpdateService.Display(release.Version)} is available.";
-                    UpdateHint.Text = "Download & install fetches it securely, checks it and restarts Hush to finish. Your current version is kept as a backup.";
+                    SetUpdateStatus($"Version {UpdateService.Display(release.Version)} is available.", notice: true);
+                    UpdateHint.Text = "Update now downloads it securely, checks it and restarts Hush to finish. Your current version is kept as a backup.";
                     UpdateHint.Visibility = Visibility.Visible;
                     UpdateHint.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
                     PatchNotesHeading.Text = $"Release notes - {UpdateService.Display(release.Version)}";
@@ -897,18 +915,18 @@ public partial class MainWindow : Window
             {
                 var release = availableRelease;
                 UpdateHint.Visibility = Visibility.Collapsed;
-                UpdateStatus.Text = "Downloading the update…";
+                SetUpdateStatus("Downloading the update…");
                 var progress = new Progress<double>(fraction =>
                 {
                     if (!IsCurrentAbout(session) || request != updateRequest || !updateBusy || operation.IsCancellationRequested) return;
                     UpdateSweep.Progress = Math.Clamp(fraction, 0, 1);
-                    UpdateStatus.Text = $"Downloading the update · {Math.Clamp(fraction, 0, 1):P0}";
+                    SetUpdateStatus($"Downloading the update · {Math.Clamp(fraction, 0, 1):P0}");
                 });
                 string staged = await service.DownloadAsync(release, progress, operation.Token);
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 // The download is verified (size, SHA-256, Windows x64 identity and version) before anything is replaced.
                 UpdateSweep.Progress = double.NaN;
-                UpdateStatus.Text = "Verified. Restarting to finish the update…";
+                SetUpdateStatus("Verified. Restarting to finish the update…");
                 try
                 {
                     installUpdate(staged, release);
@@ -916,14 +934,14 @@ public partial class MainWindow : Window
                 }
                 catch
                 {
-                    UpdateStatus.Text = "Couldn't start the installation. Your installed app is unchanged.";
+                    SetUpdateStatus("Couldn't start the installation. Your installed app is unchanged.");
                 }
             }
         }
-        catch (OperationCanceledException) { if (IsCurrentAbout(session)) UpdateStatus.Text = "Update request canceled. Your installed app is unchanged."; }
-        catch (InvalidDataException ex) { if (IsCurrentAbout(session)) UpdateStatus.Text = ex.Message; }
-        catch (System.Net.Http.HttpRequestException) { if (IsCurrentAbout(session)) UpdateStatus.Text = "Couldn't reach the update server. Check your internet connection and try again."; }
-        catch { if (IsCurrentAbout(session)) UpdateStatus.Text = "Couldn't prepare the update. Your installed app is unchanged."; }
+        catch (OperationCanceledException) { if (IsCurrentAbout(session)) SetUpdateStatus("Update request canceled. Your installed app is unchanged."); }
+        catch (InvalidDataException ex) { if (IsCurrentAbout(session)) SetUpdateStatus(ex.Message); }
+        catch (System.Net.Http.HttpRequestException) { if (IsCurrentAbout(session)) SetUpdateStatus("Couldn't reach the update server. Check your internet connection and try again."); }
+        catch { if (IsCurrentAbout(session)) SetUpdateStatus("Couldn't prepare the update. Your installed app is unchanged."); }
         finally
         {
             if (IsCurrentAbout(session) && request == updateRequest)

@@ -2,6 +2,13 @@
 
 Dates use Asia/Jerusalem.
 
+## 0.8 (follow-up: accent, icon, update popup) — November 7, 2026
+
+- **Accent reverted:** the Dark accent is aqua #3CCFD9 again (hover #80E0E6); the ice blue was rejected. Tests now fail if the ice-blue values return.
+- **Icon:** recolored to the same aqua (hue rotation plus a crisp #3CCFD9 border, no glow) and verified in the 16-256 px ICO; connected as the executable icon and as the `Icon` of the main and setup windows. The old "H" icon is gone (its layout file was deleted). `ColorRuleChecks` checks the rim color, transparent corners and ICO sizes.
+- **GitHub picture:** the icon is the header of the repository README (`docs/Hush-icon.png`) and a 1280 x 640 social-preview image is ready in `docs/Hush-social-preview.png` (`scripts/MakeSocialPreview.ps1`). GitHub only accepts the social preview through the repository's Settings page, so it has to be uploaded there by the owner.
+- **Update popup:** a found update is shown in the accent color; the button is now **Update now** and asks "Update Hush to X?" before anything downloads (Not now keeps the update offered). The shared confirmation dialog now draws above the About card and restores the blur and focus it found.
+- Not published: the v0.8 release binaries still contain the earlier look; these changes are in the source only until a new release is made.
 ## 0.8 — November 7, 2026
 
 - **New app icon:** the ice-blue brush artwork you supplied, with its black surround keyed to real transparency and a crisp thin border instead of a glow (`GenerateIcon.ps1 -FromArtwork`). The 16-256 px ICO and the marks were regenerated and inspected on light and dark backgrounds.
