@@ -2,5 +2,5 @@ namespace Hush;
 
 internal static class ReleaseNotes
 {
-    internal const string Current = "• Renamed to Hush, version 0.7\n• Scan with a live file counter, then review files by category\n• Clean selected temp, cache, crash and leftover files with confirmation\n• Dark and Light appearance\n• Windows privacy choices with Undo\n• Verified update downloads";
+    internal const string Current = "• New ice-blue brush icon and a matching ice-blue accent in the dark theme\n• Scans of any size: no file limit, faster, lighter on memory\n• Around 30 cleanup categories with three risk levels (Safe, Review, Advanced)\n• Smart Boost: Quick Boost, optional junk watching, startup apps, low-resource mode\n• Info card with live processor, memory and drive readings\n• One red in the whole app: the Clean button\n• Verified in-app updates";
 }

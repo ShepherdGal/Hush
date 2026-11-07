@@ -9,6 +9,8 @@ public sealed class ScanActivity : FrameworkElement
 {
     public static readonly DependencyProperty IsRunningProperty = DependencyProperty.Register(nameof(IsRunning), typeof(bool), typeof(ScanActivity), new PropertyMetadata(false, Changed));
     public bool IsRunning { get => (bool)GetValue(IsRunningProperty); set => SetValue(IsRunningProperty, value); }
+    // Redraw interval of the looping animation; low-resource mode slows it down.
+    public static TimeSpan FrameInterval { get; set; } = TimeSpan.FromMilliseconds(33);
     private readonly Stopwatch clock = new();
     private readonly DispatcherTimer timer;
     public ScanActivity()
@@ -22,7 +24,7 @@ public sealed class ScanActivity : FrameworkElement
     private static void Changed(DependencyObject sender, DependencyPropertyChangedEventArgs args)
     {
         var activity = (ScanActivity)sender;
-        if ((bool)args.NewValue) { activity.clock.Restart(); activity.timer.Start(); }
+        if ((bool)args.NewValue) { activity.clock.Restart(); activity.timer.Interval = FrameInterval; activity.timer.Start(); }
         else { activity.timer.Stop(); activity.clock.Stop(); }
         activity.InvalidateVisual();
     }

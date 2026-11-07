@@ -13,14 +13,16 @@
     <SolidColorBrush x:Key="MutedBrush" Color="#9BA8BA"/>
     <SolidColorBrush x:Key="FaintBrush" Color="#8794A8"/>
     <SolidColorBrush x:Key="HeadingBrush" Color="#D8DFE9"/>
-    <Color x:Key="PrimaryAccentColor">#3CCFD9</Color>
+    <Color x:Key="PrimaryAccentColor">#7FE0F6</Color>
     <SolidColorBrush x:Key="TealBrush" Color="{DynamicResource PrimaryAccentColor}"/>
-    <SolidColorBrush x:Key="TealTextBrush" Color="#3CCFD9"/>
+    <SolidColorBrush x:Key="TealTextBrush" Color="#7FE0F6"/>
     <!-- Hover state of the one primary Cyan: lighter in Dark, deeper in Light. Set per theme in ApplyTheme. -->
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#80E0E6"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#B5EEFB"/>
     <SolidColorBrush x:Key="ActionFillBrush" Color="#252C38"/>
     <SolidColorBrush x:Key="ModalShadeBrush" Color="#750C1016"/>
-    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#3CCFD9"/>
+    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#7FE0F6"/>
+    <!-- Resource meters turn Review-orange (never red) when a reading is high. -->
+    <SolidColorBrush x:Key="MeterWarnBrush" Color="#FFA24D"/>
     <SolidColorBrush x:Key="CleanFillBrush" Color="#08FF795C"/>
     <SolidColorBrush x:Key="CleanTextBrush" Color="#FF795C"/>
     <Style TargetType="Window">
@@ -277,6 +279,29 @@
               </local:AccordionBody>
             </StackPanel>
           </Border>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <!-- Choice chip: one option of a small set (threshold, interval). Quiet pill; the chosen one takes the theme accent on a raised surface.
+         The label ink eases like every other text control; hover never scales anything. -->
+    <Style x:Key="ChoiceChip" TargetType="RadioButton">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="FontSize" Value="{DynamicResource SupportFontSize}"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Pill" CornerRadius="10" Padding="13,7" Margin="0,0,6,0" Background="Transparent">
+            <TextBlock x:Name="Label" Text="{TemplateBinding Content}" local:Motion.Ink="{DynamicResource MutedBrush}" HorizontalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Label" Property="local:Motion.Ink" Value="{DynamicResource TextBrush}"/></Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Pill" Property="Background" Value="{DynamicResource RaisedBrush}"/>
+              <Setter TargetName="Label" Property="local:Motion.Ink" Value="{DynamicResource TealTextBrush}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource RaisedBrush}"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+          </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value></Setter>
     </Style>

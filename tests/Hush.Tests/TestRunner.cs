@@ -13,7 +13,10 @@ internal static class TestRunner
             else if (args is ["--verify-updates"]) UiLayoutChecks.Run(updatesOnly: true);
             else if (args is ["--verify-windows-settings"]) UiLayoutChecks.Run(windowsSettingsOnly: true);
             else if (args is ["--verify-setup"]) UiLayoutChecks.Run(setupOnly: true);
+            else if (args is ["--verify-smart-boost"]) UiLayoutChecks.Run(smartBoostOnly: true);
             else if (args is ["--benchmark"]) return PerformanceChecks.Run();
+            else if (args is ["--stress-scan"]) return ScaleChecks.Stress(250000);
+            else if (args is ["--stress-scan", var count]) return ScaleChecks.Stress(int.Parse(count));
             else if (args is ["--scan-report"]) return PerformanceChecks.ScanReport();
             else throw new ArgumentException("Unknown test arguments.");
             return 0;

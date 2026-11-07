@@ -13,7 +13,7 @@ internal static class PerformanceChecks
         var clock = Stopwatch.StartNew();
         var result = engine.Scan(null, CancellationToken.None);
         clock.Stop();
-        Console.WriteLine($"Read-only scan of this PC: {clock.Elapsed.TotalMilliseconds:N0} ms, {result.Items.Count:N0} items, {Sizes.Format(result.Items.Sum(item => item.Bytes))}. Inaccessible {result.Inaccessible:N0}, busy caches {result.BusyCaches:N0}, limited {result.Limited}.");
+        Console.WriteLine($"Read-only scan of this PC: {clock.Elapsed.TotalMilliseconds:N0} ms, {result.Items.Count:N0} items, {Sizes.Format(result.Items.Sum(item => item.Bytes))}. Inaccessible {result.Inaccessible:N0}, busy caches {result.BusyCaches:N0}.");
         foreach (var category in ReviewCategory.Definitions)
         {
             var items = result.Items.Where(item => ReviewCategory.CategoryFor(item) == category.Id).ToList();

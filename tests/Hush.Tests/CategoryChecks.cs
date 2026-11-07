@@ -34,20 +34,28 @@ internal static class CategoryChecks
         multi.Clean(multiScan.Items, null, CancellationToken.None);
         check(!File.Exists(dmp) && !File.Exists(hdmp) && File.Exists(notes), "Multi-pattern cleanup deletes only approved file types");
 
-        // Risk classification and default selection come from the category, and only Safe is preselected.
-        foreach (var (id, safety, selected) in new[] { ("Temp", SafetyLevel.Safe, true), ("Thumbnails", SafetyLevel.Safe, true), ("DirectX", SafetyLevel.Safe, true),
-            ("Update", SafetyLevel.Review, false), ("Delivery", SafetyLevel.Review, false), ("Setup", SafetyLevel.Review, false),
-            ("Crash", SafetyLevel.Review, false), ("Junk", SafetyLevel.Review, false), ("RecycleBin", SafetyLevel.Caution, false),
-            ("DevCache", SafetyLevel.Review, false), ("SystemLogs", SafetyLevel.Review, false), ("Installer", SafetyLevel.Review, false), ("Traces", SafetyLevel.Review, false), ("Cache", SafetyLevel.Safe, true) })
+        // Risk classification and default selection come from the category (every catalogued category is checked), and only Safe is preselected.
+        foreach (var definition in ReviewCategory.Definitions)
         {
-            string folder = Path.Combine(fixture, "cat-" + id); Make(folder, "old.tmp");
-            var item = Engine("audit-cat-" + id, new(folder, "Fixture " + id, CleanupKind.Temp, TimeSpan.FromDays(2), Category: id)).Scan(null, CancellationToken.None).Items.Single();
-            check(item.Safety == safety && item.Selected == selected && ReviewCategory.CategoryFor(item) == id, $"{id} is classified {safety} and {(selected ? "selected" : "opt-in")} by default");
+            string folder = Path.Combine(fixture, "cat-" + definition.Id); Make(folder, "old.tmp");
+            var item = Engine("audit-cat-" + definition.Id, new(folder, "Fixture " + definition.Id, CleanupKind.Temp, TimeSpan.FromDays(2), Category: definition.Id)).Scan(null, CancellationToken.None).Items.Single();
+            bool selected = definition.Safety == SafetyLevel.Safe;
+            check(item.Safety == definition.Safety && item.Selected == selected && ReviewCategory.CategoryFor(item) == definition.Id,
+                $"{definition.Id} is classified {definition.Safety} and {(selected ? "selected" : "opt-in")} by default");
         }
+        check(ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Safe).Select(d => d.Id).Order().SequenceEqual(["Temp", "Thumbnails"]),
+            "Only verified disposable temp files and thumbnail caches are Safe; browser caches, shader caches, logs and traces are Review");
+        check(new[] { "WindowsOld", "ComponentStore", "RecycleBin", "Registry", "BrowserCookies" }.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
+            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 5,
+            "Irreversible or recovery-related categories are Advanced (red) and nothing else is");
         check(ReviewCategory.Definitions.Select(d => d.Id).Distinct().Count() == ReviewCategory.Definitions.Length
-            && ReviewCategory.Definitions.Where(d => d.Safety != SafetyLevel.Safe).All(d => d.Id is not ("Temp" or "Cache" or "DirectX" or "Thumbnails")),
-            "Category catalog has unique ids and no duplicate categories");
-
+            && ReviewCategory.Definitions.All(d => ReviewCategory.GroupDefinitions.Any(g => g.Id == d.GroupId)),
+            "Category catalog has unique ids and every category belongs to a section");
+        check(SafetyPalette.Text(SafetyLevel.Safe, false) != SafetyPalette.Text(SafetyLevel.Review, false)
+            && SafetyPalette.Text(SafetyLevel.Review, false) != SafetyPalette.Text(SafetyLevel.Advanced, false)
+            && SafetyPalette.Text(SafetyLevel.Safe, true) != SafetyPalette.Text(SafetyLevel.Review, true)
+            && SafetyPalette.Text(SafetyLevel.Review, true) != SafetyPalette.Text(SafetyLevel.Advanced, true),
+            "Safe, Review and Advanced have three distinct colors in both themes");
         // Protected locations list only what can be deleted right now; locks are never reported as skipped locations.
         string guarded = Path.Combine(fixture, "guarded");
         string free = Make(guarded, "free.db"), busy = Make(guarded, "busy.db");
@@ -69,7 +77,7 @@ internal static class CategoryChecks
         var binProgress = new ProgressRecorder();
         var binScan = BinEngine("audit-bin", bin).Scan(binProgress, CancellationToken.None);
         var entry = binScan.Items.Single();
-        check(entry.Kind == CleanupKind.RecycleBin && !entry.Selected && entry.Safety == SafetyLevel.Caution && entry.Bytes == 4096 && entry.ItemCount == 3 && bin.Empties == 0,
+        check(entry.Kind == CleanupKind.RecycleBin && !entry.Selected && entry.Safety == SafetyLevel.Advanced && entry.Bytes == 4096 && entry.ItemCount == 3 && bin.Empties == 0,
             "Recycle Bin is found read-only as an opt-in Caution item");
         check(binProgress.Reports[^1].Fraction == 1 && binProgress.Reports[^1].FilesFound == 0
             && binProgress.Reports.Zip(binProgress.Reports.Skip(1)).All(pair => pair.First.Fraction <= pair.Second.Fraction), "Recycle Bin scanning keeps progress monotonic and is not counted as a file");
@@ -152,11 +160,27 @@ internal static class CategoryChecks
             .All(t => t.Pattern == "MEMORY.DMP" && !t.Recursive && t.DeletableOnly), "The Windows folder itself is only ever used for the single memory dump file");
         check(defaults.Where(t => t.Pattern == null).All(t => t.Kind is CleanupKind.Temp or CleanupKind.Cache), "Only temp and cache locations may clean every file type");
         check(defaults.GroupBy(t => (Path.GetFullPath(t.Root).ToLowerInvariant(), t.Kind, t.Group)).All(group => group.Count() == 1), "Default locations contain no duplicate entries");
-        check(defaults.Where(t => t.Category == "Traces").All(t => t.Pattern == "*.lnk" && !t.Recursive), "Usage traces only ever remove recent-file shortcuts, never the files they point to");
-        check(defaults.Where(t => t.Category is "SystemLogs" or "Installer" or "Update" or "Delivery" or "Setup").All(t => t.DeletableOnly), "Every system-wide category uses the deletable-only probe");
+        check(defaults.Where(t => t.Category is "RecentAccess" or "RecentDocs").All(t => t.Pattern == "*.lnk" && !t.Recursive), "Recent-access traces only ever remove recent-file shortcuts, never the files they point to");
+        check(defaults.Where(t => t.Category is "SystemLogs" or "Installer" or "Update" or "Delivery" or "Setup" or "EventTrace" && !(t.Category == "EventTrace" && !t.Root.StartsWith(windowsRoot + "\\", StringComparison.OrdinalIgnoreCase) && !t.Root.Contains("ProgramData", StringComparison.OrdinalIgnoreCase))).All(t => t.DeletableOnly), "Every system-wide category uses the deletable-only probe");
         string[] userData = new[] { Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData }.Select(Environment.GetFolderPath).Select(Path.GetFullPath).ToArray();
-        check(defaults.Where(t => t.Category is "Cache" or "DevCache" or "DirectX").All(t => userData.Any(root => Path.GetFullPath(t.Root).StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))),
-            "Application, developer and shader caches are only ever inside the current user's AppData");
+        string programData = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+        bool InUserData(CleanupTarget t) => userData.Any(root => Path.GetFullPath(t.Root).StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase));
+        var appCategories = new[] { "Cache", "DevCache", "DirectX", "GpuShader", "NvidiaShader", "NvidiaApp", "InternetCache", "BrowserEdge", "BrowserFirefox", "BrowserChrome", "BrowserOther", "BrowserHistory", "BrowserCookies", "UsageHistory" };
+        check(defaults.Where(t => appCategories.Contains(t.Category)).All(t => InUserData(t) || (t.DeletableOnly && Path.GetFullPath(t.Root).StartsWith(programData + "\\", StringComparison.OrdinalIgnoreCase) && t.Category is "NvidiaShader" or "NvidiaApp")),
+            "Application, browser, developer and shader caches are only inside the current user's AppData (the NVIDIA machine-wide cache is deletable-only)");
+        string inetCache = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Windows", "INetCache"));
+        check(defaults.Where(t => t.Category == "InternetCache").All(t => Path.GetFullPath(t.Root) != inetCache
+            && (Path.GetFileName(t.Root) is "IE" or "Content.IE5") && !t.Root.Contains("Outlook", StringComparison.OrdinalIgnoreCase) && !t.Root.Contains("Word", StringComparison.OrdinalIgnoreCase)),
+            "Temporary Internet Files only cleans the legacy IE cache folders, never INetCache as a whole, Outlook or Word attachment copies");
+        string[] neverListed = ["Login Data", "Web Data", "Bookmarks", "Preferences", "Current Session", "Last Session", "Current Tabs", "Last Tabs", "places.sqlite", "key4.db", "logins.json", "formhistory.sqlite", "Cookies"];
+        check(defaults.Where(t => t.Category is "BrowserHistory" or "BrowserCookies" or "BrowserEdge" or "BrowserChrome" or "BrowserOther" or "BrowserFirefox")
+                .All(t => t.Category == "BrowserCookies" || !(t.Pattern ?? "").Split(';').Any(p => neverListed.Contains(p))),
+            "Browser passwords, bookmarks, saved sessions and form data are never in any rule, and cookies appear only in the Advanced cookie category");
+        check(defaults.Where(t => t.Category == "BrowserCookies").All(t => ReviewCategory.SafetyOf("BrowserCookies") == SafetyLevel.Advanced
+                && (t.Pattern ?? "").Split(';').All(p => p.StartsWith("Cookies") || p.StartsWith("cookies.sqlite")) && !t.Recursive),
+            "Cookie rules list only cookie database files and are Advanced");
+        check(defaults.Where(t => t.Category == "BrowserHistory").All(t => !(t.Pattern ?? "").Contains("places") && !(t.Pattern ?? "").Contains("Bookmarks")),
+            "Browser history never includes Firefox places.sqlite (it also holds bookmarks) or bookmark files");
         check(defaults.Where(t => t.Category == "DevCache").All(t => ReviewCategory.SafetyOf(t.Category!) == SafetyLevel.Review), "Developer caches stay opt-in because rebuilding them costs time");
         check(defaults.Where(t => t.Kind == CleanupKind.Shortcut).All(t => t.Pattern == "*.lnk")
             && defaults.Where(t => Path.GetFullPath(t.Root).StartsWith(windowsRoot, StringComparison.OrdinalIgnoreCase) && !t.Group.EndsWith("temp")).All(t => t.DeletableOnly),

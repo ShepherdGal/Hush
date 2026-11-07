@@ -17,7 +17,6 @@ internal static class NavigationChecks
         var settingsButton = (Button)window.FindName("SettingsButton");
         var settingsBack = (Button)window.FindName("SettingsBackButton");
         var themeButton = (Button)window.FindName("ThemeButton");
-        var lightBox = (CheckBox)window.FindName("SettingsLightBox");
         bool originalTheme = window.IsLightTheme;
         bool originallyReview = review.Visibility == Visibility.Visible;
         var selection = window.ReviewItems.Select(item => item.Selected).ToArray();
@@ -59,18 +58,15 @@ internal static class NavigationChecks
             window.ShowReviewPage(false); Click(settingsButton); Click(settingsBack); Settle(window);
             Require(home.Visibility == Visibility.Visible, "Settings Back also restores Home when opened there");
             Click(settingsButton); Settle(window); home.Children.Remove(sentinel);
-            var appearance = (Expander)window.FindName("SettingsAppearanceSection");
-            Require(!appearance.IsExpanded, "Settings sections start collapsed");
-            appearance.IsExpanded = true; Layout(new Size(920, 820)); Wait(380); // The theme switch lives inside the section.
+            var boost = (Expander)window.FindName("SettingsBoostSection");
+            Require(!boost.IsExpanded && window.FindName("SettingsLightBox") == null && window.FindName("SettingsAppearanceSection") == null, "Settings sections start collapsed and there is no Appearance section (the theme lives in the top bar)");
+            Layout(new Size(920, 820)); Wait(380);
             foreach (bool light in new[] { false, true })
             {
                 if (window.IsLightTheme != light) window.ToggleTheme();
-                Require(lightBox.IsChecked == light && ((Ellipse)window.FindName("ThemeSunCore")).Opacity == (light ? 1 : 0.3)
-                    && themeButton.Content is Grid, "Theme indicator uses bright/dim vector sunlight and stays synchronized with Settings");
+                Require(((Ellipse)window.FindName("ThemeSunCore")).Opacity == (light ? 1 : 0.3)
+                    && themeButton.Content is Grid, "Theme indicator uses bright/dim vector sunlight");
                 Layout(new Size(920, 820)); Pixels(); Wait(340);
-                Require(((Border)lightBox.Template.FindName("OnFill", lightBox)).Opacity == (light ? 1 : 0)
-                    && ((TranslateTransform)lightBox.Template.FindName("KnobShift", lightBox)).X == (light ? 20 : 0),
-                    "The Appearance switch fills and slides its knob to match the selected theme");
                 foreach (var size in new[] { new Size(920, 820), new Size(800, 740), new Size(1100, 900), new Size(800, 740) })
                 {
                     Layout(size);
@@ -98,10 +94,10 @@ internal static class NavigationChecks
                     }
                 }
             }
-            lightBox.IsChecked = !window.IsLightTheme;
-            lightBox.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-            Require(window.IsLightTheme == lightBox.IsChecked && File.Exists(System.IO.Path.Combine(fixture, "preferences.json")),
-                "The Appearance control changes and persists only fixture-owned app preferences");
+            bool before = window.IsLightTheme;
+            Click(themeButton);
+            Require(window.IsLightTheme != before && File.Exists(System.IO.Path.Combine(fixture, "preferences.json")),
+                "The top-bar theme button changes and persists only fixture-owned app preferences");
             if (window.IsLightTheme != originalTheme) Click(themeButton);
             Click(settingsBack); window.ShowReviewPage(originallyReview); Settle(window);
             Console.WriteLine("PASS: No outgoing-page pixels or snapshots, rapid navigation, Settings return/theme behavior, aligned vector caption controls and responsive layouts");

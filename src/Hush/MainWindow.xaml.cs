@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -17,19 +18,26 @@ namespace Hush;
 public partial class MainWindow : Window
 {
     private readonly CleanupEngine engine;
-    private readonly Func<IProgress<ScanProgress>?, CancellationToken, ScanResult> scan;
+    private readonly Func<IProgress<ScanProgress>?, CancellationToken, ScanOptions?, ScanResult> scan;
     private readonly Func<IUpdateClient> updateFactory;
     private readonly Action<string, AppRelease> installUpdate;
-    private readonly ObservableCollection<CleanupItem> items = [];
+    private readonly List<CleanupItem> items = [];
+    // What the last scan found (files only, their bytes, registry entries, Recycle Bin), recomputed only when the item list changes
+    // so that toggling one checkbox never loops hundreds of thousands of files.
+    private int foundFiles, foundRegistry;
+    private long foundBytes;
+    private bool foundRecycleBin;
+    private int SelectedCount => Categories.Sum(category => category.SelectedCount);
+    private long SelectedBytes => Categories.Sum(category => category.SelectedBytes);
     internal ObservableCollection<ReviewCategory> Categories { get; } = ReviewCategory.Create();
     internal IReadOnlyList<CleanupItem> ReviewItems => items;
     private CancellationTokenSource? cancellation;
     private bool busy, light, closing;
     private bool settingsReturnToReview;
     internal bool IsPageTransitioning => Motion.IsEntering(MainContent);
-    internal enum ScanState { Ready, Scanning, Completed, Stopped, Limited, Failed }
+    internal enum ScanState { Ready, Scanning, Completed, Stopped, Failed }
     internal ScanState CurrentScanState { get; private set; }
-    private bool scanned => CurrentScanState is ScanState.Completed or ScanState.Stopped or ScanState.Limited;
+    private bool scanned => CurrentScanState is ScanState.Completed or ScanState.Stopped;
     private bool CanClean => !busy && CurrentScanState == ScanState.Completed;
     public static readonly DependencyProperty CanSelectCandidatesProperty = DependencyProperty.Register(
         nameof(CanSelectCandidates), typeof(bool), typeof(MainWindow), new PropertyMetadata(false));
@@ -57,13 +65,15 @@ public partial class MainWindow : Window
 
     internal MainWindow(CleanupEngine engine, Func<IProgress<ScanProgress>?, CancellationToken, ScanResult>? scan = null, string? preferencesPath = null,
         Func<IUpdateClient>? updateFactory = null, Action<string, AppRelease>? installUpdate = null,
-        WindowsSettingsService? windowsSettings = null)
+        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null)
     {
         this.engine = engine;
-        this.scan = scan ?? engine.Scan;
+        this.scan = scan == null ? engine.Scan : (progress, token, _) => scan(progress, token);
         this.updateFactory = updateFactory ?? (() => new UpdateService());
         this.installUpdate = installUpdate ?? UpdateInstaller.Start;
         this.windowsSettings = windowsSettings ?? WindowsSettingsService.Create();
+        this.startupApps = startupApps ?? new StartupAppsService(StartupLocations.Default);
+        boostController = new SmartBoostController(engine);
         settingsPath = preferencesPath ?? Path.Combine(CleanupEngine.DataDirectory, "settings.json");
         InitializeComponent();
         var categoryView = CollectionViewSource.GetDefaultView(Categories);
@@ -72,21 +82,22 @@ public partial class MainWindow : Window
         foreach (var category in Categories)
         {
             category.PropertyChanged += CategoryChanged;
-            category.SelectionBatchState = active => { batchSelection = active; if (!active) RefreshSelection(); };
+            category.SelectionBatchState = active => { batchSelection = active; };
+            category.SelectionTotalsChanged += OnSelectionTotalsChanged;
         }
-        try
-        {
-            if (File.Exists(settingsPath)) light = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(settingsPath))?.Light ?? false;
-        }
-        catch { }
+        prefs = Preferences.Load(settingsPath);
+        light = prefs.Light;
         ApplyTheme();
         ResetGauge();
         RefreshSelection();
+        InitializeBoost();
         AboutVersion.Text = $"Version {UpdateService.DisplayVersion}";
         PreviewKeyDown += async (_, e) =>
         {
             if (e.Key == Key.Escape && ModalOverlay.Visibility == Visibility.Visible && ModalOverlay.IsEnabled)
             { e.Handled = true; await HideConfirmation(); }
+            else if (e.Key == Key.Escape && ConsentOverlay.Visibility == Visibility.Visible && ConsentOverlay.IsEnabled)
+            { e.Handled = true; await CompleteConsent(false); }
             else if (e.Key == Key.Escape && AboutOverlay.Visibility == Visibility.Visible && AboutOverlay.IsEnabled)
             { e.Handled = true; await HideAbout(); }
             else if (e.Key == Key.Escape && WindowsSettingsOverlay.Visibility == Visibility.Visible && WindowsSettingsOverlay.IsEnabled && !windowsSettingsBusy)
@@ -229,23 +240,21 @@ public partial class MainWindow : Window
         if (busy || SettingsPage.Visibility == Visibility.Visible) return;
         settingsReturnToReview = ReviewPage.Visibility == Visibility.Visible;
         LoadWindowsSettings();
+        LoadStartupApps();
+        StartResourceIndicators();
         Motion.EnterPage(MainContent, () =>
         {
             ScanPage.Visibility = ReviewPage.Visibility = Visibility.Collapsed;
             SettingsPage.Visibility = Visibility.Visible;
         });
-        SettingsLightBox.Focus();
+        SettingsBackButton.Focus();
     }
 
     private void SettingsBack_Click(object sender, RoutedEventArgs e)
     {
+        StopResourceIndicators();
         ShowReviewPage(settingsReturnToReview);
         SettingsButton.Focus();
-    }
-
-    private void SettingsTheme_Click(object sender, RoutedEventArgs e)
-    {
-        if (SettingsLightBox.IsChecked != light) Theme_Click(sender, e);
     }
 
     private async void Circle_Click(object sender, RoutedEventArgs e) => await ActivateGaugeAsync();
@@ -296,15 +305,21 @@ public partial class MainWindow : Window
     private async void Primary_Click(object sender, RoutedEventArgs e)
     {
         if (busy) { StopOperation(); return; }
-        if (CanClean && items.Any(x => x.Selected)) ShowConfirmation();
+        if (CanClean && SelectedCount > 0) ShowConfirmation();
         else await StartScan();
     }
 
     private async void Scan_Click(object sender, RoutedEventArgs e) => await StartScan();
 
-    private async Task StartScan()
+    // Options for the next scan only (Quick Boost restricts it to Safe categories); a normal scan uses none.
+    private ScanOptions? pendingScanOptions;
+
+    private async Task StartScan(ScanOptions? options = null)
     {
         if (busy) return;
+        // Low-resource mode scans at background CPU and disk priority and reports progress less often.
+        options ??= LowResourceMode.IsActive ? new ScanOptions(ReportIntervalMs: LowResourceMode.ReportIntervalMs, Background: true) : null;
+        pendingScanOptions = options;
         CurrentScanState = ScanState.Scanning;
         scanSkippedLocations = false;
         LoadReviewItems([]);
@@ -327,31 +342,30 @@ public partial class MainWindow : Window
         });
         try
         {
-            var result = await Task.Run(() => scan(progress, cancellation!.Token));
+            var result = await Task.Run(() => scan(progress, cancellation!.Token, pendingScanOptions));
             acceptingProgress = false;
             LoadReviewItems(result.Items);
-            LiveFileCounter.SetCount(result.Items.Count(item => item.Kind is not (CleanupKind.Registry or CleanupKind.RecycleBin)), !result.Stopped);
+            LiveFileCounter.SetCount(foundFiles, !result.Stopped);
             ReviewScroll.ScrollToTop();
-            if (!result.Stopped && !result.Limited)
+            if (!result.Stopped)
             {
                 await Task.WhenAll(CompleteGauge(), LiveFileCounter.CompleteAsync());
             }
             else
             {
                 FreezeGauge();
-                if (!result.Stopped) await LiveFileCounter.CompleteAsync();
             }
             bool stopped = result.Stopped || cancellation?.IsCancellationRequested == true;
-            CurrentScanState = stopped ? ScanState.Stopped : result.Limited ? ScanState.Limited : ScanState.Completed;
-            if (stopped || result.Limited) FreezeIncompleteScanGauge();
+            CurrentScanState = stopped ? ScanState.Stopped : ScanState.Completed;
+            if (stopped) FreezeIncompleteScanGauge();
             scanSkippedLocations = result.BusyCaches > 0 || result.Inaccessible > 0;
             GaugeLabel.Text = "Click to scan again";
-            StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : result.Limited ? "Scan limit reached. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan complete. Take a look.";
-            ReviewHint.Text = stopped ? "Partial scan. Scan again before cleaning." : result.Limited ? "Scan limit reached. Scan again before cleaning." : "Selected files only. Confirmation required.";
+            StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan complete. Take a look.";
+            ReviewHint.Text = stopped ? "Partial scan. Scan again before cleaning." : "Selected files only. Confirmation required.";
             var notes = new List<string>();
             if (result.BusyCaches > 0) notes.Add("open browser caches skipped");
             if (result.Inaccessible > 0) notes.Add($"{result.Inaccessible:N0} inaccessible paths skipped");
-            if (items.Any(x => x.Kind == CleanupKind.Registry)) notes.Add("registry entries are opt-in");
+            if (foundRegistry > 0) notes.Add("registry entries are opt-in");
             StatusDetail.Text = FoundSummary();
             ResultCount.ToolTip = notes.Count > 0 ? string.Join(" · ", notes) : null;
         }
@@ -384,11 +398,14 @@ public partial class MainWindow : Window
             {
                 bool previousBatch = batchSelection;
                 batchSelection = true;
-                try { foreach (var item in items) item.Selected = false; }
+                try { foreach (var category in Categories) if (category.HasFiles) category.Selected = false; }
                 finally { batchSelection = previousBatch; }
             }
             RefreshSelection();
         }
+        // Quick Boost ends in the usual confirmation; nothing is cleaned before the person clicks Clean.
+        OfferQuickBoostConfirmation();
+        quickBoostPending = false;
     }
 
     private void HomeClean_Click(object sender, RoutedEventArgs e)
@@ -399,13 +416,13 @@ public partial class MainWindow : Window
         if (!CanClean) return;
         confirmedItems = items.Where(x => x.Selected).ToArray();
         if (confirmedItems.Length == 0) return;
-        int registry = confirmedItems.Count(x => x.Kind == CleanupKind.Registry);
         ConfirmSummary.Text = $"Clean {confirmedItems.Length:N0} selected items and free {Sizes.Format(confirmedItems.Sum(x => x.Bytes))}?";
-        ConfirmDetail.Text = "Selected files will be permanently deleted, bypassing the Recycle Bin. Locked or changed files will be skipped."
-            + (registry > 0 ? $"\n\n{registry} app registry entries are included. Each is backed up to a .reg file before removal." : "")
-            + (confirmedItems.Any(x => x.Kind == CleanupKind.RecycleBin) ? "\n\nThe Recycle Bin is included. Emptying it permanently removes everything in it on every drive and cannot be undone." : "")
-            + (confirmedItems.Any(x => ReviewCategory.CategoryFor(x) is "Update" or "Delivery" or "Setup") ? "\n\nWindows Update, Delivery Optimization or setup files are included. Windows can download or recreate them, but updates may need to download again." : "")
-            + "\n\nProtected servicing and rollback files, including previous Windows installations, stay untouched.";
+        ConfirmDetail.Text = ConfirmationText(confirmedItems);
+        // Advanced (red) items are irreversible or recovery-related: the clean button stays off until the person ticks the consent box.
+        bool advanced = confirmedItems.Any(x => x.Safety == SafetyLevel.Advanced);
+        AdvancedConsentBox.IsChecked = false;
+        AdvancedConsentBox.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;
+        ConfirmDeleteButton.IsEnabled = !advanced;
         confirmationReturnFocus = Keyboard.FocusedElement;
         AppSurface.IsEnabled = false;
         BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
@@ -415,6 +432,29 @@ public partial class MainWindow : Window
         // Keep keyboard navigation within the confirmation until it closes.
         KeyboardNavigation.SetTabNavigation(ModalOverlay, KeyboardNavigationMode.Cycle);
     }
+
+    // What exactly will happen, written from the selected items: nothing is described that is not selected.
+    internal static string ConfirmationText(IReadOnlyCollection<CleanupItem> selected)
+    {
+        bool Has(string category) => selected.Any(x => ReviewCategory.CategoryFor(x) == category);
+        int registry = selected.Count(x => x.Kind == CleanupKind.Registry);
+        var text = new StringBuilder("Selected files will be permanently deleted, bypassing the Recycle Bin. Locked or changed files will be skipped.");
+        void Add(string line) => text.Append("\n\n").Append(line);
+        if (registry > 0) Add($"{registry} app registry entries are included. Each is backed up to a .reg file before removal.");
+        if (Has("RecycleBin")) Add("The Recycle Bin is included. Emptying it permanently removes everything in it on every drive and cannot be undone.");
+        if (Has("WindowsOld")) Add("Previous Windows installation is included. Windows' own Disk Cleanup removes it after an administrator prompt. This cannot be undone: you can no longer go back to the previous Windows version.");
+        if (Has("ComponentStore")) Add("Windows component cleanup is included. Windows (DISM) decides which superseded component versions to remove after an administrator prompt. Installed updates can then no longer be uninstalled.");
+        if (Has("BrowserCookies")) Add("Browser cookies are included. You will be signed out of websites. Passwords, bookmarks and saved sessions are not touched.");
+        if (Has("BrowserHistory")) Add("Browser history is included. Bookmarks, passwords and logins are not touched.");
+        if (Has("Clipboard")) Add("Windows clipboard history is included. Pinned clips are kept.");
+        if (Has("Update") || Has("Delivery") || Has("Setup")) Add("Windows Update, Delivery Optimization or setup files are included. Windows can download or recreate them, but updates may need to download again.");
+        if (Has("BrowserEdge") || Has("BrowserChrome") || Has("BrowserFirefox") || Has("BrowserOther") || Has("DirectX") || Has("NvidiaShader") || Has("GpuShader"))
+            Add("Browser and shader caches are rebuilt automatically; the next launch of those programs may be a little slower.");
+        Add("Defender protection history and quarantine, certificates, security logs, restore points and recovery data stay untouched.");
+        return text.ToString();
+    }
+
+    private void AdvancedConsent_Click(object sender, RoutedEventArgs e) => ConfirmDeleteButton.IsEnabled = AdvancedConsentBox.IsChecked == true;
 
     private async Task HideConfirmation()
     {
@@ -435,6 +475,8 @@ public partial class MainWindow : Window
     private async void ConfirmDelete_Click(object sender, RoutedEventArgs e)
     {
         var selected = confirmedItems;
+        // Advanced items need the consent box even if the button was enabled some other way.
+        if (selected.Any(x => x.Safety == SafetyLevel.Advanced) && AdvancedConsentBox.IsChecked != true) return;
         await HideConfirmation();
         if (!CanClean || selected.Length == 0) return;
         ShowReviewPage(false);
@@ -451,14 +493,16 @@ public partial class MainWindow : Window
         try
         {
             var result = await Task.Run(() => engine.Clean(selected, progress, cancellation!.Token));
-            var removed = selected.Where(x => x.Outcome == "Deleted").ToArray();
-            foreach (var item in removed) { item.PropertyChanged -= ItemChanged; items.Remove(item); }
-            foreach (var item in selected.Except(removed)) item.Selected = false;
+            RemoveDeleted();
+            foreach (var item in selected) if (item.Outcome != "Deleted") item.Selected = false;
             if (!result.Stopped) await CompleteGauge();
             else FreezeGauge();
             GaugeLabel.Text = "space freed";
-            StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed · {result.Deleted:N0} cleaned · {result.Skipped:N0} skipped";
+            // The claim comes from the items; the measurement comes from Windows' own free-space figure for the fixed drives.
+            string measured = result.MeasuredFreed > 0 ? $" · disk reports {Sizes.Format(result.MeasuredFreed)} more free" : "";
+            StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed{measured} · {result.Deleted:N0} cleaned · {result.Skipped:N0} skipped";
             StatusDetail.Text = FoundSummary();
+            lastCleanResult = result;
         }
         catch (Exception ex)
         {
@@ -466,8 +510,8 @@ public partial class MainWindow : Window
             StatusTitle.Text = "Cleanup couldn't finish.";
             StatusDetail.Text = ex.Message;
             // If logging failed after an operation, reflect all recorded outcomes in the view.
-            foreach (var item in selected.Where(x => x.Outcome == "Deleted").ToArray()) items.Remove(item);
-            foreach (var item in items) item.Selected = false;
+            RemoveDeleted();
+            foreach (var category in Categories) if (category.HasFiles) category.Selected = false;
         }
         finally
         {
@@ -510,9 +554,36 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ItemChanged(object? sender, PropertyChangedEventArgs e)
+    private CleanupResult? lastCleanResult;
+    internal CleanupResult? LastCleanResult => lastCleanResult;
+
+    // One pass removes everything Windows reported as deleted (removing items one by one was quadratic for large scans).
+    private void RemoveDeleted()
     {
-        if (e.PropertyName == nameof(CleanupItem.Selected) && !batchSelection) RefreshSelection();
+        items.RemoveAll(item => item.Outcome == "Deleted");
+        RecomputeFound();
+    }
+
+    private void OnSelectionTotalsChanged()
+    {
+        if (!batchSelection) RefreshSelection();
+    }
+
+    private void RecomputeFound()
+    {
+        int files = 0, registry = 0; long bytes = 0; bool bin = false;
+        foreach (var item in items)
+        {
+            bytes += item.Bytes;
+            switch (item.Kind)
+            {
+                case CleanupKind.Registry: registry++; break;
+                case CleanupKind.RecycleBin: bin = true; break;
+                case CleanupKind.SystemTool: break;
+                default: files++; break;
+            }
+        }
+        foundFiles = files; foundRegistry = registry; foundBytes = bytes; foundRecycleBin = bin;
     }
 
     internal void UpdateLandingStatus()
@@ -525,7 +596,7 @@ public partial class MainWindow : Window
         }
         else if (!ready) CompletionLinkButton.Visibility = Visibility.Collapsed;
         StatusTitle.Visibility = ready || (busy && currentOperation != "scan") ? Visibility.Collapsed : Visibility.Visible;
-        bool showClean = CanClean && items.Any(item => item.Selected);
+        bool showClean = CanClean && SelectedCount > 0;
         bool revealClean = showClean && HomeCleanButton.Visibility != Visibility.Visible;
         HomeCleanButton.IsEnabled = showClean;
         HomeCleanButton.Visibility = showClean ? Visibility.Visible : Visibility.Hidden;
@@ -534,19 +605,26 @@ public partial class MainWindow : Window
 
     internal void LoadReviewItems(IEnumerable<CleanupItem> files)
     {
-        var snapshot = files.ToArray();
-        foreach (var item in items) item.PropertyChanged -= ItemChanged;
         items.Clear();
-        foreach (var item in snapshot) { item.PropertyChanged += ItemChanged; items.Add(item); }
+        items.AddRange(files);
+        RecomputeFound();
         RebuildCategories();
         RefreshSelection();
         if (scanned && !busy) StatusDetail.Text = FoundSummary();
     }
 
+    // Splits the items into their categories in one pass (not one pass per category) and replaces each category in a single step.
     private void RebuildCategories()
     {
         var expanded = Categories.Where(category => category.Expanded).Select(category => category.Id).ToHashSet();
-        foreach (var category in Categories) category.Replace(items.Where(item => ReviewCategory.CategoryFor(item) == category.Id));
+        var byCategory = new Dictionary<string, List<CleanupItem>>();
+        foreach (var item in items)
+        {
+            string id = ReviewCategory.CategoryFor(item);
+            if (!byCategory.TryGetValue(id, out var list)) byCategory[id] = list = [];
+            list.Add(item);
+        }
+        foreach (var category in Categories) category.Replace(byCategory.TryGetValue(category.Id, out var list) ? list : []);
         foreach (var category in Categories) category.Expanded = expanded.Contains(category.Id) && category.Files.Count > 0;
         CollectionViewSource.GetDefaultView(Categories).Refresh();
     }
@@ -594,9 +672,9 @@ public partial class MainWindow : Window
     {
         if (busy) return;
         CanSelectCandidates = CanClean;
-        int selected = items.Count(item => item.Selected);
+        int selected = SelectedCount;
         SelectionSummary.Text = CanSelectCandidates
-            ? $"{selected:N0} selected · {Sizes.Format(items.Where(item => item.Selected).Sum(item => item.Bytes))}"
+            ? $"{selected:N0} selected · {Sizes.Format(SelectedBytes)}"
             : "Read-only results";
         ResultCount.Text = FoundSummary();
         bool destructive = CanClean && selected > 0;
@@ -616,14 +694,14 @@ public partial class MainWindow : Window
         EmptyStateTitle.Text = CurrentScanState switch
         {
             ScanState.Completed => scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.",
-            ScanState.Stopped or ScanState.Limited => "No results to review.",
+            ScanState.Stopped => "No results to review.",
             ScanState.Failed => "The scan couldn't finish.",
             _ => "Your results will appear here."
         };
         EmptyStateDetail.Text = CurrentScanState switch
         {
             ScanState.Completed => scanSkippedLocations ? "Some locations were skipped. Scan again when they are available." : "No eligible files or registry leftovers were found.",
-            ScanState.Stopped or ScanState.Limited => "The scan was incomplete. Scan again before cleaning.",
+            ScanState.Stopped => "The scan was incomplete. Scan again before cleaning.",
             ScanState.Failed => "Scan again to check for cleanup items.",
             _ => "Run a scan to check for cleanup items."
         };
@@ -633,12 +711,10 @@ public partial class MainWindow : Window
 
     private string FoundSummary()
     {
-        int files = items.Count(item => item.Kind is not (CleanupKind.Registry or CleanupKind.RecycleBin));
-        int registry = items.Count(item => item.Kind == CleanupKind.Registry);
-        bool recycleBin = items.Any(item => item.Kind == CleanupKind.RecycleBin);
-        return $"{files:N0} {(files == 1 ? "file" : "files")} found · {Sizes.Format(items.Sum(item => item.Bytes))}"
+        int files = foundFiles, registry = foundRegistry;
+        return $"{files:N0} {(files == 1 ? "file" : "files")} found · {Sizes.Format(foundBytes)}"
             + (registry > 0 ? $" · {registry:N0} app {(registry == 1 ? "entry" : "entries")}" : "")
-            + (recycleBin ? " · Recycle Bin" : "");
+            + (foundRecycleBin ? " · Recycle Bin" : "");
     }
 
     internal void ApplyPrimaryAppearance(bool destructive)
@@ -650,7 +726,7 @@ public partial class MainWindow : Window
         PrimaryButton.BorderThickness = new Thickness(destructive ? 1 : 0);
         if (destructive) PrimaryButton.SetResourceReference(ForegroundProperty, "CleanTextBrush");
         else PrimaryButton.SetResourceReference(ForegroundProperty, "MutedBrush");
-        Motion.SetAccent(PrimaryButton, destructive ? (Color)ColorConverter.ConvertFromString("#FF795C") : (Color)Application.Current.Resources["PrimaryAccentColor"]);
+        Motion.SetAccent(PrimaryButton, destructive ? (Color)ColorConverter.ConvertFromString(SafetyPalette.Danger(false)) : (Color)Application.Current.Resources["PrimaryAccentColor"]);
         Motion.SetGlow(PrimaryButton, destructive ? 0.13 : 0);
         Motion.SetOuterGlow(PrimaryButton, destructive);
         Motion.SetHoverForeground(PrimaryButton, destructive ? null : (Brush)Application.Current.Resources["TextBrush"]);
@@ -660,7 +736,7 @@ public partial class MainWindow : Window
     {
         bool selected = SelectAllBox.IsChecked == true;
         batchSelection = true;
-        try { foreach (var item in items.ToArray()) item.Selected = selected; }
+        try { foreach (var category in Categories) if (category.HasFiles) category.Selected = selected; }
         finally { batchSelection = false; }
         RefreshSelection();
     }
@@ -668,14 +744,8 @@ public partial class MainWindow : Window
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
         ToggleTheme();
-        try
-        {
-            string directory = Path.GetDirectoryName(settingsPath)!;
-            Directory.CreateDirectory(directory);
-            if (CleanupEngine.SafePath(directory, directory))
-                File.WriteAllText(settingsPath, JsonSerializer.Serialize(new Preferences(light)));
-        }
-        catch { }
+        prefs.Light = light;
+        SavePreferences();
     }
 
     internal void ToggleTheme() { light = !light; ApplyTheme(animate: true); }
@@ -690,24 +760,23 @@ public partial class MainWindow : Window
         for (int i = 0; i < keys.Length; i++) Set(keys[i], colors[i]);
         Set("ModalShadeBrush", light ? "#65E4EAF0" : "#750C1016");
         Set("SafetyGreenBrush", SafetyPalette.Text(SafetyLevel.Safe, light));
-        Set("CleanTextBrush", light ? "#B54428" : "#FF795C");
+        Set("CleanTextBrush", SafetyPalette.Danger(light));
         Set("CleanFillBrush", "#08FF795C");
         foreach (var category in Categories) category.SetTheme(light);
         ThemeSunCore.Opacity = light ? 1 : 0.3;
         ThemeSunRays.Opacity = light ? 1 : 0.55;
         ThemeButton.ToolTip = light ? "Switch to dark theme" : "Switch to light theme";
         ThemeButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, light ? "Light theme. Switch to dark theme" : "Dark theme. Switch to light theme");
-        SettingsLightBox.IsChecked = light;
-        AppearanceSummary.Text = light ? "Light theme" : "Dark theme";
         // One primary accent per theme (Cyan in Dark, soft blue in Light). The gauge, accent text, glows and Safe accents all read it,
         // so they stay identical to each other; TealBrush/TealTextBrush ease with the theme like every other palette brush.
         string accent = SafetyPalette.Accent(light);
         Application.Current.Resources["PrimaryAccentColor"] = (Color)ColorConverter.ConvertFromString(accent);
         Set("TealBrush", accent);
         Set("TealTextBrush", accent);
-        Set("AccentHoverBrush", light ? "#3A66AE" : "#80E0E6");
+        Set("AccentHoverBrush", light ? "#3A66AE" : "#B5EEFB");
+        Set("MeterWarnBrush", SafetyPalette.Text(SafetyLevel.Review, light));
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
-        if (!busy) ApplyPrimaryAppearance(CanClean && items.Any(item => item.Selected));
+        if (!busy) ApplyPrimaryAppearance(CanClean && SelectedCount > 0);
     }
 
     private void About_Click(object sender, RoutedEventArgs e)
@@ -878,6 +947,7 @@ public partial class MainWindow : Window
     {
         if (windowsSettingsBusy) { e.Cancel = true; return; }
         ClearUpdateSession();
+        StopBoostWork();
         if (!busy || closing) return;
         e.Cancel = true;
         cancellation?.Cancel();
@@ -887,5 +957,4 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private sealed record Preferences(bool Light);
 }

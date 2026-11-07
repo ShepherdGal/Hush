@@ -44,12 +44,7 @@ internal static class ThemeMotionChecks
                     var roleFrames = roles.ToDictionary(key => key, _ => new List<Color>());
                     Color target = (Color)ColorConverter.ConvertFromString(light ? "#EFF1F5" : "#11151B");
                     Require(window.IsLightTheme != light, "Theme fixture alternates actual directions");
-                    if (page == "Settings")
-                    {
-                        var box = (CheckBox)window.FindName("SettingsLightBox"); box.IsChecked = light;
-                        box.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-                    }
-                    else Click("ThemeButton");
+                    Click("ThemeButton");
                     Color immediate = Backdrop();
                     Require(immediate == start, $"Theme switching must start from displayed pixels instead of snapping the background ({page}, {start} -> {immediate})");
                     var samples = new List<Color>();
@@ -74,7 +69,7 @@ internal static class ThemeMotionChecks
                     foreach (string role in roles)
                         Require(roleFrames[role].Distinct().Count() >= 4 && roleFrames[role].Any(color => color != roleStarts[role] && color != Resource(role)),
                             "Surfaces, headings, support text and accents share gradual palette motion");
-                    Color accent = (Color)ColorConverter.ConvertFromString(light ? "#4C7BC8" : "#3CCFD9");
+                    Color accent = (Color)ColorConverter.ConvertFromString(light ? "#4C7BC8" : "#7FE0F6");
                     Require((Color)Application.Current.Resources["PrimaryAccentColor"] == accent
                         && Resource("TealTextBrush") == accent && Resource("SafetyGreenBrush") == accent
                         && ((SolidColorBrush)Application.Current.Resources["TealBrush"]).Color == accent,

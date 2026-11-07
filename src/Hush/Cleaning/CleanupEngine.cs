@@ -13,34 +13,38 @@ namespace Hush;
 internal sealed class CleanupEngine
 {
     private const string AppPaths = @"Software\Microsoft\Windows\CurrentVersion\App Paths";
-    private const int CandidateLimit = 150000;
     internal static string DataDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hush");
     // Targets (and the delete-time lookup of the approved target for an item) are built on first use: the default list
     // looks at the disk, which must not slow window startup, and the lookup is never a per-file scan of the list.
     private readonly Lazy<IReadOnlyList<CleanupTarget>> targetSource;
-    private readonly Lazy<Dictionary<string, CleanupTarget>> approvedSource;
+    private readonly Lazy<Dictionary<string, Approved>> approvedSource;
     private IReadOnlyList<CleanupTarget> targets => targetSource.Value;
-    private Dictionary<string, CleanupTarget> approved => approvedSource.Value;
+    private Dictionary<string, Approved> approved => approvedSource.Value;
     private readonly bool includeRegistry;
     private readonly IRecycleBin? recycleBin;
+    private readonly ISystemTools? systemTools;
     private readonly string dataDirectory;
     private readonly ProcessGate processes = new();
 
-    public CleanupEngine() : this(new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets), true, null, new ShellRecycleBin()) { }
-    internal CleanupEngine(IReadOnlyList<CleanupTarget> targets, bool includeRegistry = false, string? dataDirectory = null, IRecycleBin? recycleBin = null)
-        : this(new Lazy<IReadOnlyList<CleanupTarget>>(targets), includeRegistry, dataDirectory, recycleBin) { }
-    private CleanupEngine(Lazy<IReadOnlyList<CleanupTarget>> targetSource, bool includeRegistry, string? dataDirectory, IRecycleBin? recycleBin)
+    // A target the engine will delete from, with its wildcards parsed once instead of once per file.
+    private sealed record Approved(CleanupTarget Target, string[]? Patterns);
+
+    public CleanupEngine() : this(new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets), true, null, new ShellRecycleBin(), new WindowsSystemTools()) { }
+    internal CleanupEngine(IReadOnlyList<CleanupTarget> targets, bool includeRegistry = false, string? dataDirectory = null, IRecycleBin? recycleBin = null, ISystemTools? systemTools = null)
+        : this(new Lazy<IReadOnlyList<CleanupTarget>>(targets), includeRegistry, dataDirectory, recycleBin, systemTools) { }
+    private CleanupEngine(Lazy<IReadOnlyList<CleanupTarget>> targetSource, bool includeRegistry, string? dataDirectory, IRecycleBin? recycleBin, ISystemTools? systemTools)
     {
         this.targetSource = targetSource;
         this.includeRegistry = includeRegistry;
         this.recycleBin = recycleBin;
+        this.systemTools = systemTools;
         this.dataDirectory = dataDirectory ?? DataDirectory;
         approvedSource = new(() =>
         {
-            var lookup = new Dictionary<string, CleanupTarget>(StringComparer.OrdinalIgnoreCase);
+            var lookup = new Dictionary<string, Approved>(StringComparer.OrdinalIgnoreCase);
             foreach (var target in targetSource.Value)
             {
-                try { lookup.TryAdd(ApprovalKey(Path.GetFullPath(target.Root), target.Kind, target.Group), target); }
+                try { lookup.TryAdd(ApprovalKey(Path.GetFullPath(target.Root), target.Kind, target.Group), new(target, Patterns(target.Pattern))); }
                 catch (ArgumentException) { } // An unresolvable location can never be scanned or cleaned.
             }
             return lookup;
@@ -63,6 +67,7 @@ internal sealed class CleanupEngine
         const string dumps = "*.dmp;*.hdmp;*.mdmp";
         var list = new List<CleanupTarget>
         {
+            // ----- Recommended -----
             new(Path.GetTempPath(), "User temp", CleanupKind.Temp, Days(2), Category: "Temp"),
             new(Path.Combine(windows, "Temp"), "Windows temp", CleanupKind.Temp, Days(7), Category: "Temp"),
             // Explorer keeps these open, so only unlocked files are listed.
@@ -73,11 +78,6 @@ internal sealed class CleanupEngine
             new(Path.Combine(local, "Microsoft", "Windows", "WER", "ReportQueue"), "Windows diagnostics", CleanupKind.Junk, Days(30), "*.wer;" + dumps, Category: "Junk"),
             new(Path.Combine(common, "Microsoft", "Windows", "WER", "ReportArchive"), "Windows diagnostics", CleanupKind.Junk, Days(30), "*.wer;" + dumps, Category: "Junk", DeletableOnly: true),
             new(Path.Combine(common, "Microsoft", "Windows", "WER", "ReportQueue"), "Windows diagnostics", CleanupKind.Junk, Days(30), "*.wer;" + dumps, Category: "Junk", DeletableOnly: true),
-            // Crash reports and memory dumps (never anything but dump files).
-            new(Path.Combine(local, "CrashDumps"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash"),
-            new(Path.Combine(windows, "Minidump"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash", DeletableOnly: true),
-            new(Path.Combine(windows, "LiveKernelReports"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash", DeletableOnly: true),
-            new(windows, "Crash reports", CleanupKind.Temp, Days(14), "MEMORY.DMP", Recursive: false, Category: "Crash", DeletableOnly: true),
             // Windows Update downloads, update logs, Delivery Optimization and setup logs (Review, opt-in, usually need administrator rights).
             new(Path.Combine(windows, "SoftwareDistribution", "Download"), "Windows Update downloads", CleanupKind.Temp, Days(14), Category: "Update", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "WindowsUpdate"), "Windows Update logs", CleanupKind.Temp, Days(14), "*.etl", Category: "Update", DeletableOnly: true),
@@ -85,45 +85,64 @@ internal sealed class CleanupEngine
                 "Delivery Optimization cache", CleanupKind.Cache, Days(7), Category: "Delivery", DeletableOnly: true),
             new(Path.Combine(windows, "SoftwareDistribution", "DeliveryOptimization"), "Delivery Optimization cache", CleanupKind.Cache, Days(7), Category: "Delivery", DeletableOnly: true),
             new(Path.Combine(windows, "Panther"), "Windows setup logs", CleanupKind.Temp, Days(30), "*.log;*.etl", Category: "Setup", DeletableOnly: true),
-            // Windows servicing, DISM and diagnostic-trace logs (Review, opt-in, protected).
+            // Windows servicing and DISM logs (Review, opt-in, protected). The Event Log, security logs and boot logs are never listed.
             new(Path.Combine(windows, "Logs", "CBS"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log;*.cab", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "DISM"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "MoSetup"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log;*.etl", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Debug"), "Windows debug logs", CleanupKind.Temp, Days(30), "*.log", Recursive: false, Category: "SystemLogs", DeletableOnly: true),
-            new(Path.Combine(common, "Microsoft", "Diagnosis", "ETLLogs"), "Windows diagnostic traces", CleanupKind.Temp, Days(30), "*.etl", Category: "SystemLogs", DeletableOnly: true),
-            // Leftover graphics-driver installer extractions at the drive root (Review, opt-in, protected).
+            // ----- Additional system items -----
+            // Crash reports and memory dumps (never anything but dump files).
+            new(Path.Combine(local, "CrashDumps"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash"),
+            new(Path.Combine(windows, "Minidump"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash", DeletableOnly: true),
+            new(Path.Combine(windows, "LiveKernelReports"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash", DeletableOnly: true),
+            new(windows, "Crash reports", CleanupKind.Temp, Days(14), "MEMORY.DMP", Recursive: false, Category: "Crash", DeletableOnly: true),
+            // Leftover installer extractions at the drive root (Review, opt-in, protected).
             new(Path.Combine(systemDrive, "NVIDIA"), "Driver installer leftovers", CleanupKind.Temp, Days(30), Category: "Installer", DeletableOnly: true),
             new(Path.Combine(systemDrive, "AMD"), "Driver installer leftovers", CleanupKind.Temp, Days(30), Category: "Installer", DeletableOnly: true),
-            // Usage traces: only the shortcuts Windows and Office keep to list recent files. The files themselves are never touched.
-            new(Path.Combine(roaming, "Microsoft", "Windows", "Recent"), "Recent item shortcuts", CleanupKind.Temp, Days(7), "*.lnk", Recursive: false, Category: "Traces"),
-            new(Path.Combine(roaming, "Microsoft", "Office", "Recent"), "Recent item shortcuts", CleanupKind.Temp, Days(7), "*.lnk", Recursive: false, Category: "Traces"),
             // Shortcuts whose application and install folder are verified missing.
             new(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Broken shortcuts", CleanupKind.Shortcut, Days(7), "*.lnk", Recursive: false, Category: "Shortcuts"),
             new(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Broken shortcuts", CleanupKind.Shortcut, Days(7), "*.lnk", Category: "Shortcuts"),
             new(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), "Broken shortcuts", CleanupKind.Shortcut, Days(7), "*.lnk", Recursive: false, Category: "Shortcuts", DeletableOnly: true),
             new(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "Broken shortcuts", CleanupKind.Shortcut, Days(7), "*.lnk", Category: "Shortcuts", DeletableOnly: true),
+            // ----- Computer usage traces -----
+            // Only the shortcuts Windows and Office keep to list recent files. The files themselves, and jump lists, are never touched.
+            new(Path.Combine(roaming, "Microsoft", "Windows", "Recent"), "Recent item shortcuts", CleanupKind.Temp, TimeSpan.Zero, "*.lnk", Recursive: false, Category: "RecentAccess"),
+            new(Path.Combine(roaming, "Microsoft", "Office", "Recent"), "Office recent documents", CleanupKind.Temp, TimeSpan.Zero, "*.lnk", Recursive: false, Category: "RecentDocs"),
+            // Diagnostic trace files only; never the Windows Event Log (.evtx) and never security logs.
+            new(Path.Combine(common, "Microsoft", "Diagnosis", "ETLLogs"), "Windows diagnostic traces", CleanupKind.Temp, Days(7), "*.etl", Category: "EventTrace", DeletableOnly: true),
+            new(Path.Combine(windows, "Logs", "SIH"), "Windows update trace logs", CleanupKind.Temp, Days(7), "*.etl", Category: "EventTrace", DeletableOnly: true),
         };
         // Adds one target per named sub-folder of baseDir that exists today. The application must be closed (processes) for its cache.
-        void AddFolders(string category, string group, CleanupKind kind, int days, string baseDir, string[] subfolders, string[]? processes = null, string? pattern = null)
+        void AddFolders(string category, string group, CleanupKind kind, int days, string baseDir, string[] subfolders, string[]? processes = null,
+            string? pattern = null, bool deletableOnly = false, bool recursive = true)
         {
             if (!Directory.Exists(baseDir)) return;
             foreach (var sub in subfolders)
             {
                 string folder = Path.Combine(baseDir, sub);
-                if (Directory.Exists(folder)) list.Add(new(folder, group, kind, Days(days), pattern, processes, Category: category));
+                if (Directory.Exists(folder)) list.Add(new(folder, group, kind, Days(days), pattern, processes, recursive, category, deletableOnly));
             }
         }
-        List<string> Folders(string parent)
+        List<string> Folders(string parent, string pattern = "*")
         {
-            try { return Directory.Exists(parent) ? Directory.EnumerateDirectories(parent).ToList() : []; }
+            try { return Directory.Exists(parent) ? Directory.EnumerateDirectories(parent, pattern).ToList() : []; }
             catch (Exception ex) when (IsFileError(ex)) { return []; }
         }
-        // Shader caches (Windows, NVIDIA, AMD, Intel) are rebuilt by the graphics driver on demand.
+        // Legacy Internet Explorer / WebView cache folders only. INetCache also holds Outlook and Word attachment copies (Content.Outlook,
+        // Content.Word) and, on some PCs, whole application data folders, so it is never cleaned as a whole.
+        AddFolders("InternetCache", "Temporary Internet Files", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft", "Windows", "INetCache"),
+            ["IE", "Content.IE5", Path.Combine("Low", "Content.IE5")]);
+        // Old CHKDSK fragments at the drive root (found.000 ...).
+        foreach (var folder in Folders(systemDrive, "found.*"))
+            list.Add(new(folder, "Old CHKDSK files", CleanupKind.Temp, Days(30), "*.chk", Category: "Installer", DeletableOnly: true));
+        // Shader caches are rebuilt by the graphics driver on demand.
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, local, ["D3DSCache"]);
-        AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA"), ["DXCache", "GLCache", "ComputeCache"]);
-        AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA Corporation"), ["NV_Cache"]);
-        AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "AMD"), ["DxCache", "DxcCache", "GLCache"]);
-        AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "Intel"), ["ShaderCache"]);
+        AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft"), ["DirectX Shader Cache"]);
+        AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA"), ["DXCache", "GLCache", "ComputeCache"]);
+        AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA Corporation"), ["NV_Cache"]);
+        AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(common, "NVIDIA Corporation"), ["NV_Cache"], deletableOnly: true);
+        AddFolders("GpuShader", "AMD shader cache", CleanupKind.Cache, 7, Path.Combine(local, "AMD"), ["DxCache", "DxcCache", "GLCache", "VkCache"]);
+        AddFolders("GpuShader", "Intel shader cache", CleanupKind.Cache, 7, Path.Combine(local, "Intel"), ["ShaderCache"]);
         // Windows apps (Store/MSIX) keep their own temporary state and web cache inside each package folder.
         foreach (var package in Folders(Path.Combine(local, "Packages")))
         {
@@ -132,48 +151,68 @@ internal sealed class CleanupEngine
         }
         AddFolders("Cache", "Microsoft Store cache", CleanupKind.Cache, 7, Path.Combine(local, "Packages", "Microsoft.WindowsStore_8wekyb3d8bbwe"), ["LocalCache"], ["WinStore.App"]);
         AddFolders("Cache", "Remote Desktop cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft", "Terminal Server Client"), ["Cache"], pattern: "*.bmc;*.bin");
-        // Chromium browsers; group names stay stable (Brave-Browser) for existing audit logs.
-        foreach (var browser in new[] { (Path.Combine("Google", "Chrome", "User Data"), "Chrome", "chrome"),
-            (Path.Combine("Microsoft", "Edge", "User Data"), "Edge", "msedge"),
-            (Path.Combine("BraveSoftware", "Brave-Browser", "User Data"), "Brave-Browser", "brave"),
-            (Path.Combine("Vivaldi", "User Data"), "Vivaldi", "vivaldi") })
+        // Chromium browsers. Per profile: rebuildable caches (Review), history files (Review) and the cookie database (Advanced). Passwords
+        // ("Login Data"), bookmarks, saved sessions, autofill and extensions are never listed. Group names stay stable (Brave-Browser) for audit logs.
+        const string chromiumHistory = "History;History-journal;Visited Links;Top Sites;Top Sites-journal;Network Action Predictor;Network Action Predictor-journal;Shortcuts;Shortcuts-journal";
+        foreach (var browser in new[] { (Path.Combine("Google", "Chrome", "User Data"), "Chrome", "chrome", "BrowserChrome"),
+            (Path.Combine("Microsoft", "Edge", "User Data"), "Edge", "msedge", "BrowserEdge"),
+            (Path.Combine("BraveSoftware", "Brave-Browser", "User Data"), "Brave-Browser", "brave", "BrowserOther"),
+            (Path.Combine("Vivaldi", "User Data"), "Vivaldi", "vivaldi", "BrowserOther") })
         {
             string userData = Path.Combine(local, browser.Item1);
             if (!Directory.Exists(userData) || !SafePath(userData, userData)) continue;
-            AddFolders("Cache", browser.Item2 + " cache", CleanupKind.Cache, 7, userData, ["GrShaderCache", "ShaderCache", "DawnCache", "GraphiteDawnCache"], [browser.Item3]);
+            AddFolders(browser.Item4, browser.Item2 + " cache", CleanupKind.Cache, 7, userData, ["GrShaderCache", "ShaderCache", "DawnCache", "GraphiteDawnCache"], [browser.Item3]);
             foreach (var profile in Folders(userData))
             {
                 string name = Path.GetFileName(profile);
                 if (name != "Default" && !name.StartsWith("Profile ", StringComparison.Ordinal)) continue;
-                AddFolders("Cache", browser.Item2 + " cache", CleanupKind.Cache, 7, profile,
+                AddFolders(browser.Item4, browser.Item2 + " cache", CleanupKind.Cache, 7, profile,
                     ["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "Media Cache"], [browser.Item3]);
+                list.Add(new(profile, browser.Item2 + " history", CleanupKind.Junk, TimeSpan.Zero, chromiumHistory, [browser.Item3], false, "BrowserHistory"));
+                AddFolders("BrowserCookies", browser.Item2 + " cookies", CleanupKind.Junk, 0, profile, ["Network"], [browser.Item3], "Cookies;Cookies-journal", recursive: false);
             }
         }
-        AddFolders("Cache", "Opera cache", CleanupKind.Cache, 7, Path.Combine(local, "Opera Software", "Opera Stable"), ["Cache", "Code Cache", "GPUCache"], ["opera"]);
-        AddFolders("Cache", "Opera cache", CleanupKind.Cache, 7, Path.Combine(local, "Opera Software", "Opera Stable", "Default"), ["Cache", "Code Cache", "GPUCache"], ["opera"]);
+        foreach (var opera in new[] { "Opera Stable", "Opera GX Stable" })
+        {
+            string root = Path.Combine(local, "Opera Software", opera);
+            AddFolders("BrowserOther", "Opera cache", CleanupKind.Cache, 7, root, ["Cache", "Code Cache", "GPUCache"], ["opera"]);
+            AddFolders("BrowserOther", "Opera cache", CleanupKind.Cache, 7, Path.Combine(root, "Default"), ["Cache", "Code Cache", "GPUCache"], ["opera"]);
+        }
         foreach (var profile in Folders(Path.Combine(local, "Mozilla", "Firefox", "Profiles")))
-            AddFolders("Cache", "Firefox cache", CleanupKind.Cache, 7, profile, ["cache2"], ["firefox"]);
+            AddFolders("BrowserFirefox", "Firefox cache", CleanupKind.Cache, 7, profile, ["cache2", "startupCache", "thumbnails", "jumpListCache", "OfflineCache"], ["firefox"]);
+        foreach (var profile in Folders(Path.Combine(roaming, "Mozilla", "Firefox", "Profiles")))
+            if (Directory.Exists(profile))
+                list.Add(new(profile, "Firefox cookies", CleanupKind.Junk, TimeSpan.Zero, "cookies.sqlite;cookies.sqlite-wal;cookies.sqlite-shm", ["firefox"], false, "BrowserCookies"));
+        // NVIDIA app: driver installers it downloaded (the installed driver is not affected).
+        AddFolders("NvidiaApp", "NVIDIA installer downloads", CleanupKind.Cache, 30, Path.Combine(common, "NVIDIA Corporation"), ["Downloader"], deletableOnly: true);
         // Chat, editor and launcher apps built on web engines: their caches rebuild on next start.
         AddFolders("Cache", "Discord cache", CleanupKind.Cache, 7, Path.Combine(roaming, "discord"), ["Cache", "Code Cache", "GPUCache"], ["discord"]);
         AddFolders("Cache", "Slack cache", CleanupKind.Cache, 7, Path.Combine(roaming, "Slack"), ["Cache", "Code Cache", "GPUCache"], ["slack"]);
         AddFolders("Cache", "Teams cache", CleanupKind.Cache, 7, Path.Combine(roaming, "Microsoft", "Teams"), ["Cache", "blob_storage", "GPUCache", "tmp", "Code Cache"], ["teams"]);
         AddFolders("Cache", "VS Code cache", CleanupKind.Cache, 7, Path.Combine(roaming, "Code"), ["Cache", "CachedData", "CachedExtensionVSIXs", "Code Cache", "GPUCache"], ["code"]);
         AddFolders("Cache", "Steam web cache", CleanupKind.Cache, 7, Path.Combine(local, "Steam"), ["htmlcache"], ["steam", "steamwebhelper"]);
+        foreach (var web in Folders(Path.Combine(local, "EpicGamesLauncher", "Saved"), "webcache*"))
+            list.Add(new(web, "Epic Games Launcher web cache", CleanupKind.Cache, Days(7), null, ["EpicGamesLauncher", "EpicWebHelper"], true, "Cache"));
         // Developer and creator caches: rebuildable, but re-downloading or re-indexing costs time, so they are Review (opt-in).
-        AddFolders("DevCache", "NuGet cache", CleanupKind.Cache, 14, Path.Combine(local, "NuGet"), ["v3-cache", "plugins-cache"]);
+        AddFolders("DevCache", "NuGet cache", CleanupKind.Cache, 14, Path.Combine(local, "NuGet"), ["v3-cache", "plugins-cache", "Cache"]);
         AddFolders("DevCache", "npm cache", CleanupKind.Cache, 14, local, ["npm-cache"]);
         AddFolders("DevCache", "pip cache", CleanupKind.Cache, 14, Path.Combine(local, "pip"), ["Cache"]);
         AddFolders("DevCache", "Yarn cache", CleanupKind.Cache, 14, Path.Combine(local, "Yarn"), ["Cache"]);
+        AddFolders("DevCache", "Go build cache", CleanupKind.Cache, 14, local, ["go-build"]);
         foreach (var ide in Folders(Path.Combine(local, "JetBrains")))
             AddFolders("DevCache", "JetBrains caches", CleanupKind.Cache, 14, ide, ["caches"]);
         foreach (var studio in Folders(Path.Combine(local, "Google")).Where(path => Path.GetFileName(path).StartsWith("AndroidStudio", StringComparison.Ordinal)))
             AddFolders("DevCache", "Android Studio caches", CleanupKind.Cache, 14, studio, ["caches"]);
+        foreach (var version in Folders(Path.Combine(local, "Microsoft", "VisualStudio")))
+            AddFolders("DevCache", "Visual Studio caches", CleanupKind.Cache, 14, version, ["ComponentModelCache"], ["devenv"]);
         AddFolders("DevCache", "Adobe media cache", CleanupKind.Cache, 14, Path.Combine(roaming, "Adobe", "Common"),
             ["Media Cache Files", "Media Cache", "Peak Files"], ["Adobe Premiere Pro", "AfterFX", "Adobe Media Encoder", "Audition"]);
+        // Application usage logs written by the .NET runtime (which programs ran); the programs themselves are untouched.
+        AddFolders("UsageHistory", ".NET usage logs", CleanupKind.Temp, 0, Path.Combine(local, "Microsoft"), ["CLR_v4.0\\UsageLogs", "CLR_v4.0_32\\UsageLogs"], pattern: "*.log", recursive: false);
         return list;
     }
 
-    private readonly record struct Candidate(string Path, bool IsDirectory, long Length, DateTime ModifiedUtc, DateTime CreatedUtc);
+    private readonly record struct Raw(string? Name, long Length, long Modified, long Created, bool IsDirectory);
 
     private static bool Matches(string[]? patterns, ReadOnlySpan<char> name)
     {
@@ -185,23 +224,55 @@ internal sealed class CleanupEngine
 
     private static string[]? Patterns(string? pattern) => pattern?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    internal ScanResult Scan(IProgress<ScanProgress>? progress, CancellationToken token)
+    private static string Normalize(string root) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+
+    // Where two targets overlap, the most specific one owns the files: an outer target never enters the root of an inner one, and targets
+    // with the same root share one "already counted" set. Nothing is remembered for targets that overlap nothing, so a scan of millions
+    // of files holds no per-path set.
+    private static (HashSet<string>?[] Skip, HashSet<string>?[] Seen) PlanOverlaps(IReadOnlyList<CleanupTarget> list)
     {
+        var skip = new HashSet<string>?[list.Count];
+        var seen = new HashSet<string>?[list.Count];
+        string?[] roots = new string?[list.Count];
+        for (int i = 0; i < list.Count; i++) { try { roots[i] = Normalize(list[i].Root); } catch (ArgumentException) { } }
+        var shared = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (roots[i] == null) continue;
+            for (int j = 0; j < list.Count; j++)
+            {
+                if (i == j || roots[j] == null) continue;
+                if (string.Equals(roots[i], roots[j], StringComparison.OrdinalIgnoreCase))
+                { if (!shared.TryGetValue(roots[i]!, out var set)) shared[roots[i]!] = set = new(StringComparer.OrdinalIgnoreCase); seen[i] = set; }
+                else if (roots[j]!.StartsWith(roots[i] + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    (skip[i] ??= new(StringComparer.OrdinalIgnoreCase)).Add(roots[j]!);
+            }
+        }
+        return (skip, seen);
+    }
+
+    internal ScanResult Scan(IProgress<ScanProgress>? progress, CancellationToken token, ScanOptions? options = null)
+    {
+        options ??= new();
+        using var background = options.Background ? LowResourceMode.BackgroundScope() : null;
+        IReadOnlyList<CleanupTarget> active = options.Include == null ? targets : targets.Where(options.Include).ToList();
         List<CleanupItem> found = [];
-        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
         int inaccessible = 0, busy = 0, examined = 0;
-        long bytes = 0;
-        bool limited = false;
-        int stages = Math.Max(1, targets.Count + (includeRegistry ? 1 : 0) + (recycleBin != null ? 1 : 0));
+        long fileCount = 0, bytes = 0;
+        bool countOnly = options.CountOnly;
+        bool extras = !countOnly && options.Include == null;
+        int stages = Math.Max(1, active.Count + (extras && includeRegistry ? 1 : 0) + (extras && recycleBin != null ? 1 : 0) + (extras && systemTools != null ? 1 : 0));
         progress?.Report(new("Preparing scan", 0, 0, 0, 0));
+        var (skipRoots, seenSets) = PlanOverlaps(active);
         // One enumeration pass per directory returns size, times and attributes, so no file is stat'ed twice.
         // Reparse points and system files are never returned; hidden files are (the default would skip them).
-        var options = new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = false, ReturnSpecialDirectories = false,
+        var enumeration = new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = false, ReturnSpecialDirectories = false,
             AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.System };
-        for (int targetIndex = 0; targetIndex < targets.Count; targetIndex++)
+        var reportClock = Stopwatch.StartNew();
+        for (int targetIndex = 0; targetIndex < active.Count; targetIndex++)
         {
-            if (token.IsCancellationRequested || limited) break;
-            var target = targets[targetIndex];
+            if (token.IsCancellationRequested) break;
+            var target = active[targetIndex];
             double start = (double)targetIndex / stages;
             double end = (double)(targetIndex + 1) / stages;
             progress?.Report(new(target.Group, examined, found.Count, bytes, start));
@@ -209,120 +280,120 @@ internal sealed class CleanupEngine
             { progress?.Report(new(target.Group, examined, found.Count, bytes, end)); continue; }
             if (BrowserRunning(target, fresh: true))
             { busy++; progress?.Report(new(target.Group, examined, found.Count, bytes, end)); continue; }
-            // Discover one location at a time, then inspect a known number of files.
-            // Progress measures completed locations and files within the current location, not elapsed time.
             string fullRoot = Path.GetFullPath(target.Root);
             string[]? patterns = Patterns(target.Pattern);
-            DateTime cutoff = DateTime.UtcNow - target.MinimumAge;
-            List<Candidate> files = [];
-            var reportClock = Stopwatch.StartNew();
-            bool discoveryLimited = false;
-            // Live counting: files in a plain location are already final candidates when discovered (deduplicated here),
-            // so they are counted immediately. Protected and shortcut locations are counted only once verified.
-            bool plain = target.Kind != CleanupKind.Shortcut && !target.DeletableOnly;
-            int examinedBefore = examined;
-            // Discovery has no known total, so it fills up to half of this location's share on a saturating curve;
-            // inspecting the discovered files fills the other half. The gauge therefore moves while files are found.
-            double DiscoveryFraction() => start + (end - start) * 0.5 * (examined - examinedBefore) / (examined - examinedBefore + 3000.0);
-            int Live(int pendingCandidates) => Math.Min(CandidateLimit, found.Count + (plain ? pendingCandidates : 0));
+            long cutoff = (DateTime.UtcNow - target.MinimumAge).Ticks;
+            var skipSet = skipRoots[targetIndex];
+            var seenSet = seenSets[targetIndex];
+            string[]? excludedNames = target.ExcludeFolders;
+            bool selected = SelectedByDefault(target);
+            // Only locations that need the full path of every file (protected probe, shortcut check, duplicate guard) pay for building it.
+            bool needPath = target.DeletableOnly || target.Kind == CleanupKind.Shortcut || seenSet != null;
+            bool wantName = !countOnly || needPath;
+            int seenInTarget = 0;
+            bool firstReported = false;
+            // Discovery has no known total, so the target's share of the gauge fills on a saturating curve as files are found.
+            double Fraction() => start + (end - start) * seenInTarget / (seenInTarget + 4000.0);
+            void Report(string label)
+            {
+                progress?.Report(new(label, examined, found.Count, bytes, Fraction()));
+                reportClock.Restart();
+            }
             Stack<string> pending = new();
             pending.Push(target.Root);
-            while (pending.Count > 0 && !token.IsCancellationRequested && !discoveryLimited)
+            while (pending.Count > 0 && !token.IsCancellationRequested)
             {
                 string directory = pending.Pop();
                 if (!directory.StartsWith(Path.TrimEndingDirectorySeparator(target.Root), StringComparison.OrdinalIgnoreCase)) continue;
                 try
                 {
-                    var entries = new FileSystemEnumerable<Candidate>(directory,
-                        (ref FileSystemEntry entry) => new Candidate(entry.ToFullPath(), entry.IsDirectory, entry.IsDirectory ? 0 : entry.Length,
-                            entry.LastWriteTimeUtc.UtcDateTime, entry.CreationTimeUtc.UtcDateTime), options)
+                    var entries = new FileSystemEnumerable<Raw>(directory,
+                        (ref FileSystemEntry entry) => entry.IsDirectory
+                            ? new Raw(entry.FileName.ToString(), 0, 0, 0, true)
+                            : new Raw(wantName ? entry.FileName.ToString() : null, entry.Length, entry.LastWriteTimeUtc.UtcTicks, entry.CreationTimeUtc.UtcTicks, false), enumeration)
                     {
-                        ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory
-                            ? target.Recursive
-                            : Matches(patterns, entry.FileName) && entry.LastWriteTimeUtc.UtcDateTime < cutoff && entry.CreationTimeUtc.UtcDateTime < cutoff
+                        ShouldIncludePredicate = (ref FileSystemEntry entry) =>
+                        {
+                            if (entry.IsDirectory)
+                            {
+                                if (!target.Recursive) return false;
+                                if (excludedNames != null)
+                                    foreach (string excluded in excludedNames)
+                                        if (entry.FileName.Equals(excluded, StringComparison.OrdinalIgnoreCase)) return false;
+                                return true;
+                            }
+                            return Matches(patterns, entry.FileName) && entry.LastWriteTimeUtc.UtcTicks < cutoff && entry.CreationTimeUtc.UtcTicks < cutoff;
+                        }
                     };
-                    foreach (var entry in entries)
+                    foreach (var raw in entries)
                     {
                         if (token.IsCancellationRequested) break;
-                        examined++;
-                        if (entry.IsDirectory) { pending.Push(entry.Path); continue; }
-                        if (!seen.Add(entry.Path)) continue;
-                        files.Add(entry);
-                        if (files.Count >= 100000) { discoveryLimited = true; break; }
-                        // Report from inside a huge flat folder too, not only between folders.
-                        if ((files.Count & 127) == 0 && reportClock.ElapsedMilliseconds >= 40)
+                        examined++; seenInTarget++;
+                        if (raw.IsDirectory)
                         {
-                            progress?.Report(new("Discovering " + target.Group.ToLowerInvariant(), examined, Live(files.Count), bytes, DiscoveryFraction()));
-                            reportClock.Restart();
+                            string sub = Path.Combine(directory, raw.Name!);
+                            if (skipSet == null || !skipSet.Contains(sub)) pending.Push(sub);
+                            continue;
                         }
+                        try
+                        {
+                            string? full = null;
+                            if (needPath)
+                            {
+                                full = Path.Combine(directory, raw.Name!);
+                                if (seenSet != null && !seenSet.Add(full)) continue;
+                                if (target.DeletableOnly && !CanDelete(full)) continue;
+                            }
+                            string? shortcutTarget = null, shortcutHash = null;
+                            if (target.Kind == CleanupKind.Shortcut)
+                            {
+                                shortcutTarget = ShortcutProbe.MissingApplication(full!);
+                                if (shortcutTarget == null) continue;
+                                using var shortcut = new FileStream(full!, FileMode.Open, FileAccess.Read, FileShare.Read);
+                                shortcutHash = Convert.ToHexString(SHA256.HashData(shortcut));
+                            }
+                            fileCount++; bytes += raw.Length;
+                            if (!countOnly)
+                                found.Add(new CleanupItem { Folder = directory, FileName = raw.Name, Root = fullRoot, Group = target.Group,
+                                    Kind = target.Kind, CategoryId = target.Category, Bytes = raw.Length, ModifiedTicks = raw.Modified,
+                                    CreatedTicks = raw.Created, ShortcutTarget = shortcutTarget, ShortcutHash = shortcutHash, Selected = selected });
+                        }
+                        catch (Exception ex) when (IsFileError(ex)) { inaccessible++; }
+                        // Report the first file of a location right away, then from inside a huge flat folder too, not only between folders.
+                        if (!firstReported) { firstReported = true; Report("Discovering " + target.Group.ToLowerInvariant()); }
+                        else if ((seenInTarget & 127) == 0 && reportClock.ElapsedMilliseconds >= options.ReportIntervalMs)
+                            Report("Discovering " + target.Group.ToLowerInvariant());
                     }
                 }
                 catch (Exception ex) when (IsFileError(ex)) { if (!target.DeletableOnly) inaccessible++; }
-                if (reportClock.ElapsedMilliseconds >= 40)
-                {
-                    progress?.Report(new("Discovering " + target.Group.ToLowerInvariant(), examined, Live(files.Count), bytes, DiscoveryFraction()));
-                    reportClock.Restart();
-                }
+                if (reportClock.ElapsedMilliseconds >= options.ReportIntervalMs) Report("Discovering " + target.Group.ToLowerInvariant());
             }
-            for (int index = 0; index < files.Count && !token.IsCancellationRequested && !limited; index++)
-            {
-                try
-                {
-                    var candidate = files[index];
-                    if (!target.DeletableOnly || CanDelete(candidate.Path))
-                    {
-                        string? shortcutTarget = null, shortcutHash = null;
-                        bool verified = true;
-                        if (target.Kind == CleanupKind.Shortcut)
-                        {
-                            shortcutTarget = ShortcutProbe.MissingApplication(candidate.Path);
-                            verified = shortcutTarget != null;
-                            if (verified)
-                            {
-                                using var shortcut = new FileStream(candidate.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
-                                shortcutHash = Convert.ToHexString(SHA256.HashData(shortcut));
-                            }
-                        }
-                        if (verified)
-                        {
-                            found.Add(new CleanupItem { Path = candidate.Path, Root = fullRoot, Group = target.Group,
-                                Kind = target.Kind, CategoryId = target.Category, Bytes = candidate.Length, ModifiedUtc = candidate.ModifiedUtc,
-                                CreatedUtc = candidate.CreatedUtc, ShortcutTarget = shortcutTarget, ShortcutHash = shortcutHash,
-                                Selected = SelectedByDefault(target) });
-                            bytes += candidate.Length;
-                            if (found.Count >= CandidateLimit) limited = true;
-                        }
-                    }
-                }
-                catch (Exception ex) when (IsFileError(ex)) { inaccessible++; }
-                if (index == 0 || (index % 32 == 0 && reportClock.ElapsedMilliseconds >= 40) || index == files.Count - 1)
-                {
-                    progress?.Report(new(target.Group, examined, Live(files.Count - index - 1), bytes, start + (end - start) * (0.5 + 0.5 * (index + 1) / Math.Max(1, files.Count))));
-                    reportClock.Restart();
-                }
-            }
-            limited |= discoveryLimited;
-            if (!token.IsCancellationRequested && !limited) progress?.Report(new(target.Group, examined, found.Count, bytes, end));
+            if (!token.IsCancellationRequested) progress?.Report(new(target.Group, examined, found.Count, bytes, end));
         }
-        int nextStage = targets.Count;
-        if (includeRegistry && !token.IsCancellationRequested && !limited)
+        int nextStage = active.Count;
+        if (extras && includeRegistry && !token.IsCancellationRequested)
         {
             progress?.Report(new("App registry leftovers", examined, found.Count, bytes, (double)nextStage++ / stages));
             ScanRegistry(found, token);
         }
-        if (recycleBin != null && !token.IsCancellationRequested && !limited)
+        if (extras && recycleBin != null && !token.IsCancellationRequested)
         {
             progress?.Report(new("Recycle Bin", examined, found.Count, bytes, (double)nextStage++ / stages));
             ScanRecycleBin(found);
         }
-        if (!token.IsCancellationRequested && !limited) progress?.Report(new("Complete", examined, found.Count, bytes, 1,
-            RegistryEntries: found.Count(item => item.Kind is CleanupKind.Registry or CleanupKind.RecycleBin)));
-        return new(found.OrderByDescending(x => x.Bytes).ToList(), inaccessible, busy, token.IsCancellationRequested, limited);
+        if (extras && systemTools != null && !token.IsCancellationRequested)
+        {
+            progress?.Report(new("Windows cleanup tools", examined, found.Count, bytes, (double)nextStage++ / stages));
+            ScanSystemTools(found, token);
+        }
+        if (!token.IsCancellationRequested) progress?.Report(new("Complete", examined, found.Count, bytes, 1,
+            RegistryEntries: found.Count(item => item.Kind is CleanupKind.Registry or CleanupKind.RecycleBin or CleanupKind.SystemTool)));
+        return new(found.OrderByDescending(x => x.Bytes).ToList(), inaccessible, busy, token.IsCancellationRequested, fileCount, bytes);
     }
 
-    // Only the Safe category is selected by default; Review, Caution and the Recycle Bin are always opt-in.
+    // Only the Safe category is selected by default; Review, Advanced and the Recycle Bin are always opt-in.
     private static bool SelectedByDefault(CleanupTarget target) =>
-        target.Kind is not (CleanupKind.Registry or CleanupKind.RecycleBin)
+        target.Kind is not (CleanupKind.Registry or CleanupKind.RecycleBin or CleanupKind.SystemTool)
         && ReviewCategory.SafetyOf(ReviewCategory.CategoryFor(target.Kind, target.Group, target.Category)) == SafetyLevel.Safe;
 
     // Read-only supported query (SHQueryRecycleBin); nothing is changed by scanning.
@@ -339,11 +410,44 @@ internal sealed class CleanupEngine
         catch (Exception ex) when (IsFileError(ex) || ex is COMException) { }
     }
 
+    // Read-only probe of the Windows tools that apply to this PC (Disk Cleanup, DISM, clipboard history). Always opt-in.
+    private void ScanSystemTools(List<CleanupItem> found, CancellationToken token)
+    {
+        try
+        {
+            foreach (var offer in systemTools!.Probe(token))
+                found.Add(new CleanupItem { Path = offer.Title, Root = "Windows tool", Group = offer.Title, Kind = CleanupKind.SystemTool, CategoryId = offer.CategoryId,
+                    Bytes = offer.Bytes, ItemCount = offer.ItemCount, ToolId = offer.ToolId, Detail = offer.Detail, Selected = false });
+        }
+        catch (Exception ex) when (IsFileError(ex) || ex is COMException or InvalidOperationException) { }
+    }
+
     // True when this user could open the file exclusively for deletion right now (the same open the delete uses).
     private static bool CanDelete(string path)
     {
         using SafeFileHandle handle = Native.CreateFile(path, 0x80010080, 0, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
         return !handle.IsInvalid;
+    }
+
+    // Free bytes on every fixed drive, as Windows reports them. Measured before and after a clean to show what the disk really gained.
+    internal static long FreeSpace()
+    {
+        long total = 0;
+        try
+        {
+            foreach (var drive in DriveInfo.GetDrives())
+                if (drive.DriveType == DriveType.Fixed && drive.IsReady) total += drive.AvailableFreeSpace;
+        }
+        catch (Exception ex) when (IsFileError(ex)) { }
+        return total;
+    }
+
+    private sealed class AuditLog(StreamWriter writer)
+    {
+        // A line holds the time, the path and a status. Intent lines are written, then flushed, before a batch is touched.
+        public void Write(string path, string status, long bytes = -1) =>
+            writer.WriteLine($"{{\"utc\":\"{DateTime.UtcNow:O}\",\"path\":{JsonSerializer.Serialize(path)},\"status\":{JsonSerializer.Serialize(status)}{(bytes >= 0 ? $",\"bytes\":{bytes}" : "")}}}");
+        public void Flush() => writer.Flush();
     }
 
     internal CleanupResult Clean(IReadOnlyList<CleanupItem> items, IProgress<int>? progress, CancellationToken token)
@@ -353,35 +457,63 @@ internal sealed class CleanupEngine
         Directory.CreateDirectory(logs);
         if (!SafePath(logs, dataDirectory)) throw new IOException("The Hush log directory must not be a link.");
         string logPath = Path.Combine(logs, $"cleanup-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.jsonl");
-        using var audit = new StreamWriter(new FileStream(logPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
+        using var stream = new FileStream(logPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1 << 16);
+        using var writer = new StreamWriter(stream, new UTF8Encoding(false), 1 << 16);
+        var audit = new AuditLog(writer);
+        long freeBefore = FreeSpace();
         int deleted = 0, skipped = 0;
         long bytes = 0;
+        var reasons = new Dictionary<string, int>();
         char[] pathBuffer = new char[32768]; // one reusable buffer for final-path checks, not one per file
-        foreach (var item in items)
+        var context = new CleanContext();
+        var reportClock = Stopwatch.StartNew();
+        const int batchSize = 64;
+        string[] batchPaths = new string[batchSize];
+        for (int batchStart = 0; batchStart < items.Count && !token.IsCancellationRequested; batchStart += batchSize)
         {
-            if (token.IsCancellationRequested) break;
-            string outcome;
-            try
+            int batchEnd = Math.Min(items.Count, batchStart + batchSize);
+            // Persist intent for the whole batch before any of it is performed (one flush per batch, not per file).
+            for (int index = batchStart; index < batchEnd; index++) audit.Write(batchPaths[index - batchStart] = items[index].Path, "requested");
+            audit.Flush();
+            for (int index = batchStart; index < batchEnd; index++)
             {
-                // Persist intent before performing the operation.
-                audit.WriteLine(JsonSerializer.Serialize(new { utc = DateTime.UtcNow, path = item.Path, status = "requested" }));
-                if (item.Kind == CleanupKind.Registry) DeleteRegistry(item);
-                else if (item.Kind == CleanupKind.RecycleBin) EmptyRecycleBin(item);
-                else DeleteFile(item, pathBuffer);
-                deleted++;
-                bytes += item.Bytes;
-                outcome = "Deleted";
+                var item = items[index];
+                string path = batchPaths[index - batchStart];
+                if (token.IsCancellationRequested) { audit.Write(path, "Not processed (stopped)"); continue; }
+                string outcome;
+                try
+                {
+                    if (item.Kind == CleanupKind.Registry) DeleteRegistry(item);
+                    else if (item.Kind == CleanupKind.RecycleBin) EmptyRecycleBin(item);
+                    else if (item.Kind == CleanupKind.SystemTool) RunSystemTool(item, token);
+                    else DeleteFile(item, path, pathBuffer, context);
+                    deleted++;
+                    bytes += item.Bytes;
+                    outcome = "Deleted";
+                }
+                catch (Exception ex) when (IsFileError(ex) || ex is InvalidOperationException or System.Security.SecurityException or COMException or OperationCanceledException)
+                {
+                    skipped++;
+                    outcome = "Skipped: " + ex.Message;
+                    reasons[ex.Message] = reasons.GetValueOrDefault(ex.Message) + 1;
+                }
+                item.Outcome = outcome;
+                audit.Write(path, outcome, item.Bytes);
+                // Progress reaches the UI thread a few times a second, not once per file.
+                if (deleted + skipped == 1 || reportClock.ElapsedMilliseconds >= 50) { progress?.Report(deleted + skipped); reportClock.Restart(); }
             }
-            catch (Exception ex) when (IsFileError(ex) || ex is InvalidOperationException or System.Security.SecurityException or COMException)
-            {
-                skipped++;
-                outcome = "Skipped: " + ex.Message;
-            }
-            item.Outcome = outcome;
-            audit.WriteLine(JsonSerializer.Serialize(new { utc = DateTime.UtcNow, path = item.Path, bytes = item.Bytes, status = outcome }));
-            progress?.Report(deleted + skipped);
+            audit.Flush();
         }
-        return new(deleted, skipped, bytes, token.IsCancellationRequested, logPath);
+        progress?.Report(deleted + skipped);
+        audit.Flush();
+        return new(deleted, skipped, bytes, token.IsCancellationRequested, logPath, freeBefore, FreeSpace(), reasons);
+    }
+
+    // Per-clean caches: directory chains already proven free of links, and the approved target of each (root, kind, group).
+    private sealed class CleanContext
+    {
+        public readonly Dictionary<string, long> VerifiedFolders = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<(string Root, CleanupKind Kind, string Group), Approved?> Targets = new();
     }
 
     // Emptying is all-or-nothing and permanent, so it only proceeds if the bin still matches exactly what the user reviewed.
@@ -393,17 +525,31 @@ internal sealed class CleanupEngine
         recycleBin.Empty();
     }
 
-    private void DeleteFile(CleanupItem item, char[] pathBuffer)
+    // Windows' own tools do the work. The tool must still be offered by a fresh read-only probe, so a forged item cannot start anything.
+    private void RunSystemTool(CleanupItem item, CancellationToken token)
     {
-        if (!approved.TryGetValue(ApprovalKey(item.Root, item.Kind, item.Group), out var target)) throw new IOException("Outside approved cleanup locations.");
-        if (!SafePath(item.Path, target.Root) || string.Equals(Path.GetFullPath(item.Path), Path.GetFullPath(target.Root), StringComparison.OrdinalIgnoreCase))
-            throw new IOException("The path is unsafe or has changed.");
-        if (target.Pattern != null && !Matches(Patterns(target.Pattern), Path.GetFileName(item.Path)))
+        if (systemTools == null || item.ToolId == null) throw new IOException("This Windows cleanup is not available.");
+        if (!systemTools.Probe(token).Any(offer => offer.ToolId == item.ToolId)) throw new IOException("Windows no longer offers this cleanup; scan again.");
+        systemTools.Run(item.ToolId, token);
+    }
+
+    private void DeleteFile(CleanupItem item, string itemPath, char[] pathBuffer, CleanContext context)
+    {
+        var key = (item.Root, item.Kind, item.Group);
+        if (!context.Targets.TryGetValue(key, out var entry))
+            context.Targets[key] = entry = approved.GetValueOrDefault(ApprovalKey(item.Root, item.Kind, item.Group));
+        if (entry == null) throw new IOException("Outside approved cleanup locations.");
+        var target = entry.Target;
+        string full = Path.GetFullPath(itemPath);
+        string root = Normalize(target.Root);
+        if (!UnderRoot(full, root) || string.Equals(full, root, StringComparison.OrdinalIgnoreCase)) throw new IOException("The path is unsafe or has changed.");
+        if (!FolderChainSafe(Path.GetDirectoryName(full)!, context)) throw new IOException("The path is unsafe or has changed.");
+        if (entry.Patterns != null && !Matches(entry.Patterns, Path.GetFileName(full)))
             throw new IOException("File is not an approved cleanup type.");
         if (BrowserRunning(target)) throw new IOException("The browser is running.");
 
         // Hold an exclusive handle through metadata validation and deletion. Never follow a final symlink.
-        using SafeFileHandle handle = Native.CreateFile(item.Path, 0x80010080, 0, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
+        using SafeFileHandle handle = Native.CreateFile(itemPath, 0x80010080, 0, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
         if (handle.IsInvalid) throw new IOException("File is busy or inaccessible.");
         if (!Native.GetFileInformationByHandle(handle, out var info)) throw new IOException("Cannot verify file identity.");
         if ((info.Attributes & (uint)(FileAttributes.Directory | FileAttributes.ReparsePoint | FileAttributes.System | FileAttributes.ReadOnly)) != 0
@@ -412,8 +558,8 @@ internal sealed class CleanupEngine
         if (written == 0 || written >= pathBuffer.Length) throw new IOException("Cannot verify final path.");
         string resolved = new(pathBuffer, 0, (int)written);
         if (resolved.StartsWith(@"\\?\", StringComparison.Ordinal)) resolved = resolved[4..];
-        if (!string.Equals(Path.GetFullPath(item.Path), resolved, StringComparison.OrdinalIgnoreCase) || !SafePath(resolved, target.Root))
-            throw new IOException("File location changed after scan.");
+        // The handle's real path must equal the checked path: a link anywhere in the chain would make them differ.
+        if (!string.Equals(full, resolved, StringComparison.OrdinalIgnoreCase)) throw new IOException("File location changed after scan.");
         long length = ((long)info.SizeHigh << 32) | info.SizeLow;
         DateTime modified = DateTime.FromFileTimeUtc(((long)info.WriteHigh << 32) | info.WriteLow);
         DateTime created = DateTime.FromFileTimeUtc(((long)info.CreationHigh << 32) | info.CreationLow);
@@ -433,14 +579,40 @@ internal sealed class CleanupEngine
             throw new IOException("Windows could not delete this file.");
     }
 
+    // Folder chains are verified once per folder per clean (for ten seconds), not once per file; the per-file final-path check above
+    // is what catches a link swapped in afterwards.
+    private static bool FolderChainSafe(string folder, CleanContext context)
+    {
+        long now = Environment.TickCount64;
+        if (context.VerifiedFolders.TryGetValue(folder, out long stamp) && now - stamp < 10000) return true;
+        try
+        {
+            string? cursor = folder;
+            while (cursor != null)
+            {
+                if ((File.GetAttributes(cursor) & FileAttributes.ReparsePoint) != 0) return false;
+                cursor = Path.GetDirectoryName(cursor);
+            }
+        }
+        catch (Exception ex) when (IsFileError(ex)) { return false; }
+        context.VerifiedFolders[folder] = now;
+        return true;
+    }
+
+    // Shape check: a local, normal path strictly inside the root (no UNC, no alternate data stream, no short root).
+    private static bool UnderRoot(string path, string root)
+    {
+        if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.IndexOf(':', 2) >= 0 || root.Length < 4) return false;
+        return path.Equals(root, StringComparison.OrdinalIgnoreCase) || path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static bool SafePath(string path, string root)
     {
         try
         {
             path = Path.GetFullPath(path);
             root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-            if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.IndexOf(':', 2) >= 0 || root.Length < 4) return false;
-            if (!path.Equals(root, StringComparison.OrdinalIgnoreCase) && !path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return false;
+            if (!UnderRoot(path, root)) return false;
             string? cursor = path;
             while (cursor != null)
             {

@@ -84,7 +84,7 @@
       <Grid.Effect><BlurEffect x:Name="BackgroundBlur" Radius="0" RenderingBias="Quality"/></Grid.Effect>
       <Grid.RowDefinitions><RowDefinition Height="68"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <Grid Margin="30,0,18,0" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-        <Button x:Name="AboutButton" Content="Hush" Click="About_Click" Style="{StaticResource AccentTextButton}" FontSize="33" FontWeight="Normal" FontStyle="Italic" Height="52" HorizontalAlignment="Left" VerticalAlignment="Center" Padding="0" AutomationProperties.Name="About Hush"/>
+        <Button x:Name="AboutButton" Content="Hush" Click="About_Click" Style="{StaticResource AccentTextButton}" FontSize="33" FontWeight="Medium" FontStyle="Italic" Height="52" HorizontalAlignment="Left" VerticalAlignment="Center" Padding="0" AutomationProperties.Name="About Hush"/>
         <StackPanel x:Name="CaptionControls" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
           <Button x:Name="SettingsButton" Style="{StaticResource CaptionButton}" Click="Settings_Click" Margin="0,0,4,0" ToolTip="Settings" AutomationProperties.Name="Settings">
             <Path Style="{StaticResource CaptionIcon}" Data="M8,1 L10,1 L10.6,3.2 L12.1,4.1 L14.3,3.5 L15.3,5.3 L13.8,6.9 L13.8,8.9 L15.3,10.5 L14.3,12.3 L12.1,11.7 L10.6,12.6 L10,14.8 L8,14.8 L7.4,12.6 L5.9,11.7 L3.7,12.3 L2.7,10.5 L4.2,8.9 L4.2,6.9 L2.7,5.3 L3.7,3.5 L5.9,4.1 L7.4,3.2 Z M11.4,7.9 A2.4,2.4 0 1 1 6.6,7.9 A2.4,2.4 0 1 1 11.4,7.9"/>
@@ -212,31 +212,135 @@
           </Grid.Resources>
           <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <Grid>
-            <TextBlock Text="Settings" FontSize="29" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Top" Margin="0,10,0,0"/>
+            <TextBlock Text="Settings" FontSize="29" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Top" Margin="0,10,0,0"/>
             <Button x:Name="SettingsBackButton" Content="Back" Style="{StaticResource BackButton}" Click="SettingsBack_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,-14,0" AutomationProperties.Name="Back from settings"/>
           </Grid>
           <!-- The 8 DIP overlay scrollbar lives in a 22 DIP strip to the right of the cards (viewer extends into the page margin), so cards never shift or sit under it. -->
           <ScrollViewer x:Name="WindowsSettingsScroll" Grid.Row="1" Style="{StaticResource PageScroll}" Margin="0,8,-22,0" Padding="0,0,22,16">
             <StackPanel>
-            <Expander x:Name="SettingsAppearanceSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Appearance">
+            <!-- Info: live figures from Windows (processor, memory, system drive), one smart summary line, Hush's own memory and the last junk check.
+                 It is a plain card, not an accordion: the figures are always on screen and the Smart Boost controls stay uncluttered. -->
+            <Border x:Name="SettingsInfoCard" Background="{DynamicResource PanelBrush}" CornerRadius="14" Padding="28,18,28,20" Margin="0,0,0,16" AutomationProperties.Name="Info">
+              <StackPanel>
+                <TextBlock Text="Info" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                  <Grid Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="Processor" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock x:Name="CpuText" Text="…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                      <Border Height="6" CornerRadius="3" Background="{DynamicResource RaisedBrush}"><Border x:Name="CpuFill" CornerRadius="3" Background="{DynamicResource TealBrush}" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5"><Border.RenderTransform><ScaleTransform ScaleX="0"/></Border.RenderTransform></Border></Border>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="Memory" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock x:Name="MemoryText" Text="…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                      <Border Height="6" CornerRadius="3" Background="{DynamicResource RaisedBrush}"><Border x:Name="MemoryFill" CornerRadius="3" Background="{DynamicResource TealBrush}" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5"><Border.RenderTransform><ScaleTransform ScaleX="0"/></Border.RenderTransform></Border></Border>
+                    </StackPanel>
+                    <StackPanel Grid.Column="4">
+                      <TextBlock Text="System drive" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock x:Name="DiskText" Text="…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                      <Border Height="6" CornerRadius="3" Background="{DynamicResource RaisedBrush}"><Border x:Name="DiskFill" CornerRadius="3" Background="{DynamicResource TealBrush}" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5"><Border.RenderTransform><ScaleTransform ScaleX="0"/></Border.RenderTransform></Border></Border>
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock x:Name="ResourceNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource FaintBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
+                  <TextBlock x:Name="BoostStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,6,0,0" Visibility="Collapsed"/>
+              </StackPanel>
+            </Border>
+            <Expander x:Name="SettingsBoostSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Smart Boost">
+              <!-- The card shows the live details before it is opened: summary, three resource meters, Hush's own memory and the last check. -->
               <Expander.Header>
                 <StackPanel>
-                  <TextBlock Text="Appearance" FontSize="18" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
-                  <TextBlock x:Name="AppearanceSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                  <TextBlock Text="Smart Boost" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                  <TextBlock x:Name="BoostSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
-              <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                  <TextBlock Text="Light theme" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                  <TextBlock Text="Use a lighter look for Hush. Dark is the default." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+              <StackPanel>
+                <!-- Quick Boost -->
+
+                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Quick Boost" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                    <TextBlock Text="Scans only the Safe items and shows you what it found before anything is removed." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+                  </StackPanel>
+                  <Button x:Name="QuickBoostButton" Grid.Column="2" Content="Quick Boost" Click="QuickBoost_Click" Style="{StaticResource AccentTextButton}" Padding="16,9" AutomationProperties.Name="Quick Boost"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Watch for junk" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                    <TextBlock Text="While Hush is open (also minimized) it now and then counts Safe junk, quietly and at low priority. Nothing is deleted; Hush only tells you." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+                  </StackPanel>
+                  <CheckBox x:Name="MonitorJunkBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="MonitorJunk_Click" VerticalAlignment="Center" AutomationProperties.Name="Watch for junk"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Automatic Boost" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                    <TextBlock Text="When Safe junk passes your threshold, Hush cleans those Safe items by itself. Review and Advanced items are never included. Off unless you turn it on." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+                  </StackPanel>
+                  <CheckBox x:Name="AutoBoostBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="AutoBoost_Click" VerticalAlignment="Center" AutomationProperties.Name="Automatic Boost"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <StackPanel x:Name="ThresholdRow" Margin="0,16">
+                  <TextBlock Text="Cleanup threshold" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                  <TextBlock Text="How much Safe junk must build up before Hush mentions it (or cleans it, with Automatic Boost)." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,10" TextWrapping="Wrap" LineHeight="21"/>
+                  <StackPanel Orientation="Horizontal" Margin="-13,0,0,0">
+                    <RadioButton x:Name="Threshold500" GroupName="Threshold" Content="500 MB" Tag="500" Style="{StaticResource ChoiceChip}" Click="Threshold_Click"/>
+                    <RadioButton x:Name="Threshold1000" GroupName="Threshold" Content="1 GB" Tag="1000" Style="{StaticResource ChoiceChip}" Click="Threshold_Click"/>
+                    <RadioButton x:Name="Threshold2000" GroupName="Threshold" Content="2 GB" Tag="2000" Style="{StaticResource ChoiceChip}" Click="Threshold_Click"/>
+                    <RadioButton x:Name="Threshold5000" GroupName="Threshold" Content="5 GB" Tag="5000" Style="{StaticResource ChoiceChip}" Click="Threshold_Click"/>
+                  </StackPanel>
                 </StackPanel>
-                <CheckBox x:Name="SettingsLightBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="SettingsTheme_Click" VerticalAlignment="Center" AutomationProperties.Name="Light theme"/>
-              </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <StackPanel x:Name="IntervalRow" Margin="0,16">
+                  <TextBlock Text="Check every" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                  <TextBlock Text="Longer gaps mean less background activity." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,10" TextWrapping="Wrap" LineHeight="21"/>
+                  <StackPanel Orientation="Horizontal" Margin="-13,0,0,0">
+                    <RadioButton x:Name="Interval15" GroupName="Interval" Content="15 minutes" Tag="15" Style="{StaticResource ChoiceChip}" Click="Interval_Click"/>
+                    <RadioButton x:Name="Interval60" GroupName="Interval" Content="1 hour" Tag="60" Style="{StaticResource ChoiceChip}" Click="Interval_Click"/>
+                    <RadioButton x:Name="Interval360" GroupName="Interval" Content="6 hours" Tag="360" Style="{StaticResource ChoiceChip}" Click="Interval_Click"/>
+                    <RadioButton x:Name="Interval1440" GroupName="Interval" Content="Daily" Tag="1440" Style="{StaticResource ChoiceChip}" Click="Interval_Click"/>
+                  </StackPanel>
+                </StackPanel>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Low-resource mode" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                    <TextBlock Text="Hush uses less processor and disk: lower priority, Windows efficiency mode, slower progress updates. Scans take a little longer." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+                  </StackPanel>
+                  <CheckBox x:Name="LowResourceBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="LowResource_Click" VerticalAlignment="Center" AutomationProperties.Name="Low-resource mode"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <!-- Startup apps: Task Manager's on/off flag per program. Nothing is uninstalled. -->
+                <StackPanel Margin="0,16,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="Startup apps" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock x:Name="StartupSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button x:Name="UndoStartupButton" Grid.Column="1" Content="Undo" Click="UndoStartup_Click" Style="{StaticResource TextButton}" Visibility="Collapsed" VerticalAlignment="Top" AutomationProperties.Name="Undo startup change"/>
+                  </Grid>
+                  <TextBlock Text="Turning one off only stops it from starting with Windows. The program stays installed and you can turn it back on here." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,6,0,4"/>
+                  <ItemsControl x:Name="StartupList">
+                    <ItemsControl.ItemTemplate><DataTemplate>
+                      <Grid Margin="0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Name}" FontSize="{DynamicResource BodyFontSize}" FontWeight="Medium" Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Text="{Binding Detail}" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}"/>
+                        </StackPanel>
+                        <CheckBox Grid.Column="2" Style="{StaticResource SwitchCheckBox}" IsChecked="{Binding Enabled, Mode=TwoWay}" Click="StartupSwitch_Click" VerticalAlignment="Center" AutomationProperties.Name="{Binding Name}"/>
+                      </Grid>
+                    </DataTemplate></ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock x:Name="StartupStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,4,0,8"/>
+                </StackPanel>
+              </StackPanel>
             </Expander>
             <Expander x:Name="SettingsPrivacySection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Privacy and telemetry">
               <Expander.Header>
                 <StackPanel>
-                  <TextBlock Text="Privacy &amp; telemetry" FontSize="18" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                  <TextBlock Text="Privacy &amp; telemetry" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
                   <TextBlock x:Name="PrivacySummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
@@ -248,7 +352,7 @@
             <Expander x:Name="SettingsImpactSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="More impact" Margin="0">
               <Expander.Header>
                 <StackPanel>
-                  <TextBlock Text="More impact" FontSize="18" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                  <TextBlock Text="More impact" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
                   <TextBlock x:Name="ImpactSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
@@ -277,10 +381,29 @@
             <TextBlock Text="Confirm cleanup" FontSize="{DynamicResource CompactFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
             <TextBlock Text="Are you sure?" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" Margin="0,12,0,0"/>
             <TextBlock x:Name="ConfirmSummary" Foreground="{DynamicResource TextBrush}" FontSize="17" TextWrapping="Wrap" Margin="0,22,0,0" LineHeight="26"/>
-            <TextBlock x:Name="ConfirmDetail" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="25" Margin="0,16,0,28"/>
+            <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
+              <TextBlock x:Name="ConfirmDetail" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="25" Margin="0,0,10,0"/>
+            </ScrollViewer>
+            <!-- Advanced (red) cleanups are irreversible or touch recovery data: Clean stays off until this is ticked. -->
+            <CheckBox x:Name="AdvancedConsentBox" Visibility="Collapsed" Click="AdvancedConsent_Click" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" Margin="0,18,0,0" FontSize="{DynamicResource CompactFontSize}" Content="I understand some of this cannot be undone" IsEnabled="True" AutomationProperties.Name="I understand some of this cannot be undone"/>
+            <Border Height="28"/>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
               <Button x:Name="CancelDeleteButton" Content="Keep my files" Click="CancelDelete_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
               <Button x:Name="ConfirmDeleteButton" Grid.Column="2" Content="Clean selected" Click="ConfirmDelete_Click" Style="{StaticResource DangerButton}" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </Border>
+      <Border x:Name="ConsentOverlay" Grid.RowSpan="2" Background="{DynamicResource ModalShadeBrush}" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle">
+        <Border Background="{DynamicResource PanelBrush}" CornerRadius="24" Width="510" Padding="34" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <StackPanel>
+            <TextBlock x:Name="ConsentTitle" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" TextWrapping="Wrap"/>
+            <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,18,0,26">
+              <TextBlock x:Name="ConsentText" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="25" Margin="0,0,10,0"/>
+            </ScrollViewer>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Button x:Name="ConsentCancelButton" Content="Not now" Click="ConsentCancel_Click" Style="{StaticResource TextButton}" FontSize="{DynamicResource ActionFontSize}"/>
+              <Button x:Name="ConsentConfirmButton" Grid.Column="2" Content="Turn on" Click="ConsentConfirm_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
             </Grid>
           </StackPanel>
         </Border>

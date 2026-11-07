@@ -154,12 +154,12 @@ internal static class WindowsSettingsChecks
                 box.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             }
             Click("SettingsButton"); Wait(350); Layout(new Size(920, 820));
-            var sections = new[] { "SettingsAppearanceSection", "SettingsPrivacySection", "SettingsImpactSection" }.Select(name => (Expander)window.FindName(name)).ToArray();
+            var sections = new[] { "SettingsBoostSection", "SettingsPrivacySection", "SettingsImpactSection" }.Select(name => (Expander)window.FindName(name)).ToArray();
             Require(sections.All(section => !section.IsExpanded)
-                && ((TextBlock)window.FindName("AppearanceSummary")).Text == "Dark theme"
+                && ((TextBlock)window.FindName("BoostSummary")).Text == "Manual only"
                 && ((TextBlock)window.FindName("PrivacySummary")).Text == "0 of 3 turned on"
                 && ((TextBlock)window.FindName("ImpactSummary")).Text.StartsWith("0 of 2 turned on"),
-                "Settings opens as three collapsed summary rows that state each section's current state");
+                "Settings opens as three collapsed summary cards that state each section's current state");
             Capture(root, "settings-summary-dark");
             foreach (var section in sections) section.IsExpanded = true;
             Wait(380); Layout(new Size(920, 820));
@@ -222,7 +222,7 @@ internal static class WindowsSettingsChecks
                 Click("RefreshWindowsSettingsButton");
             }
             store.Configuration = store.Configuration with { Managed = true }; Click("RefreshWindowsSettingsButton");
-            Require(window.AdjustmentChoices.All(choice => !choice.CanEdit) && ((CheckBox)window.FindName("SettingsLightBox")).IsEnabled,
+            Require(window.AdjustmentChoices.All(choice => !choice.CanEdit) && ((Button)window.FindName("ThemeButton")).IsEnabled,
                 "Managed Windows policies are read-only while app appearance remains usable");
             store.Configuration = store.Configuration with { Managed = false };
             Click("SettingsBackButton"); Wait(340);

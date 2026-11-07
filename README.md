@@ -1,6 +1,6 @@
 # Hush
 
-Version 0.7. A compact native Windows cleaner: scan, review results by category, clean what you choose, with a light or dark theme. No ads, telemetry, startup tasks, or third-party application packages.
+Version 0.8. A compact native Windows cleaner: scan, review results by category, clean what you choose, with a light or dark theme. No ads, telemetry, startup tasks, or third-party application packages.
 
 ## Project layout
 
@@ -24,15 +24,15 @@ Both keep their settings in `%LOCALAPPDATA%\Hush` and both update themselves in 
 1. The gauge starts empty at **0%**. Click to scan; click again to stop. The arc starts at twelve o'clock and fills clockwise. A live files-found counter runs beneath it; byte totals appear when the scan ends.
 2. Click the completed gauge to rescan, or the **Scan complete. Take a look. →** link to open Review Files. Real file count and combined size appear beneath the link; registry entries are counted separately.
 3. Review categories or expand individual sections. Category checkboxes select their own files; Select All Categories selects all candidates. Mixed selection shows a dash. **Expand all / Collapse all** controls every section.
-4. Cyan means **Safe**; red-orange marks **Review recommended** and **Requires caution**, with written labels. Review/caution candidates start unselected. Checked category titles and filenames adopt their checkbox accent; unchecked text returns to normal.
+4. Ice blue means **Safe**; orange marks **Review recommended** and red (the same red as the Clean button) marks **Advanced**, with written labels. Review/caution candidates start unselected. Checked category titles and filenames adopt their checkbox accent; unchecked text returns to normal.
 5. After a successful complete scan, Home **Clean** and Review **Clean selected** confirm the current selection over a softly blurred app. Partial results are read-only; scan again before selecting/cleaning. Deletion is permanent and bypasses the Recycle Bin. Keep my files or Escape cancels.
 6. Click **Hush** for About, version, current patch notes and updates. A finished scan never forces navigation; Back preserves results and selections.
 
 Normal actions share 44-DIP height and smooth 320 ms incoming-page fades; outgoing pages disappear immediately. Light/Dark colors separately ease over 320 ms, including when reversed mid-transition, without keeping old-page images. Home Clean is smaller, nearly transparent and outlined, with restrained outer lighting. Categories/files use neutral surfaces and safety accent lines. Hover never enlarges elements. The 320-DIP gauge stays stationary when results appear. Checkbox, Clean and thin checked-category outlines are the only exceptions to borderless surfaces; the rounded window retains transparent corners.
 
-## Cleanup categories (0.7)
+## Cleanup categories (0.8)
 
-These are the categories and rules as of 0.7; more categories and broader cleaning are planned.
+These are the categories and rules as of 0.8 (the full catalog is in docs/DESIGN.md and ReviewCategory.cs); more categories and broader cleaning are planned.
 
 | Category | Eligibility and default |
 | --- | --- |

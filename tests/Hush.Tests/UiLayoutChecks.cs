@@ -10,7 +10,7 @@ using Hush;
 
 internal static class UiLayoutChecks
 {
-    internal static void Run(bool forceFailure = false, bool buttonsOnly = false, bool navigationOnly = false, bool cleanSelectionOnly = false, bool updatesOnly = false, bool windowsSettingsOnly = false, bool themeMotionOnly = false, bool setupOnly = false)
+    internal static void Run(bool forceFailure = false, bool buttonsOnly = false, bool navigationOnly = false, bool cleanSelectionOnly = false, bool updatesOnly = false, bool windowsSettingsOnly = false, bool themeMotionOnly = false, bool setupOnly = false, bool smartBoostOnly = false)
     {
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -34,6 +34,7 @@ internal static class UiLayoutChecks
                 if (setupOnly) { SetupChecks.Run(fixture); return; }
                 if (themeMotionOnly) { ThemeMotionChecks.Run(engine, fixture); return; }
                 if (windowsSettingsOnly) { WindowsSettingsChecks.Run(engine, fixture); return; }
+                if (smartBoostOnly) { SmartBoostChecks.RunUi(fixture); return; }
                 if (updatesOnly) { UpdateFlowChecks.Run(engine, fixture); return; }
                 if (cleanSelectionOnly) { CleanSelectionChecks.Run(fixture); return; }
                 if (buttonsOnly) { ButtonVisualChecks.Run(window); return; }
@@ -258,10 +259,10 @@ internal static class UiLayoutChecks
                 Require(cache.Expanded && temp.Expanded, "Sections can remain open independently");
                 var toggle = (Button)window.FindName("CollapseAllButton");
                 toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(360);
-                Require(window.Categories.All(category => category.Expanded) && ((TextBlock)window.FindName("SectionToggleLabel")).Text == "Collapse all",
+                Require(window.Categories.Where(category => category.HasFiles).All(category => category.Expanded) && ((TextBlock)window.FindName("SectionToggleLabel")).Text == "Collapse all",
                     "Expand all opens every section and updates its label");
                 toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(360);
-                Require(window.Categories.All(category => !category.Expanded) && ((TextBlock)window.FindName("SectionToggleLabel")).Text == "Expand all",
+                Require(window.Categories.Where(category => category.HasFiles).All(category => !category.Expanded) && ((TextBlock)window.FindName("SectionToggleLabel")).Text == "Expand all",
                     "Collapse all closes every section and updates its label");
                 Layout(root, new Size(920, 820));
                 var reviewScroll = (ScrollViewer)window.FindName("ReviewScroll"); reviewScroll.ScrollToBottom(); root.UpdateLayout();
@@ -312,7 +313,7 @@ internal static class UiLayoutChecks
                     && back.Foreground.ToString() == app.Resources["MutedBrush"].ToString(), "Clean and Back accents follow the active theme");
                 Require(tempOutline.BorderBrush.ToString() == ((Brush)new BrushConverter().ConvertFromString(temp.TextAccent)!).ToString(),
                     "Selected category outline follows the theme's readable safety accent");
-                foreach (var category in window.Categories)
+                foreach (var category in window.Categories.Where(category => category.HasFiles))
                 {
                     var section = Descendants<Expander>(root).Single(element => element.DataContext == category);
                     var categoryBox = Descendants<CheckBox>(section).First();
@@ -356,7 +357,7 @@ internal static class UiLayoutChecks
     private static void VerifyScanResultStates(CleanupEngine engine)
     {
         Func<IProgress<ScanProgress>?, CancellationToken, ScanResult> response = (_, _) =>
-            new(PreviewItems().Take(1).ToList(), 0, 0, false, true);
+            new(PreviewItems().Take(1).ToList(), 0, 0, true);
         var window = new MainWindow(engine, (progress, token) => response(progress, token));
         try
         {
@@ -402,8 +403,8 @@ internal static class UiLayoutChecks
                 }
             }
             Finish(window.ActivateGaugeAsync());
-            Require(window.CurrentScanState == MainWindow.ScanState.Limited && window.GaugePercent < 100
-                && categories.Items.Count == 1, "Limited scans retain only detected categories without completing the gauge");
+            Require(window.CurrentScanState == MainWindow.ScanState.Stopped && window.GaugePercent < 100
+                && categories.Items.Count == 1, "Partial scans retain only detected categories without completing the gauge");
             NoCleaning();
             var expand = (Button)window.FindName("CollapseAllButton");
             expand.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -411,8 +412,8 @@ internal static class UiLayoutChecks
                 && ((TextBlock)window.FindName("SectionToggleLabel")).Text == "Collapse all",
                 "Expand all affects only the detected category and updates its label");
             expand.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Capture("limited");
-            response = (_, _) => new(PreviewItems().Take(1).ToList(), 0, 0, true, false);
+            Capture("partial");
+            response = (_, _) => new(PreviewItems().Take(1).ToList(), 0, 0, true);
             Finish(window.ActivateGaugeAsync());
             Require(window.CurrentScanState == MainWindow.ScanState.Stopped && categories.Items.Count == 1
                 && window.GaugePercent < 100, "Worker-returned stopped batches remain partial and reviewable");
@@ -431,7 +432,7 @@ internal static class UiLayoutChecks
             Finish(canceled);
             Require(window.CurrentScanState == MainWindow.ScanState.Stopped && window.GaugePercent < 100, "A canceled worker is stopped rather than failed and cannot retain a completed ring");
             NoCleaning();
-            response = (_, _) => new([], 0, 0, false, false);
+            response = (_, _) => new([], 0, 0, false);
             Finish(window.ActivateGaugeAsync());
             results.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Require(window.CurrentScanState == MainWindow.ScanState.Completed && window.GaugePercent == 100
@@ -448,12 +449,12 @@ internal static class UiLayoutChecks
                 Require(Math.Abs(center.Left + center.Width / 2 - size.Width / 2) <= 1
                     && Bounds(primary, root).Right <= size.Width, "Empty state stays centered and its sole rescan action fits after resizing");
             }
-            response = (_, _) => new([], 1, 1, false, false);
+            response = (_, _) => new([], 1, 1, false);
             Finish(window.ActivateGaugeAsync());
             Require(((TextBlock)window.FindName("EmptyStateTitle")).Text == "No cleanup items found.",
                 "Skipped locations do not produce an unqualified clean-state claim");
             NoCleaning();
-            response = (_, _) => new(PreviewItems().Where(item => item.Kind == CleanupKind.Registry).ToList(), 0, 0, false, false);
+            response = (_, _) => new(PreviewItems().Where(item => item.Kind == CleanupKind.Registry).ToList(), 0, 0, false);
             Finish(window.ActivateGaugeAsync());
             Require(categories.Items.Count == 1 && empty.Visibility == Visibility.Collapsed && window.ReviewItems.Count == 1,
                 "Registry-only results remain reviewable rather than appearing empty");
@@ -465,7 +466,7 @@ internal static class UiLayoutChecks
             Require(empty.Visibility == Visibility.Visible && categories.Items.Count == 0,
                 "Removing the last remaining result restores the empty state");
             NoCleaning();
-            Console.WriteLine("PASS: Completed, canceled, limited, failed, empty, skipped-location and registry-only scan states; detected categories; one rescan action");
+            Console.WriteLine("PASS: Completed, canceled, partial, failed, empty, skipped-location and registry-only scan states; detected categories; one rescan action");
         }
         finally { window.Close(); }
     }
@@ -489,7 +490,11 @@ internal static class UiLayoutChecks
         new() { Path = @"C:\Users\Example\AppData\Local\npm-cache\_cacache\index", Root = @"C:\Users\Example\AppData\Local\npm-cache", Group = "npm cache", Kind = CleanupKind.Cache, CategoryId = "DevCache", Bytes = 250000000, Selected = false },
         new() { Path = @"C:\Windows\Logs\CBS\CBS.log", Root = @"C:\Windows\Logs\CBS", Group = "Windows servicing logs", CategoryId = "SystemLogs", Bytes = 9000000, Selected = false },
         new() { Path = @"C:\NVIDIA\DisplayDriver\setup.exe", Root = @"C:\NVIDIA", Group = "Driver installer leftovers", CategoryId = "Installer", Bytes = 600000000, Selected = false },
-        new() { Path = @"C:\Users\Example\AppData\Roaming\Microsoft\Windows\Recent\report.lnk", Root = @"C:\Users\Example\AppData\Roaming\Microsoft\Windows\Recent", Group = "Recent item shortcuts", CategoryId = "Traces", Bytes = 1500, Selected = false },
+        new() { Path = @"C:\Users\Example\AppData\Roaming\Microsoft\Windows\Recent\report.lnk", Root = @"C:\Users\Example\AppData\Roaming\Microsoft\Windows\Recent", Group = "Recent item shortcuts", CategoryId = "RecentAccess", Bytes = 1500, Selected = false },
+        new() { Path = @"C:\Users\Example\AppData\Local\Microsoft\Edge\User Data\Default\Cache\f_000001", Root = @"C:\Users\Example\AppData\Local\Microsoft\Edge\User Data\Default\Cache", Group = "Edge cache", Kind = CleanupKind.Cache, CategoryId = "BrowserEdge", Bytes = 48000000, Selected = false },
+        new() { Path = @"C:\Users\Example\AppData\Local\Google\Chrome\User Data\Default\History", Root = @"C:\Users\Example\AppData\Local\Google\Chrome\User Data\Default", Group = "Chrome history", Kind = CleanupKind.Junk, CategoryId = "BrowserHistory", Bytes = 3000000, Selected = false },
+        new() { Path = @"C:\Users\Example\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies", Root = @"C:\Users\Example\AppData\Local\Google\Chrome\User Data\Default\Network", Group = "Chrome cookies", Kind = CleanupKind.Junk, CategoryId = "BrowserCookies", Bytes = 90000, Selected = false },
+        new() { Path = "Previous Windows installation", Root = "Windows tool", Group = "Previous Windows installation", Kind = CleanupKind.SystemTool, CategoryId = "WindowsOld", ToolId = "windows-old", Bytes = 14000000000, Detail = "Windows.old · removed by Disk Cleanup", Selected = false },
     ];
     private static void VerifyOdometerMotion(RollingFileCount template)
     {
@@ -641,7 +646,7 @@ internal static class UiLayoutChecks
         window.GaugePercent = oldPercent; label.Text = oldLabel;
         Layout(root, new Size(920, 820));
     }
-    private static void Save(FrameworkElement root, Size size, string path)
+    internal static void Save(FrameworkElement root, Size size, string path)
     {
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(Render(root, size)));
         using var stream = File.Create(path); encoder.Save(stream);
@@ -649,13 +654,13 @@ internal static class UiLayoutChecks
     private static RenderTargetBitmap Render(FrameworkElement root, Size size)
     { var bitmap = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(root); return bitmap; }
     private static Rect Bounds(FrameworkElement child, FrameworkElement root) => child.TransformToAncestor(root).TransformBounds(new Rect(child.RenderSize));
-    private static void Layout(FrameworkElement root, Size size) { root.Measure(size); root.Arrange(new Rect(size)); root.UpdateLayout(); }
+    internal static void Layout(FrameworkElement root, Size size) { root.Measure(size); root.Arrange(new Rect(size)); root.UpdateLayout(); }
     private static T? Parent<T>(DependencyObject child) where T : DependencyObject
     { for (var parent = VisualTreeHelper.GetParent(child); parent != null; parent = VisualTreeHelper.GetParent(parent)) if (parent is T match) return match; return null; }
     private static bool HasInvisibleAncestor(DependencyObject child)
     { for (var parent = VisualTreeHelper.GetParent(child); parent != null; parent = VisualTreeHelper.GetParent(parent)) if (parent is UIElement element && (element.Opacity == 0 || element.Visibility != Visibility.Visible)) return true; return false; }
-    private static void Wait(int milliseconds) { var clock = System.Diagnostics.Stopwatch.StartNew(); PumpUntil(() => clock.ElapsedMilliseconds >= milliseconds); }
-    private static void PumpUntil(Func<bool> complete)
+    internal static void Wait(int milliseconds) { var clock = System.Diagnostics.Stopwatch.StartNew(); PumpUntil(() => clock.ElapsedMilliseconds >= milliseconds); }
+    internal static void PumpUntil(Func<bool> complete)
     {
         var frame = new DispatcherFrame(); var clock = System.Diagnostics.Stopwatch.StartNew();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
@@ -663,7 +668,7 @@ internal static class UiLayoutChecks
         timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
         Require(complete(), "Animation or operation did not finish or cancel within five seconds");
     }
-    private static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
+    internal static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
     { for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++) { var child = VisualTreeHelper.GetChild(parent, index); if (child is T match) yield return match; foreach (var item in Descendants<T>(child)) yield return item; } }
 }

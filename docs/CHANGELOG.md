@@ -2,6 +2,30 @@
 
 Dates use Asia/Jerusalem.
 
+## 0.8 — November 7, 2026
+
+- **New app icon:** the ice-blue brush artwork you supplied, with its black surround keyed to real transparency and a crisp thin border instead of a glow (`GenerateIcon.ps1 -FromArtwork`). The 16-256 px ICO and the marks were regenerated and inspected on light and dark backgrounds.
+- **Ice-blue accent:** the Dark theme's primary accent is now the icon's #7FE0F6 (hover #B5EEFB) instead of aqua #3CCFD9; Light is unchanged.
+- **One red:** Advanced items now use exactly the Clean button's red; the second red (#FF5C6C / #B3263A) is gone. `ColorRuleChecks` scans every source file and fails on any other red, and checks the running app's resources in both themes.
+- **Settings:** a separate **Info** card at the top holds the three bars, a one-line smart summary, Hush's own memory and the last junk check (bars turn orange, never red, when high). Smart Boost is a collapsed card of controls only.
+- **Logo:** the header wordmark is Inter Italic Medium 500.
+- Version 0.8 (project, README, release notes shown in About). `scripts/Verify.ps1` passes (170 engine checks, UI suites, Smart Boost stage).
+## 0.7 (Review style and Settings rework) — November 7, 2026
+
+- **Review Files:** back to the flat category list; the four section headers were removed (and their code: `CategoryGroup` and the grouping view). The catalog keeps its larger category set.
+- **Settings:** the Appearance card is gone (the theme is changed with the top-bar button; `SettingsLightBox`, its handler and summary were removed). The Smart Boost card now shows its details on the closed card (summary, processor/memory/system-drive bars, Hush's own memory, last junk check); opening it shows only the controls, without the intro paragraph.
+- **Titles:** the Settings page title and the card titles are Inter Italic Medium 500 (were Regular 400); other titles are unchanged.
+- Tests updated (no Appearance switch; theme via the top-bar button) and extended (details on the closed card, 500-weight titles, flat Review list). `scripts/Verify.ps1` passes; both themes were inspected in rendered previews.
+## 0.7 (scalable engine, expanded catalog, Smart Boost) — November 7, 2026
+
+- **Backup:** `Backups/pre-smart-boost-engine-*` (source re-read and SHA-256 verified) before any change; baseline `scripts/Verify.ps1` passed.
+- **No scan limit:** the 150,000-file cap and the 100,000-per-location cap are gone. The scan streams in one pass, keeps about 256 bytes per file, holds no global path set (overlapping targets are resolved by ownership), reports live progress, cancels within milliseconds and treats links, locked and inaccessible files safely. Synthetic stress run: 250,000 files scanned in 0.2 s (warm cache), counted exactly once, cancelled with partial results in 46 ms, reviewed with 4 realized rows, cleaned at about 13,000 files/s with exactly two audit lines per file. Standard benchmark (20,000 files): scan 14 ms (was about 19), clean 582 ms (was about 1.1 s), allocations 30 MB (was about 41).
+- **Cleanup engine:** audit intent is written per batch of 64 and flushed once; progress to the UI is throttled; folder chains are verified once per folder per clean; a clean records Windows' free space before and after and the status shows what the disk really gained. Selection totals are counters kept by the items (no per-item event handlers); categories replace in one Reset; deleted items are removed in one pass.
+- **Safety tiers:** Safe (cyan), Review (orange), Advanced (red; was Caution). Only Temporary Files and Thumbnail Cache are Safe and selected by default; browser caches, shader caches, logs and traces are Review; Windows.old, component cleanup, Recycle Bin, registry and cookies are Advanced and need a consent checkbox in the confirmation.
+- **Catalog (32 categories in four sections):** added Temporary Internet Files (legacy IE folders only; INetCache as a whole is never touched because this PC's INetCache holds Chromium-style app data), NVIDIA/AMD/Intel/DirectX shader caches, Edge/Firefox/Chrome/other browser caches, NVIDIA app downloads, Go/VS/NuGet caches, Epic web cache, old CHKDSK fragments, Recent Access, Recent Documents, clipboard history (Windows API), event trace logs, .NET usage logs, browser history and cookies (Chromium and Firefox cookies; never passwords, bookmarks, sessions or Firefox places.sqlite). Windows.old and component cleanup run only through Disk Cleanup/DISM after UAC and consent (never `/ResetBase`); Defender data, certificates, security logs, restore points and recovery data are never offered.
+- **Smart Boost (Settings):** Quick Boost, optional junk monitoring, optional Automatic Boost (one-time consent, Safe only), threshold and interval choices, low-resource mode, resource meters and startup-app management with Undo. Nothing runs in the background unless a switch is on.
+- Tests: 158 engine checks plus new suites (`ScaleChecks`, `SmartBoostChecks`, `--verify-smart-boost`, `--stress-scan`); the project now targets `net10.0-windows10.0.19041.0` (clipboard API). `scripts/Verify.ps1` passes in full. Rendered previews of Review (both themes), Settings and Smart Boost were inspected.
+- Not verified on this PC, by design: real Disk Cleanup/DISM/clipboard runs, real startup changes, Automatic Boost over time, behavior as administrator, and most paths for apps not installed here (only Brave is). No version bump.
 ## 0.7 (repository layout) — November 7, 2026
 
 - The repository was reorganized (git moves, history kept): app source in `src/Hush/` (Cleaning, Updates, Setup, WindowsSettings, UI, Assets), tests in `tests/Hush.Tests/`, documentation in `docs/`, scripts in `scripts/` (`Build.ps1`, `Verify.ps1`, `Backup.ps1`), plus a `Hush.sln`. The top level went from 33 files to four plus folders. No code changed (the namespace is still `Hush`); project, script, `.gitignore` and documentation paths were updated. The published v0.7 release files are unaffected.

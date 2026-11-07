@@ -2,6 +2,20 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## Hush 0.8 (November 7, 2026)
+
+New ice-blue brush icon (crisp border, transparent corners; GenerateIcon.ps1), ice-blue Dark accent #7FE0F6, one red for the whole app (locked by ColorRuleChecks), Info card in Settings, header wordmark weight 500, version 0.8. scripts/Verify.ps1 passes (170 engine checks plus all UI suites). Built with scripts/Build.ps1; published as GitHub release v0.8 (see docs/RELEASING.md for the steps). The in-app update from 0.7 to 0.8 is for the owner to try on a real install (never run on the development PC by an agent).
+
+## Review style and Settings rework (November 7, 2026)
+
+Review Files is the flat list again; Settings has no Appearance card; Smart Boost shows its meters and status on the closed card; Settings titles are Medium 500. `scripts/Verify.ps1` passes and renders were inspected. Not committed.
+
+## Smart Boost, scalable engine and expanded catalog (November 7, 2026)
+
+See the CHANGELOG entry of the same name and the Smart Boost / No file-count limit bullets in CLAUDE.md. Verified: scripts/Verify.ps1 (158 engine checks, UI suites, --verify-smart-boost), --stress-scan (250,000 files), --benchmark, rendered Review/Settings/Smart Boost previews. Research: docs/CLEANING-RESEARCH.md. Backup: Backups/pre-smart-boost-engine-*.
+
+**Not run on this PC on purpose:** a real Disk Cleanup/DISM/clipboard clear, real startup toggles, real Automatic Boost, elevated behavior. **Open follow-ups:** confirm per-app paths on machines that have them (--scan-report), an elevated relaunch for system categories, and a measured startup-time benchmark.
+
 ## Current state
 
 - The app is **Hush**, version **0.7** (Hush.csproj). Namespace, assembly, executable (`Hush.exe`), window title, wordmark, About text, data folder (`%LOCALAPPDATA%\Hush`), updater repo/asset names, test fixture registry root and scripts all use Hush. The app icon is an aqua "H".

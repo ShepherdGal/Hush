@@ -8,7 +8,7 @@ if (-not $NoBuild) {
     dotnet build (Join-Path $testProject 'Hush.Tests.csproj') -c $Configuration
     if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
 }
-$executable = Join-Path $testProject "bin\$Configuration\net10.0-windows\Hush.Tests.exe"
+$executable = Join-Path $testProject "bin\$Configuration\net10.0-windows10.0.19041.0\Hush.Tests.exe"
 function Invoke-TestProcess([string[]]$TestArguments) {
     $start = [System.Diagnostics.ProcessStartInfo]::new($executable)
     $start.UseShellExecute = $false
@@ -47,6 +47,9 @@ if ($windowsSettings.Code -ne 0) { throw "Windows settings verification failed w
 $setup = Invoke-TestProcess @('--verify-setup')
 Write-Host $setup.Output
 if ($setup.Code -ne 0) { throw "Setup verification failed with code $($setup.Code): $($setup.Error)" }
+$smartBoost = Invoke-TestProcess @('--verify-smart-boost')
+Write-Host $smartBoost.Output
+if ($smartBoost.Code -ne 0) { throw "Smart Boost verification failed with code $($smartBoost.Code): $($smartBoost.Error)" }
 $failure = Invoke-TestProcess @('--verify-failure-path')
 if ($failure.Code -ne 1 -or $failure.Error -notmatch 'Intentional UI test failure') {
     throw "Failure reporting regression: exit=$($failure.Code), detail=$($failure.Error)"
