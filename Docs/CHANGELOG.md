@@ -2,6 +2,13 @@
 
 Dates use Asia/Jerusalem.
 
+## 0.7 (installer and folder cleanup) — November 7, 2026
+
+- Two ways to get Hush: `Hush-Setup.exe` (installer) and the portable `Hush.exe`. The installer is the same program started by that name (or `--setup`): per user, no administrator rights, verified copy to `%LOCALAPPDATA%\Programs\Hush`, Start menu and optional desktop shortcut, and a Settings > Apps entry whose quiet uninstall command is `Hush.exe --uninstall`. Setup also offers "Run without installing". Uninstall removes only Hush's own files, shortcuts that really point at it and its registry entry; settings, history and logs stay unless the user ticks the option; unrelated files in the folder are never deleted. After an in-app update the Settings > Apps version label is refreshed.
+- New: Setup.cs, SetupWindow.xaml(.cs), App.xaml.cs mode selection, `Build.ps1` also writes `artifacts/Hush-Setup.exe`, `Tests/SetupChecks.cs` and `--verify-setup` (fixtures only: temp folders and a `HKCU\Software\Hush.TestFixtures\<GUID>` key).
+- Folder cleanup: deleted the old unused `_publish` checkout (the previous project's Git history), the three old backup files from that era (about 21 MB) and the rebuildable bin/obj folders; removed the leftover `_publish` references from the project file, `.gitignore` and docs. A verified snapshot (`hush-0.7-before-cleanup-*`) was taken first. Kept: the other Hush snapshot, `Docs/References` (your chosen design references) and `.build-home` (a 312 MB NuGet/runtime cache that only speeds up and enables offline builds).
+- `Tests/Verify.ps1` passes, including the new setup suite.
+
 ## 0.7 (header, Settings summary, Git reset) — November 7, 2026
 
 - The header wordmark "Hush" now matches the home heading: 33 Regular Italic in the theme accent.

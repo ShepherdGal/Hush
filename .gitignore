@@ -24,7 +24,6 @@ Docs/Previews/
 Docs/References/
 Tests/.fixtures-*/
 Tests/.ui-fixture-*/
-_publish/
 
 # Logs, dumps and temporary files
 *.log

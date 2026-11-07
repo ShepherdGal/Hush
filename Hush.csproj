@@ -8,7 +8,6 @@
     <AssemblyName>Hush</AssemblyName>
     <RootNamespace>Hush</RootNamespace>
     <Version>0.7</Version>
-    <DefaultItemExcludes>$(DefaultItemExcludes);_publish\**</DefaultItemExcludes>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Hush.ico</ApplicationIcon>
   </PropertyGroup>

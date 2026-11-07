@@ -15,6 +15,12 @@ Updated November 7, 2026 (Asia/Jerusalem).
 - Fixed a test-isolation bug found during the rename: creating `App` in the test runner let WPF fire `OnStartup`, which opened a real window using the user's saved theme from `%LOCALAPPDATA%\Hush\settings.json`; a saved Light theme made the theme-motion check fail. `App.OnStartup` now skips opening the window when the entry assembly isn't Hush.
 - `Build.ps1` produced `artifacts/Hush/Hush.exe` (ProductName Hush, version 0.7) and `artifacts/Hush-windows-x64.zip`. The app was not launched manually for a visual check.
 
+## Installer, cleanup and GitHub upload (November 7, 2026)
+
+- **Installer + portable:** `Hush-Setup.exe` installs per user; `Hush.exe` stays portable. Both come from `Build.ps1`. Verified only against fixtures (`--verify-setup`); a real install/uninstall was never run on this PC. The setup window is Dark-only (it does not read the saved theme). Release assets to attach: `Hush.exe`, `Hush-Setup.exe`, `Hush-windows-x64.zip`.
+- **Cleanup:** removed the old `_publish` checkout, three old backups and bin/obj. Safety copy: `Backups/hush-0.7-before-cleanup-*`. The 312 MB `.build-home` cache was kept on purpose.
+- **GitHub:** see Open items.
+
 ## Soft blue accent in Light (November 7, 2026)
 
 Light uses #4C7BC8 (hover #3A66AE) as its single primary accent; Dark is unchanged. Checked in rendered Light previews of Home, Review and Settings and by `Tests/Verify.ps1`. Contrast (about 4:1 on the panel) is by calculation, not measured on a screen; the colour is one constant (`SafetyPalette.Accent`) if it should be softer or deeper. The theme-switch colour fade was tested but not watched by eye.
@@ -54,7 +60,6 @@ Checkbox, Back, PageScroll/layout, single Cyan token, breathing scan-complete li
 ## Open items
 
 - GitHub: the project folder is now a fresh Git repository (single commit, remote `ShepherdGal/Hush` configured, nothing pushed). The owner still has to delete the old repository and create/push the new one (steps in Docs/RELEASING.md). I cannot do that from here: it needs the owner's GitHub sign-in and is irreversible.
-- `_publish/repository` is an old unused checkout; it can be deleted once the new repository is on GitHub.
 
 ## Where things are
 

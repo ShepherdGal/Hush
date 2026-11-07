@@ -9,6 +9,10 @@ Read with CLAUDE.md. This describes the current 0.7 look and screens. It is a gu
 3. Neutral surfaces: safety color lives in vertical lines, checkmarks, checked primary labels and thin checked-category outlines. All categories share one continuous neutral surface.
 4. Gentle feedback: small under-button light, smooth shared page transitions, a live odometer file count and a distinct completed gauge.
 
+## Setup window
+
+`SetupWindow` (installer and uninstaller) is a 540-wide card with the app's 24 DIP rounded transparent window, drawn in the Dark palette: the "Hush" wordmark (33 Regular Italic, accent) with a Close caption button, a 26 Regular Italic heading, a 16 body paragraph that says exactly what will happen, one option checkbox (Install: "Add a shortcut to my desktop", checked; Uninstall: "Also delete my Hush settings, history and logs", unchecked, with a hint that it also removes the Undo history), a quiet text button on the left and the single action on the right (Install/Update with the normal action style; Remove Hush with the red-orange Clean style). Results replace the text in place ("Hush is installed" with Open Hush, "Hush was removed" with Close); failures show in the red-orange text and leave everything retryable.
+
 ## Top bar and Settings
 
 - Settings, Theme, Minimize and Close share CaptionButton: 40 x 40 DIP, transparent, zero glow, 10 DIP padding, MutedBrush easing toward TextBrush with the shared 280 ms interaction timing. Related gaps are 4 DIP, with 8 DIP separating theme from window commands. Center every icon in an 18 DIP vector slot with 1.5 DIP rounded strokes. Minimize/Close ink uses a precise 10 DIP command glyph within that slot. No font-symbol icons, new borders, background wash or scaling.

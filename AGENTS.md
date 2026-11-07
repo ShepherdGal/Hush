@@ -44,7 +44,7 @@ All cleanup rules live in two places only: `CleanupEngine.DefaultTargets()` (loc
 
 ## Development safety (this machine is the user's real PC)
 
-- Never run real cleanup, real Windows setting changes or a real self-update on this PC to test. Tests use synthetic fixtures only (unique temp folders, `HKCU\Software\Hush.TestFixtures\<GUID>` registry roots).
+- Never run real cleanup, real Windows setting changes, a real self-update or a real install/uninstall on this PC to test. Tests use synthetic fixtures only (unique temp folders, `HKCU\Software\Hush.TestFixtures\<GUID>` registry roots).
 - Do not publish, push, create releases or change GitHub settings unless the user asks.
 
 ## Design
@@ -70,6 +70,7 @@ Global UI rules (fix through shared styles/tokens, never one-off per screen):
 - MainWindow.xaml(.cs): all screens (Home gauge, Review categories, Settings, About, confirmation popups). MainWindow.WindowsSettings.cs: Settings page Windows choices.
 - WindowsSettings.cs: Windows policy catalog, apply/undo with history. See Docs/WINDOWS-SETTINGS.md.
 - UpdateService.cs / UpdateInstaller.cs: in-app updates from the public GitHub release page `ShepherdGal/Hush` (asset `Hush.exe`), read anonymously: no sign-in, token or GitHub wording in the UI. UpdateActivity.cs is the check/download progress track.
+- Setup.cs / SetupWindow.xaml(.cs): per-user installer and uninstaller (no administrator rights): verified copy to `%LOCALAPPDATA%\Programs\Hush`, Start menu/desktop shortcuts, Settings > Apps entry (HKCU uninstall key). Everything is injectable (`SetupLocations`) so tests use temp folders and `HKCU\Software\Hush.TestFixtures\<GUID>`. App.xaml.cs picks the mode: portable (default), setup (`Hush-Setup.exe` or `--setup`), uninstall (`--uninstall` from the installed copy).
 - Motion.cs, ThemePalette.cs, RollingFileCount.cs, ProgressRing.cs: animation and theming.
 - Tests/: verification runner (`Tests/Verify.ps1`).
 
@@ -77,11 +78,11 @@ Global UI rules (fix through shared styles/tokens, never one-off per screen):
 
 - `Tests/Verify.ps1` runs the whole suite (add `-Configuration Release` if an open preview locks files). Keep it passing before handing work back.
 - When a feature intentionally changes behavior, update or remove the tests that encoded the old behavior instead of bending the feature to satisfy them. Add tests for new deletion/system-change logic using fixtures.
-- `Build.ps1` creates `artifacts/Hush/Hush.exe` and `artifacts/Hush-windows-x64.zip` (needs .NET 10 Desktop Runtime; `-Standalone` bundles it).
+- `Build.ps1` creates the portable `artifacts/Hush/Hush.exe` (+ `artifacts/Hush-windows-x64.zip`) and the installer `artifacts/Hush-Setup.exe` (the same program; started by that name it opens setup). Needs .NET 10 Desktop Runtime; `-Standalone` bundles it.
 - `Backup.ps1 -Label <name>` makes a source + portable snapshot in Backups/ (local only, not in Git). It re-reads every archived file and verifies its SHA-256; it needs `artifacts/Hush-windows-x64.zip`. If Hush.exe is running, `Build.ps1` cannot overwrite `artifacts/Hush/Hush.exe` (never kill the user's app): publish to a temp folder and zip that instead. Take a verified backup before large engine/cleanup changes.
 - `Hush.Tests.exe --benchmark` prints scan/clean timing and allocations on a synthetic fixture; `--scan-report` runs a read-only scan of this PC and prints what each category would offer (it never cleans). Use it after adding locations to check paths against the real machine (see Tests/README.md).
 - **UI work: look at it.** Tests render both themes to PNGs when `HUSH_PREVIEW_DIRECTORY` is set; open them (and zoom/measure glyph alignment) before and after UI changes instead of trusting numbers alone.
-- The project folder itself is the Git repository (remote `ShepherdGal/Hush`, branch `main`). `.gitignore` keeps bin/obj/artifacts/Backups/_publish/settings/logs/binaries/secrets out; release binaries go to GitHub Releases, never into Git. `_publish/repository` is an old, unused checkout from before the repository was recreated and may be deleted by the user. Commit, push, tag and release only when the user asks.
+- The project folder itself is the Git repository (remote `ShepherdGal/Hush`, branch `main`). `.gitignore` keeps bin/obj/artifacts/Backups/settings/logs/binaries/secrets out; release binaries go to GitHub Releases, never into Git. Commit, push, tag and release only when the user asks.
 
 ## After changes
 

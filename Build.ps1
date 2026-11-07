@@ -10,4 +10,7 @@ dotnet publish $project -c Release -r win-x64 --self-contained $selfContained -p
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $output
 Compress-Archive -Path (Join-Path $output '*') -DestinationPath (Join-Path $PSScriptRoot 'artifacts\Hush-windows-x64.zip') -Force
-Write-Host "Ready: $output\Hush.exe"
+# Two ways to get Hush from the same program: Hush.exe is portable; Hush-Setup.exe (the same file, so it starts the installer by name) installs it.
+Copy-Item -LiteralPath (Join-Path $output 'Hush.exe') -Destination (Join-Path $PSScriptRoot 'artifacts\Hush-Setup.exe') -Force
+Write-Host "Portable: $output\Hush.exe"
+Write-Host "Installer: $(Join-Path $PSScriptRoot 'artifacts\Hush-Setup.exe')"

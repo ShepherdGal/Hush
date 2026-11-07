@@ -20,3 +20,5 @@ To inspect the controlled failure manually after a build:
 `Hush.Tests.exe --scan-report` is a read-only scan of the real PC with the default targets. It prints, per category, item count, size and how many items would be selected by default, plus the largest groups. It never calls Clean and writes nothing; use it to confirm new locations exist on a real machine. Categories needing administrator rights (Update, Delivery, Setup, Windows Logs, Installer Leftovers, system dumps) show 0 unless it is run elevated.
 
 For synthetic WPF review previews, set `HUSH_PREVIEW_DIRECTORY` to a writable output folder before running `Verify.ps1`. The suite exports both themes at default and minimum sizes using fixture paths only. The application does not save these previews during normal use.
+
+`Hush.Tests.exe --verify-setup` (part of Verify.ps1) exercises the installer and uninstaller against temp folders and a `HKCU\Software\Hush.TestFixtures\<GUID>` registry key only: verified copy, shortcuts, Settings > Apps entry, upgrade, locked and fake files, uninstall safety and both setup windows. It never installs or removes Hush on the real PC.

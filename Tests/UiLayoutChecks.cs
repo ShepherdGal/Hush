@@ -10,7 +10,7 @@ using Hush;
 
 internal static class UiLayoutChecks
 {
-    internal static void Run(bool forceFailure = false, bool buttonsOnly = false, bool navigationOnly = false, bool cleanSelectionOnly = false, bool updatesOnly = false, bool windowsSettingsOnly = false, bool themeMotionOnly = false)
+    internal static void Run(bool forceFailure = false, bool buttonsOnly = false, bool navigationOnly = false, bool cleanSelectionOnly = false, bool updatesOnly = false, bool windowsSettingsOnly = false, bool themeMotionOnly = false, bool setupOnly = false)
     {
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -31,6 +31,7 @@ internal static class UiLayoutChecks
                 app = new App(); app.InitializeComponent();
                 window = new MainWindow(engine, preferencesPath: Path.Combine(fixture, "preferences.json"));
                 Require(!forceFailure, "Intentional UI test failure to verify graceful reporting and shutdown.");
+                if (setupOnly) { SetupChecks.Run(fixture); return; }
                 if (themeMotionOnly) { ThemeMotionChecks.Run(engine, fixture); return; }
                 if (windowsSettingsOnly) { WindowsSettingsChecks.Run(engine, fixture); return; }
                 if (updatesOnly) { UpdateFlowChecks.Run(engine, fixture); return; }

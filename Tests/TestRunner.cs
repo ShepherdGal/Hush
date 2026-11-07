@@ -12,6 +12,7 @@ internal static class TestRunner
             else if (args is ["--verify-clean-selection"]) UiLayoutChecks.Run(cleanSelectionOnly: true);
             else if (args is ["--verify-updates"]) UiLayoutChecks.Run(updatesOnly: true);
             else if (args is ["--verify-windows-settings"]) UiLayoutChecks.Run(windowsSettingsOnly: true);
+            else if (args is ["--verify-setup"]) UiLayoutChecks.Run(setupOnly: true);
             else if (args is ["--benchmark"]) return PerformanceChecks.Run();
             else if (args is ["--scan-report"]) return PerformanceChecks.ScanReport();
             else throw new ArgumentException("Unknown test arguments.");

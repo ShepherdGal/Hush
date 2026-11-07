@@ -43,6 +43,9 @@ if ($updates.Code -ne 0) { throw "Update flow verification failed with code $($u
 $windowsSettings = Invoke-TestProcess @('--verify-windows-settings')
 Write-Host $windowsSettings.Output
 if ($windowsSettings.Code -ne 0) { throw "Windows settings verification failed with code $($windowsSettings.Code): $($windowsSettings.Error)" }
+$setup = Invoke-TestProcess @('--verify-setup')
+Write-Host $setup.Output
+if ($setup.Code -ne 0) { throw "Setup verification failed with code $($setup.Code): $($setup.Error)" }
 $failure = Invoke-TestProcess @('--verify-failure-path')
 if ($failure.Code -ne 1 -or $failure.Error -notmatch 'Intentional UI test failure') {
     throw "Failure reporting regression: exit=$($failure.Code), detail=$($failure.Error)"

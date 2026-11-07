@@ -4,7 +4,12 @@ Version 0.7. A compact native Windows cleaner: scan, review results by category,
 
 ## Run
 
-Open artifacts/Hush/Hush.exe, or download Hush.exe from the release page. The small Windows x64 build requires the **.NET 10 Desktop Runtime**. The app is portable and unsigned; keep it in a writable folder to enable in-place updates.
+Two ways to get Hush, both from the release page (both need the **.NET 10 Desktop Runtime** and are unsigned):
+
+- **Installer:** run `Hush-Setup.exe`. It installs Hush for your account only (no administrator rights) to `%LOCALAPPDATA%\Programs\Hush`, adds a Start menu entry (and, if you like, a desktop shortcut) and lists Hush under Settings > Apps, where Windows can uninstall it. Setup also offers "Run without installing".
+- **Portable:** run `Hush.exe` from any writable folder, or unzip `Hush-windows-x64.zip`. Nothing is installed or registered.
+
+Both keep their settings in `%LOCALAPPDATA%\Hush` and both update themselves in place. Uninstalling keeps your settings and history unless you tick "Also delete my Hush settings, history and logs".
 
 1. The gauge starts empty at **0%**. Click to scan; click again to stop. The arc starts at twelve o'clock and fills clockwise. A live files-found counter runs beneath it; byte totals appear when the scan ends.
 2. Click the completed gauge to rescan, or the **Scan complete. Take a look. →** link to open Review Files. Real file count and combined size appear beneath the link; registry entries are counted separately.
@@ -56,7 +61,7 @@ Requires .NET 10 SDK on Windows. No NuGet application packages.
 .\Backup.ps1                # Immutable source/portable snapshots with verified hashes
 ```
 
-Tests delete only uniquely named synthetic fixtures; they never run real user cleanup or an installed-app self-update. .gitignore excludes caches, bin/obj, artifacts, private backups, local screenshots/references, test fixtures, credentials, reports and editor state. Local delivery checkout _publish/repository is excluded from compilation and backups.
+Tests delete only uniquely named synthetic fixtures; they never run real user cleanup or an installed-app self-update. .gitignore excludes caches, bin/obj, artifacts, private backups, local screenshots/references, test fixtures, credentials, reports and editor state. Release binaries are attached to GitHub releases, never committed.
 
 Read CLAUDE.md (same as AGENTS.md), Docs/DESIGN.md, Docs/HANDOFF.md and Docs/RELEASING.md before extending the app. Original visual references and synthetic previews are kept locally and in immutable Backups, not Git.
 
