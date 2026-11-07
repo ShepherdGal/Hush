@@ -1,0 +1,88 @@
+# Changelog
+
+Dates use Asia/Jerusalem.
+
+## 0.7 (header, Settings summary, Git reset) — November 7, 2026
+
+- The header wordmark "Hush" now matches the home heading: 33 Regular Italic in the theme accent.
+- Review files and Settings titles sit closer to the content below (header rows 88 to 80 and 56).
+- Settings is now three collapsed summary rows (Appearance, Privacy & telemetry, More impact). Each shows its title in the theme's accent color and a live one-line summary ("Dark theme", "0 of 3 turned on", "2 waiting for review", "read-only on this PC"); clicking a row expands its switches with the shared accordion. New shared `SettingsSection` style in App.xaml.
+- Repository: new organized `.gitignore` (build output, binaries, backups, previews, runtime state, secrets, editor/agent files, OS files), the project folder became the Git repository for `ShepherdGal/Hush`, and every remaining mention of the old app name was removed from the code and docs.
+- Tests: Settings sections start collapsed with correct summaries; navigation and Windows-settings checks expand them first. `Tests/Verify.ps1` passes.
+
+## 0.7 (soft blue accent in Light) — November 7, 2026
+
+- Light theme only: the primary accent is now a soft blue (#4C7BC8, hover #3A66AE) instead of Cyan. It applies to the gauge ring and bloom, wordmark, links, Safe category lines/titles, checkboxes, switches, button glows and the update progress track. Dark keeps Cyan #3CCFD9.
+- The accent is now one token per theme (`SafetyPalette.Accent`, `PrimaryAccentColor`), and TealBrush/TealTextBrush ease between themes instead of being fixed. The update progress glide builds its gradient from the current accent.
+- Tests: the theme-motion check now expects blue in Light and Cyan in Dark and includes the accent in the gradual-motion roles. `Tests/Verify.ps1` passes.
+
+## 0.7 (live scan, typography, hover glow, updates without GitHub) — November 7, 2026
+
+- Home: the looping breathing glow under the gauge is removed (`Motion.Breathing` deleted); the "Scan complete. Take a look." link stays italic and underlined.
+- Live scan: files are now counted while they are still being discovered (deduplicated at discovery, also from inside one huge folder), and the gauge advances within each location (discovery fills the first half of its share, inspection the second) instead of waiting for whole locations. Gauge eases 260 ms to each new value (was 950), the odometer trails the real count by at most 0.6 s (was 1.8 s), the finishing ramp is shorter. Benchmark unchanged (scan 18 ms, clean 1.07 s); read-only real-PC scan 1.2 s.
+- Typography: the home heading is Regular 400 at 33 px (was SemiBold 32). Every title is now Inter Italic Regular 400: Review files, Settings, popup titles, the empty-state title and the Settings card headings. Small text sizes are 1 DIP larger (support/compact 15, body 16, About description 17).
+- Hover: Clean and Clean selected now lift their own-color glow clearly on hover (+0.11, outer halo 12 to 18 blur) instead of the almost invisible +0.035.
+- About: the "Hush" title is the aqua italic wordmark. The check animation is a soft Cyan glide on a 4 DIP track driven by a render-thread transform animation (was a 2 DIP bar repainted from a 16 ms timer); downloading shows a real determinate bar and percentage.
+- Updates without GitHub: "Connect GitHub", the Git credential helper (`GitHubConnection.cs`), the token plumbing and the separate "Install & restart" confirmation are removed. Check is anonymous; after "Version X is available" one **Download & install** click downloads (live progress), verifies and hands over to the updater. Plain-language errors; the word GitHub no longer appears in the UI. This needs the release page to be public.
+- Tests: update-flow suite rewritten (anonymous requests asserted, one-click flow, live progress, no GitHub wording, failed hand-over keeps the app unchanged); the Clean hover check expects the widened halo. `Tests/Verify.ps1` passes.
+
+## 0.7 (wording, descriptions, equal gutters, Settings) — November 7, 2026
+
+- Home: the wordmark and heading are Inter Italic; the heading now reads "Make more room to breathe" (also the window title). "Scan complete. Take a look." is italic and underlined with a tooltip, so it reads as a link while keeping the breathing glow and no arrow.
+- Review: every category shows one plain-language sentence under its title (new `ReviewCategory.Summary`, written for non-technical users); the technical text stays in the tooltip. Category selection bars now stretch to the taller header.
+- Review gutters are now equal on both sides (22 DIP left and right, measured), with or without a scrollbar. The overlay scrollbar is slimmer (the style's Width never applied, so it rendered as a 17 DIP system-width bar) and sits inside the right gutter, 10 DIP clear of the outlines.
+- Settings rebuilt as three always-visible cards (Appearance, Privacy & telemetry, More impact) of on/off switch rows with plain descriptions and hairline dividers. New shared `SwitchCheckBox` style (still a CheckBox, same bindings). The default "Not configured by Hush" line is hidden; the Location & Widgets accordion is gone. The scroller sits beside the cards instead of over them.
+- Tests: heading text, category line lookup, Settings switch animation, removal of the accordion clicks. `Tests/Verify.ps1` passes (92 engine checks plus all UI suites).
+
+## 0.7 (Review page polish) — November 7, 2026
+
+- Checked category outlines: wider gutters (14 DIP left, 14 DIP right so the scrollbar never touches them) and a full 1 DIP anti-aliased overlay stroke instead of a 0.5 DIP border, which looked pixelated at the corners; zoomed renders confirm smooth corners.
+- Select-all row and Expand-all re-aligned to the new checkbox/chevron columns.
+- Review and Settings share one header: title top-aligned, Back centered on the title line (measured, 1 DIP apart), so the heading no longer jumps between pages.
+
+## 0.7 (deep cleaning) — November 7, 2026
+
+- Deep clean: about 60 new location types, only where the folder exists. Browser caches now include GPU/Dawn/shader caches and Media Cache for Chrome, Edge, Brave and Vivaldi; app caches for Discord, Slack, Teams, VS Code, Steam, Remote Desktop and the Microsoft Store; every Store/MSIX package's `TempState`, `AC\Temp` and `AC\INetCache`; NVIDIA/AMD/Intel shader caches.
+- Four new categories (16 total): Developer & Creator Caches (NuGet, npm, pip, Yarn, JetBrains, Android Studio, Adobe media; opt-in), Windows Logs (CBS, DISM, MoSetup, Debug, diagnostic ETL traces; protected, opt-in), Installer Leftovers (C:\NVIDIA, C:\AMD; protected, opt-in), Usage Traces (Windows/Office recent-file shortcuts only; opt-in). "Cached Files" is now "Browser & App Caches".
+- Real-PC read-only scan (`--scan-report`) found about 995 MB on this machine without administrator rights (npm cache 543 MB, Android Studio caches 427 MB, Vivaldi/Brave caches 20 MB, Store-app temp 4.6 MB). It also exposed two real bugs, fixed below.
+- Fix: a single 25,000-file cache made the whole scan "limited" (read-only, nothing cleanable). The limit is now 150,000.
+- Fix: the scan asked Windows for the process list once per cache folder (5.2 s on this PC); it now uses one shared snapshot (1.1 s for the whole PC).
+- Fix: category selection was O(n) per file change, so ticking a category with tens of thousands of files could freeze the window; it is now a running count (120,000 files in 26 ms in the test).
+- Startup: default locations are discovered on the first scan, not when the window opens.
+- Back arrow replaced with the Windows system icon font arrow (Segoe Fluent Icons), measured and checked in zoomed renders because the hand-drawn chevron looked unaligned.
+- Tests: 92 engine checks (was 81): new categories, no duplicate default locations, traces only `*.lnk`, user caches only inside AppData, selection speed; `--scan-report` mode.
+
+## 0.7 (cleaning expansion, audit and performance) — November 7, 2026
+
+- New cleanup categories, organized in the existing Review screen with risk levels (Safe default-selected; Review and Caution opt-in): Thumbnail Cache, Windows Update Files (update downloads and logs), Delivery Optimization, Setup & Upgrade Logs (Panther), Recycle Bin (shell API, all drives, opt-in), plus broader Windows Error Reports (queues and dump attachments), Crash Reports & Dumps (Minidump, LiveKernelReports, MEMORY.DMP) and Shader Cache (NVIDIA/AMD alongside Windows). Browser/app caches now include Firefox, Vivaldi, Opera and Discord. Public Desktop/Start Menu broken shortcuts added.
+- System-protected locations use a deletable-only probe: files are listed only if this user can delete them now, so a normal (non-admin) scan stays clean and never reports "skipped locations" for Windows folders.
+- Deliberately not implemented: deleting previous Windows installations (`Windows.old`) and component-store (WinSxS) cleanup; both are irreversible and only supported through Microsoft's own tools. Documented as a permanent boundary in AGENTS.md/CLAUDE.md. INetCache is excluded because it holds Outlook attachment copies.
+- Engine: one enumeration pass per directory with pre-filtering (no double stat), pattern lists (`;`), category-driven risk and default selection, cached process checks, approved-target dictionary, single reusable path buffer. Measured on 20,000 synthetic files: scan 190 ms to 19 ms (allocations 9.5 MB to 7 MB); clean 6,472 ms to 1,063 ms (686 MB to 41 MB allocated).
+- Breathing glow capped at 30 fps. Removed verified-unused code: item/category accent properties, RowNumber, and eleven unused brush resources (less work per theme change).
+- Confirmation text now states Recycle Bin emptying and Update/Delivery/Setup file effects; previous Windows installations stay untouched.
+- Tests: 81 engine checks (was 48): multi-pattern, category risk/default selection, deletable-only probing, Recycle Bin with a fake, permission denial via ACLs (restored afterwards), mid-clean cancellation, and a "never touch" guard on default locations; `--benchmark` mode. Two existing tests were updated for the new behavior (progress is reported only for qualifying files; twelve categories).
+- Verified backup before the work: Backups/pre-cleaning-expansion-* (60 source files re-read and SHA-256 checked, plus portable zip).
+
+## 0.7 (UI refinements) — November 7, 2026
+
+- Checkboxes redrawn: one shared geometry (no double outline), smooth 1.5 DIP border, vector tick. The checked border, tick and mixed dash are the same accent color; unchecked stays neutral; a neutral ring eases in on hover/focus.
+- Back is now one shared `BackButton` style with a cleaner, proportional chevron, centered on the label and right-aligned to the page edge (Review and Settings).
+- Settings and Review use the shared `PageScroll` style: overlay scrollbar (no width shift), 16 DIP end padding so the Location & Widgets card is never clipped; Location & Widgets card padding made symmetric.
+- Cyan: `TealTextBrush` and Safe accents are now exactly the gauge's #3CCFD9 in Light too (previously #087F89). Light-theme contrast of Cyan text is lower as a result.
+- Scan-complete link: arrow removed; its text breathes with a soft pulsing Cyan glow (`Motion.Breathing`), without moving or resizing.
+- Hover standardized: new `AccentTextButton` (Cyan to `AccentHoverBrush`) for the wordmark, links and About actions; wordmark gains hover; checkbox, category chevron and scrollbar thumb gain eased hover; nothing scales.
+- About: Release notes (secondary) left, Check for updates (primary Cyan) centered, Close right, giving the actions room.
+- CLAUDE.md/AGENTS.md and DESIGN.md record these as global rules. Tests: theme-motion check now asserts the shared Cyan and uses `AccentHoverBrush` for palette motion; navigation check uses the new `CheckedRing` layer.
+
+## 0.7 — November 7, 2026
+
+- App identity: executable `Hush.exe`, namespace/assembly, window title, header wordmark, About, data folder `%LOCALAPPDATA%\Hush`, updater (`ShepherdGal/Hush`, asset `Hush.exe`), scripts and tests.
+- New app icon: aqua "H" on the charcoal rounded square.
+- Version 0.7; About shows "Version 0.7".
+- Rewrote CLAUDE.md/AGENTS.md: removed the strict early rules so Hush can grow into a broad cleaning and tweaking tool; kept basic data-safety rules and the visual design system.
+- Tests no longer open a real app window that reads the user's saved theme.
+- Removed old verification reports, acceptance/plan documents, generated previews, old builds and old backups.
+
+## Features at 0.7
+
+Gauge scan with live file counter, reviewable cleanup categories with safety labels, confirmed cleanup with audit logs and registry backups, Dark/Light themes, About with verified in-app updates, and Windows privacy settings with Undo.

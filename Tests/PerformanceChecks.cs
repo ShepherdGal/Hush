@@ -1,0 +1,83 @@
+using System.Diagnostics;
+using System.IO;
+using Hush;
+
+// Synthetic-only benchmark: `Hush.Tests.exe --benchmark`. Prints scan/clean time and allocations
+// for a nested fixture, so engine changes can be compared before and after. Never touches real folders.
+internal static class PerformanceChecks
+{
+    // Read-only: scans this PC with the default targets and prints what each category would offer. Never calls Clean.
+    internal static int ScanReport()
+    {
+        var engine = new CleanupEngine();
+        var clock = Stopwatch.StartNew();
+        var result = engine.Scan(null, CancellationToken.None);
+        clock.Stop();
+        Console.WriteLine($"Read-only scan of this PC: {clock.Elapsed.TotalMilliseconds:N0} ms, {result.Items.Count:N0} items, {Sizes.Format(result.Items.Sum(item => item.Bytes))}. Inaccessible {result.Inaccessible:N0}, busy caches {result.BusyCaches:N0}, limited {result.Limited}.");
+        foreach (var category in ReviewCategory.Definitions)
+        {
+            var items = result.Items.Where(item => ReviewCategory.CategoryFor(item) == category.Id).ToList();
+            Console.WriteLine($"  {category.Title,-28} {category.Safety,-8} {items.Count,7:N0} items  {Sizes.Format(items.Sum(item => item.Bytes)),10}  default-selected {items.Count(item => item.Selected):N0}");
+            foreach (var group in items.GroupBy(item => item.Group).OrderByDescending(group => group.Sum(item => item.Bytes)).Take(4))
+                Console.WriteLine($"      {group.Key,-34} {group.Count(),7:N0} items  {Sizes.Format(group.Sum(item => item.Bytes)),10}");
+        }
+        return 0;
+    }
+
+    internal static int Run()
+    {
+        string testsDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        string fixture = Path.Combine(testsDirectory, ".fixtures-" + Guid.NewGuid().ToString("N"));
+        string root = Path.Combine(fixture, "bench");
+        try
+        {
+            Directory.CreateDirectory(root);
+            var old = DateTime.UtcNow.AddDays(-10);
+            int oldFiles = 0, freshFiles = 0;
+            for (int a = 0; a < 20; a++)
+                for (int b = 0; b < 10; b++)
+                {
+                    string folder = Path.Combine(root, "d" + a, "s" + b, "leaf");
+                    Directory.CreateDirectory(folder);
+                    for (int i = 0; i < 100; i++)
+                    {
+                        string path = Path.Combine(folder, $"file{i}.tmp");
+                        File.WriteAllText(path, "synthetic benchmark data");
+                        if (i % 2 == 0) { File.SetCreationTimeUtc(path, old); File.SetLastWriteTimeUtc(path, old); oldFiles++; }
+                        else freshFiles++;
+                    }
+                }
+            Console.WriteLine($"Fixture: {oldFiles + freshFiles:N0} files ({oldFiles:N0} eligible) in {20 * 10 * 2 + 20:N0} directories.");
+            // The process list exercises the per-file "is the browser running" check during cleanup.
+            string[] processes = ["hush-benchmark-no-such-process"];
+            var engine = new CleanupEngine([new(root, "Benchmark cache", CleanupKind.Cache, TimeSpan.FromDays(2), Processes: processes)],
+                dataDirectory: Path.Combine(fixture, "audit"));
+            double bestScan = double.MaxValue; long allocated = 0; ScanResult? scan = null;
+            for (int run = 0; run < 4; run++)
+            {
+                GC.Collect(); GC.WaitForPendingFinalizers();
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                var clock = Stopwatch.StartNew();
+                scan = engine.Scan(null, CancellationToken.None);
+                clock.Stop();
+                if (run == 0) continue; // warm-up: JIT and file-system cache
+                if (clock.Elapsed.TotalMilliseconds < bestScan) { bestScan = clock.Elapsed.TotalMilliseconds; allocated = GC.GetAllocatedBytesForCurrentThread() - before; }
+            }
+            Console.WriteLine($"Scan: {bestScan:N0} ms best of 3, {allocated / 1048576.0:N1} MB allocated, {scan!.Items.Count:N0} candidates.");
+            var cleanClock = Stopwatch.StartNew();
+            long cleanBefore = GC.GetAllocatedBytesForCurrentThread();
+            var result = engine.Clean(scan.Items, null, CancellationToken.None);
+            cleanClock.Stop();
+            Console.WriteLine($"Clean: {cleanClock.Elapsed.TotalMilliseconds:N0} ms, {(GC.GetAllocatedBytesForCurrentThread() - cleanBefore) / 1048576.0:N1} MB allocated, deleted {result.Deleted:N0}, skipped {result.Skipped:N0}.");
+            Console.WriteLine($"Working set: {Process.GetCurrentProcess().WorkingSet64 / 1048576.0:N0} MB; managed heap {GC.GetTotalMemory(true) / 1048576.0:N1} MB.");
+            return 0;
+        }
+        finally
+        {
+            string resolved = Path.GetFullPath(fixture);
+            if (resolved.StartsWith(testsDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                && Path.GetFileName(resolved).StartsWith(".fixtures-") && Directory.Exists(resolved))
+                Directory.Delete(resolved, true);
+        }
+    }
+}
