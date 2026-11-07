@@ -1,11 +1,9 @@
 # Hush: only source, docs and tests belong in Git.
-# Release binaries go to GitHub Releases (see Docs/RELEASING.md), never into the repository.
+# Release binaries go to GitHub Releases (see docs/RELEASING.md), never into the repository.
 
 # Build output
 bin/
 obj/
-Tests/bin/
-Tests/obj/
 artifacts/
 .build-home/
 TestResults/
@@ -20,10 +18,10 @@ packages/
 
 # Local backups, previews, references and test fixtures
 Backups/
-Docs/Previews/
-Docs/References/
-Tests/.fixtures-*/
-Tests/.ui-fixture-*/
+docs/Previews/
+docs/References/
+tests/Hush.Tests/.fixtures-*/
+tests/Hush.Tests/.ui-fixture-*/
 
 # Logs, dumps and temporary files
 *.log

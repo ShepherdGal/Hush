@@ -1,13 +1,14 @@
 param([ValidateSet('Release', 'Verification')][string]$Configuration = 'Verification', [switch]$NoBuild)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
+$testProject = Join-Path $workspace 'tests\Hush.Tests'
 $env:DOTNET_CLI_HOME = Join-Path $workspace '.build-home'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 if (-not $NoBuild) {
-    dotnet build (Join-Path $PSScriptRoot 'Hush.Tests.csproj') -c $Configuration
+    dotnet build (Join-Path $testProject 'Hush.Tests.csproj') -c $Configuration
     if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
 }
-$executable = Join-Path $PSScriptRoot "bin\$Configuration\net10.0-windows\Hush.Tests.exe"
+$executable = Join-Path $testProject "bin\$Configuration\net10.0-windows\Hush.Tests.exe"
 function Invoke-TestProcess([string[]]$TestArguments) {
     $start = [System.Diagnostics.ProcessStartInfo]::new($executable)
     $start.UseShellExecute = $false

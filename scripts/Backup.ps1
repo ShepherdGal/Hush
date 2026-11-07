@@ -1,7 +1,7 @@
 param([ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')][string]$Label = ('hush-' + [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss') + 'Z'))
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$workspace = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$workspace = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $backupDirectory = Join-Path $workspace 'Backups'
 New-Item -ItemType Directory -Force -Path $backupDirectory | Out-Null
 $sourcePath = Join-Path $backupDirectory ($Label + '-source.zip')
@@ -13,11 +13,18 @@ foreach ($targetPath in @($sourcePath,$portablePath,$inventoryPath)) {
 }
 $portable = Join-Path $workspace 'artifacts\Hush-windows-x64.zip'
 if (-not (Test-Path -LiteralPath $portable)) { throw 'Build the portable app before taking a final snapshot.' }
+# Source only: the repository's own folders, never build output (bin/obj), backups, artifacts or caches.
+$buildFolders = '\bin\', '\obj\'
+function Source-Files($relative) {
+    Get-ChildItem -LiteralPath (Join-Path $workspace $relative) -File -Recurse |
+        Where-Object { $path = $_.FullName; -not ($buildFolders | Where-Object { $path.Contains($_) }) -and $_.Name -notlike '.fixtures-*' }
+}
 $files = @(
-    Get-ChildItem -LiteralPath $workspace -File | Where-Object { $_.Extension -in '.cs','.xaml','.csproj','.manifest','.md','.ps1' -or $_.Name -eq '.gitignore' }
-    Get-ChildItem -LiteralPath (Join-Path $workspace 'Tests') -File
-    Get-ChildItem -LiteralPath (Join-Path $workspace 'Assets') -File -Recurse
-    Get-ChildItem -LiteralPath (Join-Path $workspace 'Docs') -File -Recurse
+    Get-ChildItem -LiteralPath $workspace -File | Where-Object { $_.Extension -in '.md','.sln','.ps1' -or $_.Name -eq '.gitignore' }
+    Source-Files 'src'
+    Source-Files 'tests'
+    Source-Files 'scripts'
+    Source-Files 'docs'
 ) | Sort-Object FullName -Unique
 $entries = @($files | ForEach-Object {
     [pscustomobject]@{

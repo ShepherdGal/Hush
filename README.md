@@ -2,6 +2,16 @@
 
 Version 0.7. A compact native Windows cleaner: scan, review results by category, clean what you choose, with a light or dark theme. No ads, telemetry, startup tasks, or third-party application packages.
 
+## Project layout
+
+```
+src/Hush/       the app: Cleaning/, Updates/, Setup/, WindowsSettings/, UI/, Assets/
+tests/Hush.Tests/   verification runner and fixtures-only checks
+docs/           design system, handoff, changelog, releasing, Windows settings
+scripts/        Build.ps1, Verify.ps1, Backup.ps1
+Hush.sln        opens the app and its tests together
+```
+
 ## Run
 
 Two ways to get Hush, both from the release page (both need the **.NET 10 Desktop Runtime** and are unsigned):
@@ -42,27 +52,27 @@ Audit reports and registry backups still live under %LOCALAPPDATA%/Hush/Logs and
 
 Settings separates app Appearance from Windows privacy choices. Checkboxes stage changes; **Review changes** lists their effects before **Apply changes** writes anything. **Undo changes** restores the tracked prior values after confirmation. Location and device-wide Widgets appear in a separate disclosure because they can remove features. Widgets requires running the app as administrator; there is no automatic elevation or restart.
 
-Policy controls support Windows 11 Pro-family, Enterprise, Education and IoT Enterprise, builds 22000–26200 (21H2–25H2). Home, unknown builds, detected work/school management and externally configured policies are read-only. Suggestions in Windows Settings requires Enterprise/Education/IoT. Diagnostics is set to required data (Windows has no full telemetry-off for these editions). Policy changes may need a later sign-out/restart. Local Undo history stays in %LOCALAPPDATA%/Hush/Windows settings; keep it to preserve restoration. These choices never run with file cleanup. See Docs/WINDOWS-SETTINGS.md for exact policies and limits.
+Policy controls support Windows 11 Pro-family, Enterprise, Education and IoT Enterprise, builds 22000–26200 (21H2–25H2). Home, unknown builds, detected work/school management and externally configured policies are read-only. Suggestions in Windows Settings requires Enterprise/Education/IoT. Diagnostics is set to required data (Windows has no full telemetry-off for these editions). Policy changes may need a later sign-out/restart. Local Undo history stays in %LOCALAPPDATA%/Hush/Windows settings; keep it to preserve restoration. These choices never run with file cleanup. See docs/WINDOWS-SETTINGS.md for exact policies and limits.
 
 ## Updates
 
 Click the title, then **Check for updates**. About shows installed-version notes; a newer stable release shows its version, plain patch notes and **Download & install**. One click downloads it with a progress bar, verifies the SHA-256 digest, size, source and x64 application identity/version, then a helper quietly replaces the portable app and restarts it. A rollback copy is kept; failed startup restores it.
 
-There is no sign-in, account or token: Hush reads the public release page of [ShepherdGal/Hush](https://github.com/ShepherdGal/Hush) anonymously. **Updates only work for other people while that repository and its releases are public**; while it is private, Check reports that updates cannot be checked right now. See Docs/RELEASING.md for release steps and verification limits.
+There is no sign-in, account or token: Hush reads the public release page of [ShepherdGal/Hush](https://github.com/ShepherdGal/Hush) anonymously. **Updates only work for other people while that repository and its releases are public**; while it is private, Check reports that updates cannot be checked right now. See docs/RELEASING.md for release steps and verification limits.
 
 ## Build and development
 
 Requires .NET 10 SDK on Windows. No NuGet application packages.
 
 ```powershell
-.\Tests\Verify.ps1          # Safety, updater and WPF checks; controlled failure regression
-.\Build.ps1                 # Small portable executable and ZIP
-.\Build.ps1 -Standalone     # Larger build including Desktop Runtime
-.\Backup.ps1                # Immutable source/portable snapshots with verified hashes
+.\scripts\Verify.ps1          # Safety, updater and WPF checks; controlled failure regression
+.\scripts\Build.ps1                 # Small portable executable and ZIP
+.\scripts\Build.ps1 -Standalone     # Larger build including Desktop Runtime
+.\scripts\Backup.ps1                # Immutable source/portable snapshots with verified hashes
 ```
 
 Tests delete only uniquely named synthetic fixtures; they never run real user cleanup or an installed-app self-update. .gitignore excludes caches, bin/obj, artifacts, private backups, local screenshots/references, test fixtures, credentials, reports and editor state. Release binaries are attached to GitHub releases, never committed.
 
-Read CLAUDE.md (same as AGENTS.md), Docs/DESIGN.md, Docs/HANDOFF.md and Docs/RELEASING.md before extending the app. Original visual references and synthetic previews are kept locally and in immutable Backups, not Git.
+Read CLAUDE.md (same as AGENTS.md), docs/DESIGN.md, docs/HANDOFF.md and docs/RELEASING.md before extending the app. Original visual references and synthetic previews are kept locally and in immutable Backups, not Git.
 
 Updater protocol follows [GitHub release metadata](https://docs.github.com/en/rest/releases/releases) and [release asset downloads](https://docs.github.com/en/rest/releases/assets).

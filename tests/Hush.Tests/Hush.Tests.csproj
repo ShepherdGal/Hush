@@ -7,5 +7,5 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Hush.Tests</AssemblyName>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="..\Hush.csproj"/></ItemGroup>
+  <ItemGroup><ProjectReference Include="..\..\src\Hush\Hush.csproj"/></ItemGroup>
 </Project>

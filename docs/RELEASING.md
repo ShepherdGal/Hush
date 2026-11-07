@@ -10,9 +10,9 @@ Status as of November 7, 2026: the old repository was deleted by the owner and h
 
 ## Release steps
 
-1. Confirm the version in Hush.csproj with the user; update ReleaseNotes.cs, Docs/CHANGELOG.md and Docs/HANDOFF.md.
-2. Run `Tests/Verify.ps1` (use `-Configuration Release` if a preview locks the Verification build).
-3. Run `Build.ps1` (framework-dependent; needs .NET 10 Desktop Runtime) or `Build.ps1 -Standalone`.
+1. Confirm the version in Hush.csproj with the user; update ReleaseNotes.cs, docs/CHANGELOG.md and docs/HANDOFF.md.
+2. Run `scripts/Verify.ps1` (use `-Configuration Release` if a preview locks the Verification build).
+3. Run `scripts/Build.ps1` (framework-dependent; needs .NET 10 Desktop Runtime) or `scripts/Build.ps1 -Standalone`.
 4. Commit the reviewed source and docs in the project folder (`.gitignore` already keeps bin/obj/artifacts/Backups/settings/logs and binaries out).
 5. Tag `vX.Y` or `vX.Y.Z` and create a non-prerelease GitHub release with plain-language notes.
 6. Attach the exact `Hush.exe` from `artifacts/Hush` (the portable app; required for in-app updates), `Hush-Setup.exe` from `artifacts` (the installer: the same program, which opens setup because of its name) and `Hush-windows-x64.zip` for manual downloads. Never replace a published tag's binary; publish a new version instead.

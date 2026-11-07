@@ -12,7 +12,6 @@
     <ApplicationIcon>Assets\Hush.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="Tests\**" />
     <InternalsVisibleTo Include="Hush.Tests" />
   </ItemGroup>
 </Project>

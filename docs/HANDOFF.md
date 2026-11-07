@@ -7,29 +7,33 @@ Updated November 7, 2026 (Asia/Jerusalem).
 - The app is **Hush**, version **0.7** (Hush.csproj). Namespace, assembly, executable (`Hush.exe`), window title, wordmark, About text, data folder (`%LOCALAPPDATA%\Hush`), updater repo/asset names, test fixture registry root and scripts all use Hush. The app icon is an aqua "H".
 - CLAUDE.md (and its copy AGENTS.md) holds the product direction, basic data-safety rules and the visual system; the app is meant to grow into a broad cleaning and tweaking tool as the user asks for features.
 - Current behavior: 16 cleanup categories (Safe ones selected by default), live scan, confirmed cleanup with audit logs, Dark/Light themes, Windows privacy switches with Undo, and one-click anonymous in-app updates.
-- Backups/ holds local source and portable snapshots (never in Git); Docs/References holds design reference images (also not in Git).
+- Backups/ holds local source and portable snapshots (never in Git); docs/References holds design reference images (also not in Git).
 
 ## Verification (November 7, 2026)
 
-- `Tests/Verify.ps1` passed in full (engine, UI, theme motion, clean selection, updates, Windows settings, controlled failure).
+- `scripts/Verify.ps1` passed in full (engine, UI, theme motion, clean selection, updates, Windows settings, controlled failure).
 - Fixed a test-isolation bug found during the rename: creating `App` in the test runner let WPF fire `OnStartup`, which opened a real window using the user's saved theme from `%LOCALAPPDATA%\Hush\settings.json`; a saved Light theme made the theme-motion check fail. `App.OnStartup` now skips opening the window when the entry assembly isn't Hush.
-- `Build.ps1` produced `artifacts/Hush/Hush.exe` (ProductName Hush, version 0.7) and `artifacts/Hush-windows-x64.zip`. The app was not launched manually for a visual check.
+- `scripts/Build.ps1` produced `artifacts/Hush/Hush.exe` (ProductName Hush, version 0.7) and `artifacts/Hush-windows-x64.zip`. The app was not launched manually for a visual check.
+
+## Repository layout (November 7, 2026)
+
+Source lives in `src/Hush/`, tests in `tests/Hush.Tests/`, docs in `docs/`, scripts in `scripts/` (run them from anywhere: they find the repository root themselves). Old habits to unlearn: `Verify.ps1`, `Build.ps1` and `Backup.ps1` are no longer at the root or in Tests. Verified by a full `scripts/Verify.ps1` run and a rebuild after the move.
 
 ## Installer, cleanup and GitHub upload (November 7, 2026)
 
-- **Installer + portable:** `Hush-Setup.exe` installs per user; `Hush.exe` stays portable. Both come from `Build.ps1`. Verified only against fixtures (`--verify-setup`); a real install/uninstall was never run on this PC. The setup window is Dark-only (it does not read the saved theme). Release assets to attach: `Hush.exe`, `Hush-Setup.exe`, `Hush-windows-x64.zip`.
+- **Installer + portable:** `Hush-Setup.exe` installs per user; `Hush.exe` stays portable. Both come from `scripts/Build.ps1`. Verified only against fixtures (`--verify-setup`); a real install/uninstall was never run on this PC. The setup window is Dark-only (it does not read the saved theme). Release assets to attach: `Hush.exe`, `Hush-Setup.exe`, `Hush-windows-x64.zip`.
 - **Cleanup:** removed the old `_publish` checkout, three old backups and bin/obj. Safety copy: `Backups/hush-0.7-before-cleanup-*`. The 312 MB `.build-home` cache was kept on purpose.
 - **GitHub:** the public repository https://github.com/ShepherdGal/Hush holds the code (branch `main`), and release **v0.7** (tag `v0.7`) carries `Hush-Setup.exe`, `Hush.exe` and `Hush-windows-x64.zip`. Checked from outside the account: the release is public, each asset digest equals the local file, and an anonymous download is byte-identical. GitHub CLI was installed on this PC (winget) and signed in as ShepherdGal to do it; Git now uses it as the credential helper for github.com.
 
 ## Soft blue accent in Light (November 7, 2026)
 
-Light uses #4C7BC8 (hover #3A66AE) as its single primary accent; Dark is unchanged. Checked in rendered Light previews of Home, Review and Settings and by `Tests/Verify.ps1`. Contrast (about 4:1 on the panel) is by calculation, not measured on a screen; the colour is one constant (`SafetyPalette.Accent`) if it should be softer or deeper. The theme-switch colour fade was tested but not watched by eye.
+Light uses #4C7BC8 (hover #3A66AE) as its single primary accent; Dark is unchanged. Checked in rendered Light previews of Home, Review and Settings and by `scripts/Verify.ps1`. Contrast (about 4:1 on the panel) is by calculation, not measured on a screen; the colour is one constant (`SafetyPalette.Accent`) if it should be softer or deeper. The theme-switch colour fade was tested but not watched by eye.
 
 ## Live scan, typography, hover glow and GitHub-free updates (November 7, 2026)
 
-Done and checked in rendered previews plus `Tests/Verify.ps1`: breathing glow removed, live counter/gauge during discovery, Regular italic titles and 33 px heading, +1 DIP small fonts, visible Clean hover glow, aqua italic About title with a smoother check animation, and the one-click anonymous update flow (Connect GitHub and its credential helper deleted).
+Done and checked in rendered previews plus `scripts/Verify.ps1`: breathing glow removed, live counter/gauge during discovery, Regular italic titles and 33 px heading, +1 DIP small fonts, visible Clean hover glow, aqua italic About title with a smoother check animation, and the one-click anonymous update flow (Connect GitHub and its credential helper deleted).
 
-**Important:** anonymous updates only work if `ShepherdGal/Hush` and its releases are public (see Docs/RELEASING.md). Until then the app says updates cannot be checked right now. Not verified: a real download/install against a live release (never run on this PC), the glide/progress animation and the live gauge by eye.
+**Important:** anonymous updates only work if `ShepherdGal/Hush` and its releases are public (see docs/RELEASING.md). Until then the app says updates cannot be checked right now. Not verified: a real download/install against a live release (never run on this PC), the glide/progress animation and the live gauge by eye.
 
 ## Wording, descriptions, equal gutters and Settings (November 7, 2026)
 
@@ -42,25 +46,25 @@ Outline gutters/corners, shared page header and Back position were fixed and che
 ## Deep cleaning pass (November 7, 2026)
 
 - Inspired by Microsoft PC Manager's deep cleanup (the user shared a screenshot with Recommended items, Other system items, Other application items 12.6 GB, Computer Usage Traces). Microsoft publishes no official category list, so the locations come from Windows documentation and general knowledge of well-known caches; see AGENTS.md "Never touch" for what was deliberately excluded.
-- `Tests/Verify.ps1` passes (92 engine checks plus all UI suites). The real-PC check is `Hush.Tests.exe --scan-report` (read-only). Real cleaning of the new categories was not run on this PC.
+- `scripts/Verify.ps1` passes (92 engine checks plus all UI suites). The real-PC check is `Hush.Tests.exe --scan-report` (read-only). Real cleaning of the new categories was not run on this PC.
 - Not verified: system-wide categories as administrator; exact Opera/Delivery Optimization/Teams/Steam paths on machines that have them; the breathing glow and other animations by eye.
 - Next requested: further UI polish (nicer, more modern, still elegant). Check renders myself first, as before.
 
 ## Cleaning expansion, audit and performance (November 7, 2026)
 
 - Backup: `Backups/pre-cleaning-expansion-*` (verified). The portable zip in it was published to a temp folder because the user's Hush.exe was running and locking `artifacts/Hush/Hush.exe`; `artifacts/Hush-windows-x64.zip` was refreshed, `artifacts/Hush/Hush.exe` was not rebuilt.
-- Engine/catalog changes are described in CHANGELOG and in the "Cleaning architecture and permanent safety rules" section of AGENTS.md/CLAUDE.md. `Tests/Verify.ps1` passes in full (81 engine checks plus UI, theme, selection, updates, Windows settings and failure-path suites).
+- Engine/catalog changes are described in CHANGELOG and in the "Cleaning architecture and permanent safety rules" section of AGENTS.md/CLAUDE.md. `scripts/Verify.ps1` passes in full (81 engine checks plus UI, theme, selection, updates, Windows settings and failure-path suites).
 - Not verified on this PC by design: real cleanup of any new category, real Recycle Bin emptying, and behavior of the system-protected categories as administrator (all covered only with fixtures/fakes). The default paths for Delivery Optimization, Opera and Discord caches come from public documentation and community sources that disagree in places; wrong paths are harmless (missing folders are skipped) but should be confirmed on a real machine.
 - Open follow-ups: an elevated relaunch so Update/Delivery/Setup categories appear for non-admin users; a consent-dialog integration with Microsoft's Disk Cleanup/DISM for Windows.old and component-store cleanup; startup-time measurement (no startup benchmark exists yet).
 
 ## UI refinement pass (November 7, 2026)
 
-Checkbox, Back, PageScroll/layout, single Cyan token, breathing scan-complete link, standardized hover and About footer were reworked through shared styles (App.xaml, Motion.cs) — see CHANGELOG and the "Global UI rules" in DESIGN.md. `Tests/Verify.ps1` passed after the change (run twice; the first run exposed a test that assumed per-theme Cyan, now updated). Rendered previews of Review, Settings and About were inspected; the breathing glow itself is an animation and was not watched live, and the app was not launched manually.
+Checkbox, Back, PageScroll/layout, single Cyan token, breathing scan-complete link, standardized hover and About footer were reworked through shared styles (App.xaml, Motion.cs) — see CHANGELOG and the "Global UI rules" in DESIGN.md. `scripts/Verify.ps1` passed after the change (run twice; the first run exposed a test that assumed per-theme Cyan, now updated). Rendered previews of Review, Settings and About were inspected; the breathing glow itself is an animation and was not watched live, and the app was not launched manually.
 
 ## Open items
 
-- GitHub: nothing pending. For the next version: bump the version only when asked, run Verify.ps1 and Build.ps1, commit, tag and publish with `gh release create` (see Docs/RELEASING.md).
+- GitHub: nothing pending. For the next version: bump the version only when asked, run scripts/Verify.ps1 and scripts/Build.ps1, commit, tag and publish with `gh release create` (see docs/RELEASING.md).
 
 ## Where things are
 
-See the code map in CLAUDE.md. Visual spec: Docs/DESIGN.md. Windows settings: Docs/WINDOWS-SETTINGS.md. Releases: Docs/RELEASING.md. Tests: Tests/README.md.
+See the code map in CLAUDE.md. Visual spec: docs/DESIGN.md. Windows settings: docs/WINDOWS-SETTINGS.md. Releases: docs/RELEASING.md. Tests: tests/Hush.Tests/README.md.

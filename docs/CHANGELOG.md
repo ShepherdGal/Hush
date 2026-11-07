@@ -2,14 +2,18 @@
 
 Dates use Asia/Jerusalem.
 
+## 0.7 (repository layout) — November 7, 2026
+
+- The repository was reorganized (git moves, history kept): app source in `src/Hush/` (Cleaning, Updates, Setup, WindowsSettings, UI, Assets), tests in `tests/Hush.Tests/`, documentation in `docs/`, scripts in `scripts/` (`Build.ps1`, `Verify.ps1`, `Backup.ps1`), plus a `Hush.sln`. The top level went from 33 files to four plus folders. No code changed (the namespace is still `Hush`); project, script, `.gitignore` and documentation paths were updated. The published v0.7 release files are unaffected.
+
 ## 0.7 (installer and folder cleanup) — November 7, 2026
 
 - Published: public repository `ShepherdGal/Hush` and release `v0.7` with `Hush-Setup.exe`, `Hush.exe` and the zip (asset digests and an anonymous download verified).
 
 - Two ways to get Hush: `Hush-Setup.exe` (installer) and the portable `Hush.exe`. The installer is the same program started by that name (or `--setup`): per user, no administrator rights, verified copy to `%LOCALAPPDATA%\Programs\Hush`, Start menu and optional desktop shortcut, and a Settings > Apps entry whose quiet uninstall command is `Hush.exe --uninstall`. Setup also offers "Run without installing". Uninstall removes only Hush's own files, shortcuts that really point at it and its registry entry; settings, history and logs stay unless the user ticks the option; unrelated files in the folder are never deleted. After an in-app update the Settings > Apps version label is refreshed.
-- New: Setup.cs, SetupWindow.xaml(.cs), App.xaml.cs mode selection, `Build.ps1` also writes `artifacts/Hush-Setup.exe`, `Tests/SetupChecks.cs` and `--verify-setup` (fixtures only: temp folders and a `HKCU\Software\Hush.TestFixtures\<GUID>` key).
-- Folder cleanup: deleted the old unused `_publish` checkout (the previous project's Git history), the three old backup files from that era (about 21 MB) and the rebuildable bin/obj folders; removed the leftover `_publish` references from the project file, `.gitignore` and docs. A verified snapshot (`hush-0.7-before-cleanup-*`) was taken first. Kept: the other Hush snapshot, `Docs/References` (your chosen design references) and `.build-home` (a 312 MB NuGet/runtime cache that only speeds up and enables offline builds).
-- `Tests/Verify.ps1` passes, including the new setup suite.
+- New: Setup.cs, SetupWindow.xaml(.cs), App.xaml.cs mode selection, `scripts/Build.ps1` also writes `artifacts/Hush-Setup.exe`, `tests/Hush.Tests/SetupChecks.cs` and `--verify-setup` (fixtures only: temp folders and a `HKCU\Software\Hush.TestFixtures\<GUID>` key).
+- Folder cleanup: deleted the old unused `_publish` checkout (the previous project's Git history), the three old backup files from that era (about 21 MB) and the rebuildable bin/obj folders; removed the leftover `_publish` references from the project file, `.gitignore` and docs. A verified snapshot (`hush-0.7-before-cleanup-*`) was taken first. Kept: the other Hush snapshot, `docs/References` (your chosen design references) and `.build-home` (a 312 MB NuGet/runtime cache that only speeds up and enables offline builds).
+- `scripts/Verify.ps1` passes, including the new setup suite.
 
 ## 0.7 (header, Settings summary, Git reset) — November 7, 2026
 
@@ -17,13 +21,13 @@ Dates use Asia/Jerusalem.
 - Review files and Settings titles sit closer to the content below (header rows 88 to 80 and 56).
 - Settings is now three collapsed summary rows (Appearance, Privacy & telemetry, More impact). Each shows its title in the theme's accent color and a live one-line summary ("Dark theme", "0 of 3 turned on", "2 waiting for review", "read-only on this PC"); clicking a row expands its switches with the shared accordion. New shared `SettingsSection` style in App.xaml.
 - Repository: new organized `.gitignore` (build output, binaries, backups, previews, runtime state, secrets, editor/agent files, OS files), the project folder became the Git repository for `ShepherdGal/Hush`, and every remaining mention of the old app name was removed from the code and docs.
-- Tests: Settings sections start collapsed with correct summaries; navigation and Windows-settings checks expand them first. `Tests/Verify.ps1` passes.
+- Tests: Settings sections start collapsed with correct summaries; navigation and Windows-settings checks expand them first. `scripts/Verify.ps1` passes.
 
 ## 0.7 (soft blue accent in Light) — November 7, 2026
 
 - Light theme only: the primary accent is now a soft blue (#4C7BC8, hover #3A66AE) instead of Cyan. It applies to the gauge ring and bloom, wordmark, links, Safe category lines/titles, checkboxes, switches, button glows and the update progress track. Dark keeps Cyan #3CCFD9.
 - The accent is now one token per theme (`SafetyPalette.Accent`, `PrimaryAccentColor`), and TealBrush/TealTextBrush ease between themes instead of being fixed. The update progress glide builds its gradient from the current accent.
-- Tests: the theme-motion check now expects blue in Light and Cyan in Dark and includes the accent in the gradual-motion roles. `Tests/Verify.ps1` passes.
+- Tests: the theme-motion check now expects blue in Light and Cyan in Dark and includes the accent in the gradual-motion roles. `scripts/Verify.ps1` passes.
 
 ## 0.7 (live scan, typography, hover glow, updates without GitHub) — November 7, 2026
 
@@ -33,7 +37,7 @@ Dates use Asia/Jerusalem.
 - Hover: Clean and Clean selected now lift their own-color glow clearly on hover (+0.11, outer halo 12 to 18 blur) instead of the almost invisible +0.035.
 - About: the "Hush" title is the aqua italic wordmark. The check animation is a soft Cyan glide on a 4 DIP track driven by a render-thread transform animation (was a 2 DIP bar repainted from a 16 ms timer); downloading shows a real determinate bar and percentage.
 - Updates without GitHub: "Connect GitHub", the Git credential helper (`GitHubConnection.cs`), the token plumbing and the separate "Install & restart" confirmation are removed. Check is anonymous; after "Version X is available" one **Download & install** click downloads (live progress), verifies and hands over to the updater. Plain-language errors; the word GitHub no longer appears in the UI. This needs the release page to be public.
-- Tests: update-flow suite rewritten (anonymous requests asserted, one-click flow, live progress, no GitHub wording, failed hand-over keeps the app unchanged); the Clean hover check expects the widened halo. `Tests/Verify.ps1` passes.
+- Tests: update-flow suite rewritten (anonymous requests asserted, one-click flow, live progress, no GitHub wording, failed hand-over keeps the app unchanged); the Clean hover check expects the widened halo. `scripts/Verify.ps1` passes.
 
 ## 0.7 (wording, descriptions, equal gutters, Settings) — November 7, 2026
 
@@ -41,7 +45,7 @@ Dates use Asia/Jerusalem.
 - Review: every category shows one plain-language sentence under its title (new `ReviewCategory.Summary`, written for non-technical users); the technical text stays in the tooltip. Category selection bars now stretch to the taller header.
 - Review gutters are now equal on both sides (22 DIP left and right, measured), with or without a scrollbar. The overlay scrollbar is slimmer (the style's Width never applied, so it rendered as a 17 DIP system-width bar) and sits inside the right gutter, 10 DIP clear of the outlines.
 - Settings rebuilt as three always-visible cards (Appearance, Privacy & telemetry, More impact) of on/off switch rows with plain descriptions and hairline dividers. New shared `SwitchCheckBox` style (still a CheckBox, same bindings). The default "Not configured by Hush" line is hidden; the Location & Widgets accordion is gone. The scroller sits beside the cards instead of over them.
-- Tests: heading text, category line lookup, Settings switch animation, removal of the accordion clicks. `Tests/Verify.ps1` passes (92 engine checks plus all UI suites).
+- Tests: heading text, category line lookup, Settings switch animation, removal of the accordion clicks. `scripts/Verify.ps1` passes (92 engine checks plus all UI suites).
 
 ## 0.7 (Review page polish) — November 7, 2026
 
