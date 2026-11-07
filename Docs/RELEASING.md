@@ -6,12 +6,7 @@ Only publish when the user asks. Only change the version when the user says so (
 
 The updater checks GitHub `ShepherdGal/Hush` (UpdateService.Repository) for the latest stable release with a `Hush.exe` asset. The check and download are anonymous, so in-app updates only work for other people while the repository (or at least its releases) is public; while it is private the app says updates cannot be checked right now. Making it public is the owner's decision. Never put a token in Git, the executable, a release, settings, logs or chat.
 
-Status as of November 7, 2026: the project folder is a fresh Git repository with `origin` set to `https://github.com/ShepherdGal/Hush.git`, but nothing has been pushed. The old GitHub repository (with its previous history and release) must be deleted or renamed away by the owner first, then the new empty `Hush` repository created and pushed:
-
-1. GitHub, old repository, Settings, Danger Zone: Delete this repository (or rename it to something else if the old history should be kept).
-2. GitHub, New repository: name `Hush`, **public** (required for anonymous in-app updates), with no README, .gitignore or license so it starts empty.
-3. In the project folder: `git push -u origin main`.
-4. When releasing: `git tag v0.7`, `git push origin v0.7`, then create a release for that tag and attach `artifacts/Hush/Hush.exe` (and the zip).
+Status as of November 7, 2026: the old repository was deleted by the owner and https://github.com/ShepherdGal/Hush was created as a **public** repository from this project folder (`origin`, branch `main`). Release `v0.7` is published with `Hush-Setup.exe`, `Hush.exe` and `Hush-windows-x64.zip`. GitHub CLI (`gh`) is installed and signed in on this PC, so a release is: commit, `git tag -a vX.Y -m "Hush X.Y"`, `git push origin vX.Y`, then `gh release create vX.Y artifacts\Hush-Setup.exe artifacts\Hush\Hush.exe artifacts\Hush-windows-x64.zip --repo ShepherdGal/Hush --verify-tag --title "..." --notes-file notes.md --latest`. Always publish only when the user asks, and verify the asset digests afterwards.
 
 ## Release steps
 

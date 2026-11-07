@@ -19,7 +19,7 @@ Updated November 7, 2026 (Asia/Jerusalem).
 
 - **Installer + portable:** `Hush-Setup.exe` installs per user; `Hush.exe` stays portable. Both come from `Build.ps1`. Verified only against fixtures (`--verify-setup`); a real install/uninstall was never run on this PC. The setup window is Dark-only (it does not read the saved theme). Release assets to attach: `Hush.exe`, `Hush-Setup.exe`, `Hush-windows-x64.zip`.
 - **Cleanup:** removed the old `_publish` checkout, three old backups and bin/obj. Safety copy: `Backups/hush-0.7-before-cleanup-*`. The 312 MB `.build-home` cache was kept on purpose.
-- **GitHub:** see Open items.
+- **GitHub:** the public repository https://github.com/ShepherdGal/Hush holds the code (branch `main`), and release **v0.7** (tag `v0.7`) carries `Hush-Setup.exe`, `Hush.exe` and `Hush-windows-x64.zip`. Checked from outside the account: the release is public, each asset digest equals the local file, and an anonymous download is byte-identical. GitHub CLI was installed on this PC (winget) and signed in as ShepherdGal to do it; Git now uses it as the credential helper for github.com.
 
 ## Soft blue accent in Light (November 7, 2026)
 
@@ -59,7 +59,7 @@ Checkbox, Back, PageScroll/layout, single Cyan token, breathing scan-complete li
 
 ## Open items
 
-- GitHub: the project folder is now a fresh Git repository (single commit, remote `ShepherdGal/Hush` configured, nothing pushed). The owner still has to delete the old repository and create/push the new one (steps in Docs/RELEASING.md). I cannot do that from here: it needs the owner's GitHub sign-in and is irreversible.
+- GitHub: nothing pending. For the next version: bump the version only when asked, run Verify.ps1 and Build.ps1, commit, tag and publish with `gh release create` (see Docs/RELEASING.md).
 
 ## Where things are
 
