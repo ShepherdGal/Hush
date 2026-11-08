@@ -338,6 +338,10 @@ internal static class UiLayoutChecks
                 ButtonVisualChecks.Run(window);
                 NavigationChecks.Run(window, root, fixture);
                 VerifyScanResultStates(engine);
+                VerifyScanRipples(engine);
+                Console.WriteLine("PASS: The scan cue (soft ripples drifting out from the gauge) is off until a scan runs, moves while it runs and fades out afterwards");
+                UiSizeChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                Console.WriteLine("PASS: Interface size (Smart, 75%, 100%, 120%) rescales the real window, is remembered, and always fits the screen");
                 Console.WriteLine("PASS: Empty gauge, real live odometer count, safety selection, shared motion, About/update popup, blurred confirmation and responsive layout verified");
             }
             catch (Exception ex) { failure = ex; }
@@ -352,6 +356,47 @@ internal static class UiLayoutChecks
         thread.SetApartmentState(ApartmentState.STA); thread.Start();
         if (!thread.Join(TimeSpan.FromSeconds(50))) throw new TimeoutException("The UI verification did not finish within 50 seconds.");
         if (failure != null) throw new Exception("UI layout verification failed", failure);
+    }
+
+    // The ripples that drift out from the gauge during a scan: off before, fading in and moving while the scan is held open, off again afterwards.
+    private static void VerifyScanRipples(CleanupEngine engine)
+    {
+        using var release = new ManualResetEventSlim(false);
+        var window = new MainWindow(engine, (progress, token) =>
+        {
+            progress?.Report(new ScanProgress("User temp", 40, 12, 90_000, 0.34));
+            release.Wait(10_000);
+            return new(PreviewItems().Take(1).ToList(), 0, 0, false);
+        });
+        try
+        {
+            window.Show();
+            var orbit = (ScanRipples)window.FindName("ScanRipplesCue");
+            var root = (FrameworkElement)window.Content;
+            Require(!orbit.IsRunning && !orbit.IsRippling && orbit.Opacity == 0, "The scan cue is off until a scan runs");
+            MainWindow.StillLookingAfterMs = 600;
+            var scanning = window.ActivateGaugeAsync();
+            PumpUntil(() => orbit.IsRunning && orbit.IsRippling && orbit.Opacity > 0.95);
+            var title = (TextBlock)window.FindName("StatusTitle");
+            PumpUntil(() => title.Text.StartsWith("Still looking in"));
+            Require(title.Text == "Still looking in User temp…", "A scan that stays in one location names it on the visible status line");
+            double first = orbit.Phase; Wait(300);
+            Require(Math.Abs(orbit.Phase - first) > 0.002, "The ripples really move while the scan runs");
+            if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string directory)
+            {
+                foreach (bool light in new[] { false, true })
+                {
+                    if (window.IsLightTheme != light) window.ToggleTheme();
+                    PumpUntil(() => !window.IsPageTransitioning); Wait(400);
+                    Layout(root, new Size(920, 820)); Save(root, new Size(920, 820), Path.Combine(directory, $"scan-ripples-{(light ? "light" : "dark")}.png"));
+                }
+            }
+            release.Set();
+            PumpUntil(() => scanning.IsCompleted); scanning.GetAwaiter().GetResult();
+            PumpUntil(() => !orbit.IsRippling && orbit.Opacity < 0.01);
+            Require(!orbit.IsRunning, "The ripples fade out and stop when the scan ends");
+        }
+        finally { MainWindow.StillLookingAfterMs = 2500; release.Set(); window.Close(); }
     }
 
     private static void VerifyScanResultStates(CleanupEngine engine)

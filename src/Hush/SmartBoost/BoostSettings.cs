@@ -35,6 +35,8 @@ public sealed class Preferences
     public bool Light { get; set; }
     // The version of the terms of use the person accepted ("Use at your own risk"); empty until they accept.
     public string TermsAccepted { get; set; } = "";
+    // Interface size: "smart" (fits the screen), "75", "100" or "120" (percent). Anything else reads as smart.
+    public string UiSize { get; set; } = UiScale.Smart;
     public BoostSettings Boost { get; set; } = new();
 
     public static Preferences Load(string path)
@@ -44,7 +46,7 @@ public sealed class Preferences
             if (File.Exists(path))
             {
                 var loaded = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path));
-                if (loaded != null) { loaded.Boost = (loaded.Boost ?? new()).Normalized(); return loaded; }
+                if (loaded != null) { loaded.Boost = (loaded.Boost ?? new()).Normalized(); loaded.UiSize = UiScale.Normalize(loaded.UiSize); return loaded; }
             }
         }
         catch { }

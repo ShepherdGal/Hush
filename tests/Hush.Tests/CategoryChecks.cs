@@ -25,6 +25,32 @@ internal static class CategoryChecks
         }
         CleanupEngine Engine(string audit, CleanupTarget target) => new([target], dataDirectory: Path.Combine(fixture, audit));
 
+        // A location that never answers (a stuck network path, a security product holding a file) must not freeze the scan: the watchdog
+        // skips it and the others finish; and Stop returns at once even while a location is stuck.
+        string[] stallFolders = new[] { "stall-a", "stall-b", "stall-c" }.Select(name => Path.Combine(fixture, name)).ToArray();
+        foreach (string folder in stallFolders) Make(folder, "synthetic.tmp");
+        var stallEngine = new CleanupEngine(stallFolders.Select((folder, index) => new CleanupTarget(folder, "Stall " + "ABC"[index], CleanupKind.Temp, TimeSpan.FromDays(2))).ToList(),
+            dataDirectory: Path.Combine(fixture, "audit-stall"));
+        using var unblock = new ManualResetEventSlim(false);
+        var stallClock = System.Diagnostics.Stopwatch.StartNew();
+        var stalledScan = stallEngine.Scan(null, CancellationToken.None, new ScanOptions(StallMilliseconds: 1500, OnTargetStart: target => { if (target.Group == "Stall B") unblock.Wait(20000); }));
+        stallClock.Stop();
+        check(stalledScan.Stalled == 1 && !stalledScan.Stopped && stalledScan.Items.Count == 2 && stalledScan.Items.All(item => item.Group != "Stall B") && stallClock.ElapsedMilliseconds < 8000,
+            "A location that stops responding is skipped and the scan still finishes with the other locations");
+        unblock.Set(); // releases the abandoned worker; it must not add anything afterwards
+        Thread.Sleep(300);
+        check(stalledScan.Items.Count == 2 && File.Exists(Path.Combine(stallFolders[1], "synthetic.tmp")), "An abandoned location adds nothing later and nothing is deleted");
+        using (var stopNow = new CancellationTokenSource())
+        using (var hold = new ManualResetEventSlim(false))
+        {
+            _ = Task.Run(async () => { await Task.Delay(400); stopNow.Cancel(); });
+            var stopClock = System.Diagnostics.Stopwatch.StartNew();
+            var stopped = stallEngine.Scan(null, stopNow.Token, new ScanOptions(StallMilliseconds: 0, OnTargetStart: target => { if (target.Group == "Stall A") hold.Wait(20000); }));
+            stopClock.Stop();
+            hold.Set();
+            check(stopped.Stopped && stopClock.ElapsedMilliseconds < 6000, "Stop returns promptly even while a location is stuck");
+        }
+
         // Several wildcards per target; unrelated files are never matched.
         string dumps = Path.Combine(fixture, "multi");
         string dmp = Make(dumps, "a.dmp"), hdmp = Make(dumps, "b.hdmp"), notes = Make(dumps, "notes.txt");

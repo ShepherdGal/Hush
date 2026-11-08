@@ -95,10 +95,14 @@ internal sealed record ScanProgress(string Location, int Examined, int Found, lo
     public int FilesFound => Math.Max(0, Found - RegistryEntries);
 }
 // Items is empty for a count-only scan (background junk monitoring); FileCount and TotalBytes are always filled.
-internal sealed record ScanResult(List<CleanupItem> Items, int Inaccessible, int BusyCaches, bool Stopped, long FileCount = 0, long TotalBytes = 0);
+// Stalled counts locations or Windows steps that stopped answering and were skipped so the scan could finish.
+internal sealed record ScanResult(List<CleanupItem> Items, int Inaccessible, int BusyCaches, bool Stopped, long FileCount = 0, long TotalBytes = 0, int Stalled = 0);
 // Restricts or lightens a scan. Include picks targets (Quick Boost: Safe only); CountOnly measures without keeping items;
 // ReportIntervalMs slows progress reporting in low-resource mode; Background lowers the scanning thread to background CPU and disk priority.
-internal sealed record ScanOptions(Func<CleanupTarget, bool>? Include = null, bool CountOnly = false, int ReportIntervalMs = 40, bool Background = false);
+// StallMilliseconds: a location that produces nothing for this long is skipped (0 turns the watchdog off); StepTimeoutMilliseconds limits the registry and
+// Recycle Bin steps (Disk Cleanup gets three times as long). OnTargetStart is a test hook that runs when a location begins.
+internal sealed record ScanOptions(Func<CleanupTarget, bool>? Include = null, bool CountOnly = false, int ReportIntervalMs = 40, bool Background = false,
+    int StallMilliseconds = 30000, int StepTimeoutMilliseconds = 30000, Action<CleanupTarget>? OnTargetStart = null);
 // FreeSpaceBefore/After are the free bytes Windows reports for the drives that held the selected items, measured around the clean.
 internal sealed record CleanupResult(int Deleted, int Skipped, long Bytes, bool Stopped, string LogPath, long FreeSpaceBefore = 0, long FreeSpaceAfter = 0,
     IReadOnlyDictionary<string, int>? SkipReasons = null)

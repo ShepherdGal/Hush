@@ -90,6 +90,7 @@ public partial class MainWindow : Window
         }
         prefs = Preferences.Load(settingsPath);
         light = prefs.Light;
+        InitializeUiSize();
         ApplyTheme();
         ResetGauge();
         RefreshSelection();
@@ -215,17 +216,19 @@ public partial class MainWindow : Window
     private void Resize_DragDelta(object sender, DragDeltaEventArgs e)
     {
         string edges = (string)((Thumb)sender).Tag;
-        if (edges.Contains('R')) Width = Math.Max(MinWidth, Width + e.HorizontalChange);
-        if (edges.Contains('B')) Height = Math.Max(MinHeight, Height + e.VerticalChange);
+        // The thumbs sit inside the scaled content, so their drag distances are in content units; the window is measured in screen units.
+        double dx = e.HorizontalChange * uiScale, dy = e.VerticalChange * uiScale;
+        if (edges.Contains('R')) Width = Math.Max(MinWidth, Width + dx);
+        if (edges.Contains('B')) Height = Math.Max(MinHeight, Height + dy);
         if (edges.Contains('L'))
         {
-            double width = Math.Max(MinWidth, Width - e.HorizontalChange);
+            double width = Math.Max(MinWidth, Width - dx);
             Left += Width - width;
             Width = width;
         }
         if (edges.Contains('T'))
         {
-            double height = Math.Max(MinHeight, Height - e.VerticalChange);
+            double height = Math.Max(MinHeight, Height - dy);
             Top += Height - height;
             Height = height;
         }
@@ -323,6 +326,12 @@ public partial class MainWindow : Window
 
     // Options for the next scan only (Quick Boost restricts it to Safe categories); a normal scan uses none.
     private ScanOptions? pendingScanOptions;
+    // When a scan has been in one location this long without any news, the status line names it ("Still looking in ..."), so a slow or stuck
+    // location is visible instead of looking like a frozen gauge. Tests shorten it.
+    internal static int StillLookingAfterMs = 2500;
+    private string scanLocation = "";
+    private long scanProgressTick;
+    private bool stillLookingShown;
 
     private async Task StartScan(ScanOptions? options = null)
     {
@@ -349,7 +358,20 @@ public partial class MainWindow : Window
             AnimateGaugeTo(Math.Min(99, p.Fraction * 100));
             LiveFileCounter.SetCount(p.FilesFound);
             LiveFileCounter.ToolTip = p.Location == "Complete" ? null : p.Location;
+            // Remember where the scan is. Scans move through most locations in a blink, so the name is only shown (below) when one takes a while.
+            if (p.Location is not ("Complete" or "Preparing scan")) scanLocation = p.Location.Replace("Discovering ", "");
+            scanProgressTick = Environment.TickCount64;
+            if (stillLookingShown) { stillLookingShown = false; StatusTitle.Text = "Searching files…"; }
         });
+        scanLocation = ""; scanProgressTick = Environment.TickCount64; stillLookingShown = false;
+        var stillLooking = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        stillLooking.Tick += (_, _) =>
+        {
+            if (!acceptingProgress || scanLocation.Length == 0 || Environment.TickCount64 - scanProgressTick < StillLookingAfterMs) return;
+            stillLookingShown = true;
+            StatusTitle.Text = $"Still looking in {scanLocation}…";
+        };
+        stillLooking.Start();
         try
         {
             var result = await Task.Run(() => scan(progress, cancellation!.Token, pendingScanOptions));
@@ -368,13 +390,14 @@ public partial class MainWindow : Window
             bool stopped = result.Stopped || cancellation?.IsCancellationRequested == true;
             CurrentScanState = stopped ? ScanState.Stopped : ScanState.Completed;
             if (stopped) FreezeIncompleteScanGauge();
-            scanSkippedLocations = result.BusyCaches > 0 || result.Inaccessible > 0;
+            scanSkippedLocations = result.BusyCaches > 0 || result.Inaccessible > 0 || result.Stalled > 0;
             GaugeLabel.Text = "Click to scan again";
             StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan complete. Take a look.";
             ReviewHint.Text = stopped ? "Partial scan. Scan again before cleaning." : "Selected files only. Confirmation required.";
             var notes = new List<string>();
             if (result.BusyCaches > 0) notes.Add("open browser caches skipped");
             if (result.Inaccessible > 0) notes.Add($"{result.Inaccessible:N0} inaccessible paths skipped");
+            if (result.Stalled > 0) notes.Add($"{result.Stalled:N0} location{(result.Stalled == 1 ? "" : "s")} did not respond and {(result.Stalled == 1 ? "was" : "were")} skipped (see Logs\\scan-issues.log)");
             if (foundRegistry > 0) notes.Add("registry entries are opt-in");
             StatusDetail.Text = FoundSummary();
             ResultCount.ToolTip = notes.Count > 0 ? string.Join(" · ", notes) : null;
@@ -402,6 +425,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            stillLooking.Stop();
             LiveFileCounter.Settle();
             SetBusy(false);
             if (CurrentScanState != ScanState.Completed)
@@ -541,6 +565,7 @@ public partial class MainWindow : Window
         if (value) { cancellation?.Dispose(); cancellation = new(); }
         CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = AboutButton.IsEnabled = SettingsButton.IsEnabled = !value;
         bool scanning = value && mode == "scan";
+        ScanRipplesCue.IsRunning = scanning;
         FileScanActivity.IsRunning = value && !scanning;
         FileScanActivity.Visibility = value && !scanning ? Visibility.Visible : Visibility.Hidden;
         LiveFileCounter.Visibility = scanning ? Visibility.Visible : Visibility.Hidden;

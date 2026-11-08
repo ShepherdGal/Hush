@@ -281,27 +281,40 @@ internal sealed class CleanupEngine
         return (skip, seen);
     }
 
+    // One location's results. A location runs on its own worker so that one call that never returns (a stuck network path, a security
+    // product holding a file open, a dead drive) cannot freeze the scan: the coordinator watches the heartbeat and abandons the location.
+    private sealed class TargetRun
+    {
+        internal readonly List<CleanupItem> Items = [];
+        internal int Examined, Inaccessible;
+        internal long Files, Bytes;
+        internal bool Busy;
+        internal volatile bool Abandoned;
+        private long heartbeat = Environment.TickCount64;
+        internal void Beat() => Volatile.Write(ref heartbeat, Environment.TickCount64);
+        internal long LastBeat => Volatile.Read(ref heartbeat);
+    }
+
     internal ScanResult Scan(IProgress<ScanProgress>? progress, CancellationToken token, ScanOptions? options = null)
     {
         options ??= new();
         using var background = options.Background ? LowResourceMode.BackgroundScope() : null;
+        progress?.Report(new("Preparing scan", 0, 0, 0, 0));
         // A normal scan leaves out the Settings-only categories (browser history and cookies); they are scanned only when Settings asks for them.
         IReadOnlyList<CleanupTarget> active = options.Include == null
             ? targets.Where(target => !ReviewCategory.SettingsOnly.Contains(target.Category ?? "")).ToList()
             : targets.Where(options.Include).ToList();
         List<CleanupItem> found = [];
-        int inaccessible = 0, busy = 0, examined = 0;
+        int inaccessible = 0, busy = 0, examined = 0, stalled = 0;
         long fileCount = 0, bytes = 0;
         bool countOnly = options.CountOnly;
         bool extras = !countOnly && options.Include == null;
         int stages = Math.Max(1, active.Count + (extras && includeRegistry ? 1 : 0) + (extras && recycleBin != null ? 1 : 0) + (extras && systemTools != null ? 1 : 0));
-        progress?.Report(new("Preparing scan", 0, 0, 0, 0));
         var (skipRoots, seenSets) = PlanOverlaps(active);
         // One enumeration pass per directory returns size, times and attributes, so no file is stat'ed twice.
         // Reparse points and system files are never returned; hidden files are (the default would skip them).
         var enumeration = new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = false, ReturnSpecialDirectories = false,
             AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.System };
-        var reportClock = Stopwatch.StartNew();
         for (int targetIndex = 0; targetIndex < active.Count; targetIndex++)
         {
             if (token.IsCancellationRequested) break;
@@ -309,119 +322,211 @@ internal sealed class CleanupEngine
             double start = (double)targetIndex / stages;
             double end = (double)(targetIndex + 1) / stages;
             progress?.Report(new(target.Group, examined, found.Count, bytes, start));
-            if (!Directory.Exists(target.Root) || !SafePath(target.Root, target.Root))
-            { progress?.Report(new(target.Group, examined, found.Count, bytes, end)); continue; }
-            if (BrowserRunning(target, fresh: true))
-            { busy++; progress?.Report(new(target.Group, examined, found.Count, bytes, end)); continue; }
-            string fullRoot = Path.GetFullPath(target.Root);
-            string[]? patterns = Patterns(target.Pattern);
-            long cutoff = (DateTime.UtcNow - target.MinimumAge).Ticks;
+            var run = new TargetRun();
+            int baseExamined = examined, baseFound = found.Count;
+            long baseBytes = bytes;
             var skipSet = skipRoots[targetIndex];
             var seenSet = seenSets[targetIndex];
-            string[]? excludedNames = target.ExcludeFolders;
-            bool selected = SelectedByDefault(target);
-            // Only locations that need the full path of every file (protected probe, shortcut check, duplicate guard) pay for building it.
-            bool needPath = target.DeletableOnly || target.Kind == CleanupKind.Shortcut || seenSet != null;
-            bool wantName = !countOnly || needPath;
-            int seenInTarget = 0;
-            bool firstReported = false;
-            // Discovery has no known total, so the target's share of the gauge fills on a saturating curve as files are found.
-            double Fraction() => start + (end - start) * seenInTarget / (seenInTarget + 4000.0);
-            void Report(string label)
+            var worker = Task.Factory.StartNew(() =>
             {
-                progress?.Report(new(label, examined, found.Count, bytes, Fraction()));
-                reportClock.Restart();
-            }
-            Stack<string> pending = new();
-            pending.Push(target.Root);
-            while (pending.Count > 0 && !token.IsCancellationRequested)
+                using var scope = options.Background ? LowResourceMode.BackgroundScope() : null;
+                ScanTarget(target, start, end, skipSet, seenSet, options, enumeration, progress, token, run, baseExamined, baseFound, baseBytes);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            bool skipped = false;
+            try
             {
-                string directory = pending.Pop();
-                if (!directory.StartsWith(Path.TrimEndingDirectorySeparator(target.Root), StringComparison.OrdinalIgnoreCase)) continue;
-                try
+                while (!worker.Wait(150))
                 {
-                    var entries = new FileSystemEnumerable<Raw>(directory,
-                        (ref FileSystemEntry entry) => entry.IsDirectory
-                            ? new Raw(entry.FileName.ToString(), 0, 0, 0, true)
-                            : new Raw(wantName ? entry.FileName.ToString() : null, entry.Length, entry.LastWriteTimeUtc.UtcTicks, entry.CreationTimeUtc.UtcTicks, false), enumeration)
+                    if (token.IsCancellationRequested)
                     {
-                        ShouldIncludePredicate = (ref FileSystemEntry entry) =>
-                        {
-                            if (entry.IsDirectory)
-                            {
-                                if (!target.Recursive) return false;
-                                if (excludedNames != null)
-                                    foreach (string excluded in excludedNames)
-                                        if (entry.FileName.Equals(excluded, StringComparison.OrdinalIgnoreCase)) return false;
-                                return true;
-                            }
-                            return Matches(patterns, entry.FileName) && entry.LastWriteTimeUtc.UtcTicks < cutoff && entry.CreationTimeUtc.UtcTicks < cutoff;
-                        }
-                    };
-                    foreach (var raw in entries)
+                        // Stop answers at once: give the worker a moment to hand back what it has, then leave it behind.
+                        if (!worker.Wait(1500)) { run.Abandoned = true; skipped = true; }
+                        break;
+                    }
+                    if (options.StallMilliseconds > 0 && Environment.TickCount64 - run.LastBeat > options.StallMilliseconds)
                     {
-                        if (token.IsCancellationRequested) break;
-                        examined++; seenInTarget++;
-                        if (raw.IsDirectory)
-                        {
-                            string sub = Path.Combine(directory, raw.Name!);
-                            if (skipSet == null || !skipSet.Contains(sub)) pending.Push(sub);
-                            continue;
-                        }
-                        try
-                        {
-                            string? full = null;
-                            if (needPath)
-                            {
-                                full = Path.Combine(directory, raw.Name!);
-                                if (seenSet != null && !seenSet.Add(full)) continue;
-                                if (target.DeletableOnly && !CanDelete(full)) continue;
-                            }
-                            string? shortcutTarget = null, shortcutHash = null;
-                            if (target.Kind == CleanupKind.Shortcut)
-                            {
-                                shortcutTarget = ShortcutProbe.MissingApplication(full!);
-                                if (shortcutTarget == null) continue;
-                                using var shortcut = new FileStream(full!, FileMode.Open, FileAccess.Read, FileShare.Read);
-                                shortcutHash = Convert.ToHexString(SHA256.HashData(shortcut));
-                            }
-                            fileCount++; bytes += raw.Length;
-                            if (!countOnly)
-                                found.Add(new CleanupItem { Folder = directory, FileName = raw.Name, Root = fullRoot, Group = target.Group,
-                                    Kind = target.Kind, CategoryId = target.Category, Bytes = raw.Length, ModifiedTicks = raw.Modified,
-                                    CreatedTicks = raw.Created, ShortcutTarget = shortcutTarget, ShortcutHash = shortcutHash, Selected = selected });
-                        }
-                        catch (Exception ex) when (IsFileError(ex)) { inaccessible++; }
-                        // Report the first file of a location right away, then from inside a huge flat folder too, not only between folders.
-                        if (!firstReported) { firstReported = true; Report("Discovering " + target.Group.ToLowerInvariant()); }
-                        else if ((seenInTarget & 127) == 0 && reportClock.ElapsedMilliseconds >= options.ReportIntervalMs)
-                            Report("Discovering " + target.Group.ToLowerInvariant());
+                        run.Abandoned = true; skipped = true; stalled++;
+                        LogScanIssue($"Skipped a location that stopped responding for {options.StallMilliseconds / 1000.0:0.#} s: {target.Group} ({target.Root})");
+                        break;
                     }
                 }
-                catch (Exception ex) when (IsFileError(ex)) { if (!target.DeletableOnly) inaccessible++; }
-                if (reportClock.ElapsedMilliseconds >= options.ReportIntervalMs) Report("Discovering " + target.Group.ToLowerInvariant());
+            }
+            catch (AggregateException failure) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.InnerException ?? failure).Throw(); }
+            if (!skipped)
+            {
+                found.AddRange(run.Items); examined += run.Examined; inaccessible += run.Inaccessible; fileCount += run.Files; bytes += run.Bytes;
+                if (run.Busy) busy++;
             }
             if (!token.IsCancellationRequested) progress?.Report(new(target.Group, examined, found.Count, bytes, end));
         }
         int nextStage = active.Count;
+        // The three extra steps ask Windows itself (registry, shell, Disk Cleanup). Each is guarded so a stuck answer cannot hold the scan forever.
         if (extras && includeRegistry && !token.IsCancellationRequested)
         {
             progress?.Report(new("App registry leftovers", examined, found.Count, bytes, (double)nextStage++ / stages));
-            ScanRegistry(found, token);
+            if (!Guarded("App registry leftovers", options.StepTimeoutMilliseconds, options.Background, token, list => ScanRegistry(list, token), found)) stalled++;
         }
         if (extras && recycleBin != null && !token.IsCancellationRequested)
         {
             progress?.Report(new("Recycle Bin", examined, found.Count, bytes, (double)nextStage++ / stages));
-            ScanRecycleBin(found);
+            if (!Guarded("Recycle Bin", options.StepTimeoutMilliseconds, options.Background, token, ScanRecycleBin, found)) stalled++;
         }
         if (extras && systemTools != null && !token.IsCancellationRequested)
         {
             progress?.Report(new("Windows cleanup tools", examined, found.Count, bytes, (double)nextStage++ / stages));
-            ScanSystemTools(found, token);
+            if (!Guarded("Windows cleanup tools", options.StepTimeoutMilliseconds * 3, options.Background, token, list => ScanSystemTools(list, token), found)) stalled++;
         }
         if (!token.IsCancellationRequested) progress?.Report(new("Complete", examined, found.Count, bytes, 1,
             RegistryEntries: found.Count(item => item.Kind is CleanupKind.Registry or CleanupKind.RecycleBin or CleanupKind.SystemTool)));
-        return new(found.OrderByDescending(x => x.Bytes).ToList(), inaccessible, busy, token.IsCancellationRequested, fileCount, bytes);
+        return new(found.OrderByDescending(x => x.Bytes).ToList(), inaccessible, busy, token.IsCancellationRequested, fileCount, bytes, stalled);
+    }
+
+    // Runs one extra scan step on its own thread with a time limit. Whatever it found is added only if it finished in time.
+    private bool Guarded(string name, int timeoutMilliseconds, bool background, CancellationToken token, Action<List<CleanupItem>> step, List<CleanupItem> found)
+    {
+        var result = new List<CleanupItem>();
+        var task = Task.Factory.StartNew(() =>
+        {
+            using var scope = background ? LowResourceMode.BackgroundScope() : null; // low-resource scans stay at background priority here too
+            step(result);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            while (!task.Wait(150))
+            {
+                if (token.IsCancellationRequested) return true;
+                if (timeoutMilliseconds > 0 && clock.ElapsedMilliseconds > timeoutMilliseconds)
+                { LogScanIssue($"Skipped a Windows step that did not answer in time: {name}"); return false; }
+            }
+        }
+        catch (AggregateException failure) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.InnerException ?? failure).Throw(); }
+        found.AddRange(result);
+        return true;
+    }
+
+    // A short local note, so "why did Hush skip that?" has an answer. Written under this engine's data directory. Never throws.
+    private void LogScanIssue(string text)
+    {
+        try
+        {
+            string directory = Path.Combine(dataDirectory, "Logs");
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(Path.Combine(directory, "scan-issues.log"), $"{DateTime.UtcNow:O}  {text}{Environment.NewLine}");
+        }
+        catch { }
+    }
+
+    // The scan of one location. Runs on a worker; every counter it touches belongs to `run`, which the coordinator merges only if the
+    // location finished (or was stopped cleanly). It calls run.Beat() with every entry so a location that is merely big is never mistaken for a stuck one.
+    private void ScanTarget(CleanupTarget target, double start, double end, HashSet<string>? skipSet, HashSet<string>? seenSet, ScanOptions options,
+        EnumerationOptions enumeration, IProgress<ScanProgress>? progress, CancellationToken token, TargetRun run, int baseExamined, int baseFound, long baseBytes)
+    {
+        options.OnTargetStart?.Invoke(target);
+        if (run.Abandoned) return;
+        if (!Directory.Exists(target.Root) || !SafePath(target.Root, target.Root)) return;
+        if (BrowserRunning(target, fresh: true)) { run.Busy = true; return; }
+        bool countOnly = options.CountOnly;
+        string fullRoot = Path.GetFullPath(target.Root);
+        string[]? patterns = Patterns(target.Pattern);
+        long cutoff = (DateTime.UtcNow - target.MinimumAge).Ticks;
+        string[]? excludedNames = target.ExcludeFolders;
+        bool selected = SelectedByDefault(target);
+        // Only locations that need the full path of every file (protected probe, shortcut check, duplicate guard) pay for building it.
+        bool needPath = target.DeletableOnly || target.Kind == CleanupKind.Shortcut || seenSet != null;
+        bool wantName = !countOnly || needPath;
+        int seenInTarget = 0;
+        bool firstReported = false;
+        var reportClock = Stopwatch.StartNew();
+        // Discovery has no known total, so the target's share of the gauge fills on a saturating curve as files are found.
+        double Fraction() => start + (end - start) * seenInTarget / (seenInTarget + 4000.0);
+        void Report(string label)
+        {
+            if (run.Abandoned) return; // a location that was given up on must not push stale counts or names into the UI
+            progress?.Report(new(label, baseExamined + run.Examined, baseFound + run.Items.Count, baseBytes + run.Bytes, Fraction()));
+            reportClock.Restart();
+        }
+        Stack<string> pending = new();
+        pending.Push(target.Root);
+        while (pending.Count > 0 && !token.IsCancellationRequested && !run.Abandoned)
+        {
+            string directory = pending.Pop();
+            run.Beat();
+            if (!directory.StartsWith(Path.TrimEndingDirectorySeparator(target.Root), StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                var entries = new FileSystemEnumerable<Raw>(directory,
+                    (ref FileSystemEntry entry) => entry.IsDirectory
+                        ? new Raw(entry.FileName.ToString(), 0, 0, 0, true)
+                        : new Raw(wantName ? entry.FileName.ToString() : null, entry.Length, entry.LastWriteTimeUtc.UtcTicks, entry.CreationTimeUtc.UtcTicks, false), enumeration)
+                {
+                    ShouldIncludePredicate = (ref FileSystemEntry entry) =>
+                    {
+                        run.Beat(); // also counts entries the pattern filters out, so a huge folder of other files still shows life
+                        if (entry.IsDirectory)
+                        {
+                            if (!target.Recursive) return false;
+                            if (excludedNames != null)
+                                foreach (string excluded in excludedNames)
+                                    if (entry.FileName.Equals(excluded, StringComparison.OrdinalIgnoreCase)) return false;
+                            return true;
+                        }
+                        return Matches(patterns, entry.FileName) && entry.LastWriteTimeUtc.UtcTicks < cutoff && entry.CreationTimeUtc.UtcTicks < cutoff;
+                    }
+                };
+                foreach (var raw in entries)
+                {
+                    if (token.IsCancellationRequested || run.Abandoned) break;
+                    run.Examined++; seenInTarget++;
+                    if (raw.IsDirectory)
+                    {
+                        string sub = Path.Combine(directory, raw.Name!);
+                        if (skipSet == null || !skipSet.Contains(sub)) pending.Push(sub);
+                        continue;
+                    }
+                    try
+                    {
+                        string? full = null;
+                        if (needPath)
+                        {
+                            full = Path.Combine(directory, raw.Name!);
+                            if (seenSet != null)
+                            {
+                                if (run.Abandoned) break; // an abandoned worker must never touch a set that later locations share
+                                if (!seenSet.Add(full)) continue;
+                            }
+                            if (target.DeletableOnly)
+                            {
+                                run.Beat();
+                                bool deletable = CanDelete(full);
+                                run.Beat();
+                                if (!deletable) continue;
+                            }
+                        }
+                        string? shortcutTarget = null, shortcutHash = null;
+                        if (target.Kind == CleanupKind.Shortcut)
+                        {
+                            shortcutTarget = ShortcutProbe.MissingApplication(full!);
+                            if (shortcutTarget == null) continue;
+                            using var shortcut = new FileStream(full!, FileMode.Open, FileAccess.Read, FileShare.Read);
+                            shortcutHash = Convert.ToHexString(SHA256.HashData(shortcut));
+                        }
+                        run.Files++; run.Bytes += raw.Length;
+                        if (!countOnly)
+                            run.Items.Add(new CleanupItem { Folder = directory, FileName = raw.Name, Root = fullRoot, Group = target.Group,
+                                Kind = target.Kind, CategoryId = target.Category, Bytes = raw.Length, ModifiedTicks = raw.Modified,
+                                CreatedTicks = raw.Created, ShortcutTarget = shortcutTarget, ShortcutHash = shortcutHash, Selected = selected });
+                    }
+                    catch (Exception ex) when (IsFileError(ex)) { run.Inaccessible++; }
+                    // Report the first file of a location right away, then from inside a huge flat folder too, not only between folders.
+                    if (!firstReported) { firstReported = true; Report("Discovering " + target.Group.ToLowerInvariant()); }
+                    else if ((seenInTarget & 127) == 0 && reportClock.ElapsedMilliseconds >= options.ReportIntervalMs)
+                        Report("Discovering " + target.Group.ToLowerInvariant());
+                }
+            }
+            catch (Exception ex) when (IsFileError(ex)) { if (!target.DeletableOnly) run.Inaccessible++; }
+            if (reportClock.ElapsedMilliseconds >= options.ReportIntervalMs) Report("Discovering " + target.Group.ToLowerInvariant());
+        }
     }
 
     // Only the Safe category is selected by default; Review, Advanced and the Recycle Bin are always opt-in.

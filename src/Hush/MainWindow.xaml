@@ -114,6 +114,8 @@
             <Grid Width="320" Height="320">
               <Ellipse Fill="{DynamicResource PanelBrush}" Margin="35"/>
               <Ellipse Stroke="{DynamicResource RaisedBrush}" StrokeThickness="7" Margin="29"/>
+              <!-- The scan cue: soft rings drifting out from the gauge (see ScanRipples). Off unless a scan is running. -->
+              <local:ScanRipples x:Name="ScanRipplesCue" Stroke="{DynamicResource TealBrush}" Width="320" Height="320"/>
               <Viewbox IsHitTestVisible="False"><Grid Width="158" Height="158">
                 <Path x:Name="GaugeArc" Stroke="{DynamicResource TealBrush}" StrokeThickness="3.5" Opacity="0.9" StrokeStartLineCap="Round" StrokeEndLineCap="Round" RenderTransformOrigin="0.5,0.5">
                   <Path.Effect><DropShadowEffect x:Name="GaugeFinishGlow" Color="{DynamicResource PrimaryAccentColor}" BlurRadius="12" ShadowDepth="0" Opacity="0.22"/></Path.Effect>
@@ -276,6 +278,25 @@
                 </Grid>
               </StackPanel>
             </Border>
+            <!-- Interface size: scales the whole window content together (see UiScale) so nobody has to resize the window to read it. -->
+            <Expander x:Name="SettingsSizeSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Interface size">
+              <Expander.Header>
+                <StackPanel>
+                  <TextBlock Text="Interface size" Style="{StaticResource CardTitle}"/>
+                  <TextBlock x:Name="UiSizeSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel Margin="0,16,0,8">
+                <TextBlock Text="Makes everything in Hush bigger or smaller together, so you never have to resize the window just to read it. Smart fits the size of your screen." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21"/>
+                <StackPanel Orientation="Horizontal" Margin="-13,10,0,0">
+                  <RadioButton x:Name="UiSizeSmart" GroupName="UiSize" Content="Smart" Tag="smart" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="Smart size"/>
+                  <RadioButton x:Name="UiSize75" GroupName="UiSize" Content="75%" Tag="75" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="75 percent"/>
+                  <RadioButton x:Name="UiSize100" GroupName="UiSize" Content="100%" Tag="100" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="100 percent"/>
+                  <RadioButton x:Name="UiSize120" GroupName="UiSize" Content="120%" Tag="120" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="120 percent"/>
+                </StackPanel>
+                <TextBlock x:Name="UiSizeNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,4,0,0"/>
+              </StackPanel>
+            </Expander>
             <Expander x:Name="SettingsBoostSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Smart Boost">
               <!-- The card shows the live details before it is opened: summary, three resource meters, Hush's own memory and the last check. -->
               <Expander.Header>
@@ -484,8 +505,8 @@
             <TextBlock Text="Hush" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
             <TextBlock x:Name="AboutVersion" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0"/>
             <TextBlock x:Name="AboutDescription" Text="A portable Windows cleaner. Review before you clean." FontSize="17" LineHeight="26" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" Margin="0,20,0,0"/>
-            <TextBlock x:Name="AboutTerms" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
-            <Button x:Name="TermsButton" Content="Terms of use" Click="Terms_Click" Style="{StaticResource TextButton}" HorizontalAlignment="Left" Padding="0,8" Height="36" Margin="0,2,0,0" AutomationProperties.Name="Terms of use"/>
+            <TextBlock x:Name="AboutTerms" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
+            <Button x:Name="TermsButton" Content="Terms of use" Click="Terms_Click" Style="{StaticResource TextButton}" HorizontalAlignment="Left" Padding="0,8" Height="36" Margin="0,2,0,0" AutomationProperties.Name="Terms of use"/>
             <local:AccordionBody x:Name="AboutUpdatesBody" Visibility="Collapsed" IsEnabled="{Binding Expanded, RelativeSource={RelativeSource Self}}" IsHitTestVisible="{Binding Expanded, RelativeSource={RelativeSource Self}}">
               <StackPanel Margin="0,24,0,0">
                 <ScrollViewer x:Name="UpdateDetailsScroll" MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

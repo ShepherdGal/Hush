@@ -134,6 +134,7 @@ static void RunChecks()
         ExpandedSafetyChecks.Run(fixture, Check);
         CategoryChecks.Run(fixture, Check);
         ScaleChecks.Run(fixture, Check);
+        UiSizeChecks.Run(Check);
         ColorRuleChecks.Run(Check);
         TypographyChecks.Run(Check);
         DistributionChecks.Run(fixture, Check);
