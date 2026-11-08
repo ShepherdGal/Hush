@@ -1,7 +1,5 @@
 <p align="center"><img src="docs/Hush-icon.png" width="128" alt="Hush icon"></p>
 
-![Hush](https://github.com/ShepherdGal/Hush/raw/main/docs/Hush-icon.png)
-
 # Hush
 
 **A little cleanup. A happier PC.** 🩵
