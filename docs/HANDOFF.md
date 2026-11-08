@@ -4,6 +4,8 @@ Updated November 7, 2026 (Asia/Jerusalem).
 
 ## 0.8.2 (November 8, 2026)
 
+Released as v0.8.2 ("Hush 0.8.2", not a prerelease, tag on commit c6153e1) with Hush-Portable.zip, Hush-Setup.zip, LICENSE and Hush-icon.png; the portable zip SHA-256 is a9580204100f34aa0c217ad90e4eba4f5829e35fabebb6bf80be7027e6d8a002. Release notes text: artifacts/RELEASE NOTES 0.8.2.md (local, not in Git).
+
 Clean stays on screen (dimmed) once a scan has results; the Clean popup shows green/amber/red compact groups; the Windows choices grew to about 80, rated Recommended / Somewhat recommended (no "not recommended" ones), grouped by topic, with the earlier fixes below (false "managed PC" detection, administrator restart flow, restart advice popup, strong Clean hover, Safe-first Review order). Verify.ps1 passes. See CHANGELOG 0.8.2.
 
 ## Review order, bottom bar and hover (November 8, 2026)
