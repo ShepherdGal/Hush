@@ -38,7 +38,7 @@ internal static class DistributionChecks
 
         // Easy downloads.
         check(readme.Contains("releases/latest/download/Hush-Portable.zip") && readme.Contains("releases/latest/download/Hush-Setup.zip")
-            && readme.IndexOf("## Download", StringComparison.Ordinal) < readme.IndexOf("## Project layout", StringComparison.Ordinal) && readme.Contains("Portable") || readme.Contains("portable"),
+            && readme.IndexOf("Download Hush", StringComparison.Ordinal) is >= 0 and var download && download < readme.IndexOf("## Use at your own risk", StringComparison.Ordinal),
             "The README leads with a Download table: portable and installer, each a zip with a direct latest-release link");
         string releasing = Read("docs", "RELEASING.md");
         check(releasing.Contains("**Which file?**") && releasing.Contains("Hush-Portable.zip#") && releasing.Contains("scripts/Tidy.ps1"), "The release process has a Which file? template, asset labels and the tidy step");
