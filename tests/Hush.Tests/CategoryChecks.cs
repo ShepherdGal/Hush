@@ -38,7 +38,7 @@ internal static class CategoryChecks
         foreach (var definition in ReviewCategory.Definitions)
         {
             string folder = Path.Combine(fixture, "cat-" + definition.Id); Make(folder, "old.tmp");
-            var item = Engine("audit-cat-" + definition.Id, new(folder, "Fixture " + definition.Id, CleanupKind.Temp, TimeSpan.FromDays(2), Category: definition.Id)).Scan(null, CancellationToken.None).Items.Single();
+            var item = Engine("audit-cat-" + definition.Id, new(folder, "Fixture " + definition.Id, CleanupKind.Temp, TimeSpan.FromDays(2), Category: definition.Id)).Scan(null, CancellationToken.None, new(Include: _ => true)).Items.Single(); // Include also reaches the Settings-only categories
             bool selected = definition.Safety == SafetyLevel.Safe;
             check(item.Safety == definition.Safety && item.Selected == selected && ReviewCategory.CategoryFor(item) == definition.Id,
                 $"{definition.Id} is classified {definition.Safety} and {(selected ? "selected" : "opt-in")} by default");

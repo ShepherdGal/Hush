@@ -166,7 +166,7 @@ public partial class MainWindow
     {
         if (boostTimer != null) boostTimer.Interval = TimeSpan.FromMinutes(Boost.CheckEveryMinutes);
         // Never compete with something the person is doing: skip this round and try again at the next interval.
-        if (boostRunning || busy || closing || !Boost.MonitorJunk || ModalOverlay.Visibility == Visibility.Visible || AboutOverlay.Visibility == Visibility.Visible) return;
+        if (boostRunning || boosting || busy || closing || !Boost.MonitorJunk || ModalOverlay.Visibility == Visibility.Visible || AboutOverlay.Visibility == Visibility.Visible) return;
         boostRunning = true;
         boostCancellation?.Dispose();
         boostCancellation = new();
@@ -229,8 +229,10 @@ public partial class MainWindow
     {
         var sample = resourceMonitor.Sample();
         ShowMeter(CpuFill, CpuText, sample.CpuPercent, $"{sample.CpuPercent:0}%", ResourceSnapshot.Busy);
-        ShowMeter(MemoryFill, MemoryText, sample.MemoryPercent, $"{Sizes.Format(sample.MemoryUsed)} of {Sizes.Format(sample.MemoryTotal)}", ResourceSnapshot.Busy);
-        ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{Sizes.Format(sample.DiskFree)} free of {Sizes.Format(sample.DiskTotal)}", ResourceSnapshot.Full);
+        ShowMeter(MemoryFill, MemoryText, sample.MemoryPercent, $"{sample.MemoryPercent:0}%", ResourceSnapshot.Busy);
+        MemoryText.ToolTip = $"{Sizes.Format(sample.MemoryUsed)} of {Sizes.Format(sample.MemoryTotal)} in use";
+        ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{sample.DiskUsedPercent:0}%", ResourceSnapshot.Full);
+        DiskText.ToolTip = $"{Sizes.Format(sample.DiskFree)} free of {Sizes.Format(sample.DiskTotal)} on the system drive";
         InfoSummary.Text = sample.Headline;
         ResourceNote.Text = $"Hush itself is using {Sizes.Format(sample.HushWorkingSet)} of memory. These figures come from Windows and update only while this page is open.";
     }
@@ -240,8 +242,9 @@ public partial class MainWindow
     {
         text.Text = label;
         fill.SetResourceReference(Border.BackgroundProperty, percent >= warnAt ? "MeterWarnBrush" : "TealBrush");
+        // The slim vertical bar fills from the bottom (transform animation, no layout work).
         var scale = (ScaleTransform)fill.RenderTransform;
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Motion.Tween(scale.ScaleX, Math.Clamp(percent, 0, 100) / 100, 400));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Motion.Tween(scale.ScaleY, Math.Clamp(percent, 0, 100) / 100, 400));
     }
 
     // ----- Startup apps -----

@@ -22,6 +22,7 @@ internal static class UpdateFlowChecks
             updateFactory: () => client,
             installUpdate: (_, _) => { installs++; throw new IOException("Synthetic install-start failure"); });
         window.ShowActivated = false; window.ShowInTaskbar = false;
+        window.MinimumUpdateCheck = TimeSpan.Zero; // the timing rule has its own test below; the rest of the suite should not wait
         try
         {
             window.Show();
@@ -71,6 +72,8 @@ internal static class UpdateFlowChecks
             var before = SweepPixels(); Wait(260);
             Require(!before.SequenceEqual(SweepPixels()), "The checking glide changes actual rendered pixels");
             Capture("about-checking-" + (window.IsLightTheme ? "light" : "dark"));
+            Wait(500); Capture("about-checking-2-" + (window.IsLightTheme ? "light" : "dark"));
+            Wait(500); Capture("about-checking-3-" + (window.IsLightTheme ? "light" : "dark"));
             pending.SetResult(null); Until(() => !window.IsUpdateBusy);
             Require(status.Text.Contains("up to date") && !sweep.IsRunning, "A current release stops progress and reports the installed version");
             client.Check = _ => throw new InvalidDataException("Updates can't be checked right now. Try again in a little while.");
@@ -126,6 +129,19 @@ internal static class UpdateFlowChecks
             }
             Close(); Require(!sweep.IsRunning, "Closing About stops activity");
             Open();
+            // A check always shows its searching animation for at least 3.5 seconds, even when the answer is instant, and Cancel still stops it at once.
+            window.MinimumUpdateCheck = TimeSpan.FromMilliseconds(3500);
+            client.Check = _ => Task.FromResult<AppRelease?>(null);
+            var searching = System.Diagnostics.Stopwatch.StartNew();
+            Click("CheckUpdateButton"); Until(() => window.IsUpdateBusy); Wait(1500);
+            Require(window.IsUpdateBusy && sweep.IsRunning && double.IsNaN(sweep.Progress) && status.Text.Contains("Looking"), "An instant answer still keeps the search animation going for its minimum time");
+            Until(() => !window.IsUpdateBusy);
+            Require(searching.ElapsedMilliseconds >= 3400 && searching.ElapsedMilliseconds < 6500 && status.Text.Contains("up to date"),
+                $"The searching animation lasts at least 3.5 seconds before the result appears ({searching.ElapsedMilliseconds} ms)");
+            searching.Restart();
+            Click("CheckUpdateButton"); Until(() => window.IsUpdateBusy); Wait(700); Click("CancelUpdateButton"); Until(() => !window.IsUpdateBusy);
+            Require(searching.ElapsedMilliseconds < 2500 && status.Text.Contains("canceled"), $"Cancel stops the minimum-time search immediately ({searching.ElapsedMilliseconds} ms)");
+            window.MinimumUpdateCheck = TimeSpan.Zero;
             var late = new TaskCompletionSource<AppRelease?>(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Check = _ => late.Task;
             Click("CheckUpdateButton"); Close(); Open(); late.SetResult(release); Wait(80);

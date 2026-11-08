@@ -11,7 +11,7 @@ $g = [System.Drawing.Graphics]::FromImage($bitmap)
 $g.SmoothingMode = 'HighQuality'; $g.InterpolationMode = 'HighQualityBicubic'; $g.TextRenderingHint = 'AntiAliasGridFit'
 $g.Clear([System.Drawing.Color]::FromArgb(17, 21, 27))   # the app's dark window color
 $g.DrawImage($mark, 150, 120, 400, 400)
-$accent = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(60, 207, 217))   # #3CCFD9
+$accent = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(56, 207, 200))   # #38CFC8
 $muted = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(155, 168, 186))
 $title = [System.Drawing.Font]::new('Inter', 104, [System.Drawing.FontStyle]::Italic, [System.Drawing.GraphicsUnit]::Pixel)
 $line = [System.Drawing.Font]::new('Inter', 36, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)

@@ -4,7 +4,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Hush;
 
-// Locks the colour rules: the Clean button's red is the ONLY red in Hush, and the app icon is drawn in the same aqua as the dark accent.
+// Locks the colour rules: the Clean button's red is the ONLY red in Hush, and the app icon is drawn in the same teal as the dark accent.
 // Source files are scanned as text, so nobody can add a second red (or a "slightly different" one) without this suite failing.
 internal static class ColorRuleChecks
 {
@@ -59,12 +59,12 @@ internal static class ColorRuleChecks
             check(!IsRedFamily(SafetyPalette.Text(SafetyLevel.Review, light).TrimStart('#')) && !IsRedFamily(SafetyPalette.Accent(light).TrimStart('#')),
                 $"Review (orange) and the accent are never red in {(light ? "Light" : "Dark")}");
         }
-        check(SafetyPalette.Color(SafetyLevel.Advanced) == SafetyPalette.Danger(false) && SafetyPalette.Accent(false) == "#3CCFD9" && SafetyPalette.Accent(true) == "#4C7BC8",
-            "The dark accent is the aqua #3CCFD9 and the light accent is the soft blue #4C7BC8");
+        check(SafetyPalette.Color(SafetyLevel.Advanced) == SafetyPalette.Danger(false) && SafetyPalette.Accent(false) == "#38CFC8" && SafetyPalette.Accent(true) == "#4C7BC8",
+            "The dark accent is the teal #38CFC8 and the light accent is the soft blue #4C7BC8");
         string app = File.ReadAllText(Path.Combine(source, "App.xaml"));
-        check(app.Contains("<Color x:Key=\"PrimaryAccentColor\">#3CCFD9</Color>"), "App.xaml starts in the aqua accent");
-        check(!files.Any(path => { string text = File.ReadAllText(path); return text.Contains("7FE0F6", StringComparison.OrdinalIgnoreCase) || text.Contains("B5EEFB", StringComparison.OrdinalIgnoreCase); }),
-            "The rejected ice-blue accent appears nowhere in the source");
+        check(app.Contains("<Color x:Key=\"PrimaryAccentColor\">#38CFC8</Color>"), "App.xaml starts in the teal accent");
+        check(!files.Any(path => { string text = File.ReadAllText(path); return new[] { "7FE0F6", "B5EEFB", "3CCFD9", "80E0E6" }.Any(old => text.Contains(old, StringComparison.OrdinalIgnoreCase)); }),
+            "The rejected ice-blue and the earlier aqua (#3CCFD9) appear nowhere in the source");
 
         // The icon is drawn in the accent: its crisp rim carries #3CCFD9, its corners are truly transparent and the ICO holds every size.
         string assets = Path.Combine(source, "Assets");
@@ -82,8 +82,8 @@ internal static class ColorRuleChecks
             sumB += pixels[i]; sumG += pixels[i + 1]; sumR += pixels[i + 2]; count++;
         }
         int bestR = count == 0 ? 0 : (int)(sumR / count), bestG = count == 0 ? 0 : (int)(sumG / count), bestB = count == 0 ? 0 : (int)(sumB / count);
-        check(Math.Abs(bestR - 0x3C) <= 16 && Math.Abs(bestG - 0xCF) <= 16 && Math.Abs(bestB - 0xD9) <= 16,
-            $"The icon's crisp rim is the app's aqua accent (found #{bestR:X2}{bestG:X2}{bestB:X2})");
+        check(Math.Abs(bestR - 0x38) <= 16 && Math.Abs(bestG - 0xCF) <= 16 && Math.Abs(bestB - 0xC8) <= 16,
+            $"The icon's crisp rim is the app's teal accent (found #{bestR:X2}{bestG:X2}{bestB:X2})");
         check(pixels[3] == 0 && pixels[stride - 1] == 0 && pixels[(frame.PixelHeight - 1) * stride + 3] == 0 && width == 512, "The icon's corners are real transparency, not a black or glowing surround");
         byte[] ico = File.ReadAllBytes(Path.Combine(assets, "Hush.ico"));
         int frames = BitConverter.ToUInt16(ico, 4);

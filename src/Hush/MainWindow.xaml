@@ -131,7 +131,7 @@
             <local:ScanActivity x:Name="FileScanActivity" Width="140" Height="36" Visibility="Hidden" VerticalAlignment="Center" HorizontalAlignment="Center"/>
             <Button x:Name="CompletionLinkButton" Click="OpenResults_Click" Visibility="Collapsed" Style="{StaticResource AccentTextButton}" Padding="12,5" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Open the list of what was found" AutomationProperties.Name="Open scanned files">
               <!-- Reads as a link: italic and underlined in its own ink, so the underline follows the hover color. No looping animation. -->
-              <TextBlock x:Name="CompletionLinkText" Text="{Binding Text, ElementName=StatusTitle}" MaxWidth="570" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center" FontStyle="Italic">
+              <TextBlock x:Name="CompletionLinkText" Text="{Binding Text, ElementName=StatusTitle}" MaxWidth="570" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center">
                 <TextBlock.TextDecorations><TextDecoration Location="Underline" PenOffset="4" PenOffsetUnit="Pixel"/></TextBlock.TextDecorations>
               </TextBlock>
             </Button>
@@ -144,7 +144,7 @@
           <Grid.RowDefinitions><RowDefinition Height="80"/><RowDefinition Height="*"/><RowDefinition Height="96"/></Grid.RowDefinitions>
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Top" Margin="0,10,0,0">
-              <TextBlock Text="Review files" FontSize="29" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}"/>
+              <TextBlock x:Name="ReviewTitle" Text="Review files" Style="{StaticResource PageTitle}"/>
               <TextBlock x:Name="ResultCount" Text="Scan to find cleanup items" FontSize="{DynamicResource BodyFontSize}" FontWeight="Medium" Foreground="{DynamicResource MutedBrush}" Margin="0,10,0,0"/>
             </StackPanel>
             <Button x:Name="BackButton" Grid.Column="1" Content="Back" Click="Back_Click" Style="{StaticResource BackButton}" VerticalAlignment="Top" Margin="0,6,-14,0" AutomationProperties.Name="Back"/>
@@ -173,7 +173,7 @@
           </ScrollViewer>
           </Grid></Border>
           <StackPanel x:Name="ReviewEmptyState" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Margin="28" Visibility="Collapsed">
-            <TextBlock x:Name="EmptyStateTitle" Text="Everything looks clean." FontSize="22" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock x:Name="EmptyStateTitle" Text="Everything looks clean." FontSize="22" FontWeight="Normal" Foreground="{DynamicResource HeadingBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
             <TextBlock x:Name="EmptyStateDetail" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextAlignment="Center" TextWrapping="Wrap" LineHeight="22" Margin="0,12,0,0"/>
           </StackPanel>
           <Grid Grid.Row="2" Margin="0,18,0,0">
@@ -212,45 +212,78 @@
           </Grid.Resources>
           <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <Grid>
-            <TextBlock Text="Settings" FontSize="29" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Top" Margin="0,10,0,0"/>
+            <TextBlock x:Name="SettingsTitle" Text="Settings" Style="{StaticResource PageTitle}" VerticalAlignment="Top" Margin="0,10,0,0"/>
             <Button x:Name="SettingsBackButton" Content="Back" Style="{StaticResource BackButton}" Click="SettingsBack_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,-14,0" AutomationProperties.Name="Back from settings"/>
           </Grid>
           <!-- The 8 DIP overlay scrollbar lives in a 22 DIP strip to the right of the cards (viewer extends into the page margin), so cards never shift or sit under it. -->
           <ScrollViewer x:Name="WindowsSettingsScroll" Grid.Row="1" Style="{StaticResource PageScroll}" Margin="0,8,-22,0" Padding="0,0,22,16">
             <StackPanel>
-            <!-- Info: live figures from Windows (processor, memory, system drive), one smart summary line, Hush's own memory and the last junk check.
+            <!-- Info: live figures from Windows as slim vertical pill bars (value and label beside each), one smart summary line, and a small Boost button
+                 that cleans Safe temporary files and asks Windows to release idle memory (always after a confirmation; nothing is closed).
                  It is a plain card, not an accordion: the figures are always on screen and the Smart Boost controls stay uncluttered. -->
-            <Border x:Name="SettingsInfoCard" Background="{DynamicResource PanelBrush}" CornerRadius="14" Padding="28,18,28,20" Margin="0,0,0,16" AutomationProperties.Name="Info">
+            <Border x:Name="SettingsInfoCard" Background="{DynamicResource PanelBrush}" CornerRadius="14" Padding="28,18,28,22" Margin="0,0,0,16" AutomationProperties.Name="Info">
               <StackPanel>
-                <TextBlock Text="Info" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
-                <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
-                  <Grid Margin="0,18,0,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <StackPanel>
-                      <TextBlock Text="Processor" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock x:Name="CpuText" Text="…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                      <Border Height="6" CornerRadius="3" Background="{DynamicResource RaisedBrush}"><Border x:Name="CpuFill" CornerRadius="3" Background="{DynamicResource TealBrush}" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5"><Border.RenderTransform><ScaleTransform ScaleX="0"/></Border.RenderTransform></Border></Border>
-                    </StackPanel>
-                    <StackPanel Grid.Column="2">
-                      <TextBlock Text="Memory" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock x:Name="MemoryText" Text="…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                      <Border Height="6" CornerRadius="3" Background="{DynamicResource RaisedBrush}"><Border x:Name="MemoryFill" CornerRadius="3" Background="{DynamicResource TealBrush}" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5"><Border.RenderTransform><ScaleTransform ScaleX="0"/></Border.RenderTransform></Border></Border>
-                    </StackPanel>
-                    <StackPanel Grid.Column="4">
-                      <TextBlock Text="System drive" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock x:Name="DiskText" Text="…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                      <Border Height="6" CornerRadius="3" Background="{DynamicResource RaisedBrush}"><Border x:Name="DiskFill" CornerRadius="3" Background="{DynamicResource TealBrush}" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5"><Border.RenderTransform><ScaleTransform ScaleX="0"/></Border.RenderTransform></Border></Border>
-                    </StackPanel>
-                  </Grid>
-                  <TextBlock x:Name="ResourceNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource FaintBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
-                  <TextBlock x:Name="BoostStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,6,0,0" Visibility="Collapsed"/>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock Text="Info" Style="{StaticResource CardTitle}"/>
+                    <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                  </StackPanel>
+                  <Button x:Name="SetUpSmartBoostButton" Grid.Column="1" Content="Set up Smart Boost" Click="SetUpSmartBoost_Click" Style="{StaticResource AccentTextButton}" Height="34" Padding="10,5" Margin="0,-6,-10,0" VerticalAlignment="Top" AutomationProperties.Name="Set up Smart Boost"/>
+                </Grid>
+                <Grid Margin="0,22,0,0">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="CpuFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="CpuText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Processor" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="MemoryFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="MemoryText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Memory usage" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="TempFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="TempText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Temporary files" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="DiskFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="DiskText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="System drive used" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>                </Grid>
+                <Grid Margin="0,22,0,0">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="ResourceNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource FaintBrush}" TextWrapping="Wrap" LineHeight="21"/>
+                    <TextBlock x:Name="BoostStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,6,0,0" Visibility="Collapsed"/>
+                  </StackPanel>
+                  <Button x:Name="BoostButton" Grid.Column="2" Content="Boost" Click="Boost_Click" Height="38" MinWidth="104" Padding="22,7" VerticalAlignment="Center" AutomationProperties.Name="Boost" ToolTip="Clean Safe temporary files and release idle memory"/>
+                </Grid>
               </StackPanel>
             </Border>
             <Expander x:Name="SettingsBoostSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Smart Boost">
               <!-- The card shows the live details before it is opened: summary, three resource meters, Hush's own memory and the last check. -->
               <Expander.Header>
                 <StackPanel>
-                  <TextBlock Text="Smart Boost" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                  <TextBlock Text="Smart Boost" Style="{StaticResource CardTitle}"/>
                   <TextBlock x:Name="BoostSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
@@ -337,10 +370,47 @@
                 </StackPanel>
               </StackPanel>
             </Expander>
-            <Expander x:Name="SettingsPrivacySection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Privacy and telemetry">
+            <!-- Browser data: history and cookies are never part of a scan. They are chosen here, marked (orange / the Clean red) and confirmed with warnings. -->
+            <Expander x:Name="SettingsBrowserSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Browser data">
               <Expander.Header>
                 <StackPanel>
-                  <TextBlock Text="Privacy &amp; telemetry" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                  <TextBlock Text="Browser data" Style="{StaticResource CardTitle}"/>
+                  <TextBlock x:Name="BrowserSummary" Text="Kept out of scans · nothing selected" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel>
+                <TextBlock Text="Hush never touches saved passwords, bookmarks or open tabs. History and cookies are not part of any scan: choose them here, close the browser first, and Hush shows you exactly what it found before anything is removed." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
+                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="Browser history" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Review" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource MeterWarnBrush}" Margin="10,1,0,0"/>
+                    </StackPanel>
+                    <TextBlock Text="The list of sites you visited in Chromium browsers. Bookmarks and logins stay." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+                  </StackPanel>
+                  <CheckBox x:Name="BrowserHistoryBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Tag="{DynamicResource MeterWarnBrush}" Click="BrowserChoice_Click" VerticalAlignment="Center" AutomationProperties.Name="Browser history"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock x:Name="BrowserCookiesTitle" Text="Cookies and site data" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource CleanTextBrush}"/>
+                      <TextBlock Text="Advanced" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource CleanTextBrush}" Margin="10,1,0,0"/>
+                    </StackPanel>
+                    <TextBlock Text="Removing cookies signs you out of websites. Chromium browsers and Firefox." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource CleanTextBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
+                  </StackPanel>
+                  <CheckBox x:Name="BrowserCookiesBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Tag="{DynamicResource CleanTextBrush}" Click="BrowserChoice_Click" VerticalAlignment="Center" AutomationProperties.Name="Cookies and site data"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,16,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="BrowserStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" VerticalAlignment="Center"/>
+                  <Button x:Name="BrowserCleanButton" Grid.Column="2" Content="Review and clean…" Click="BrowserClean_Click" IsEnabled="False" Padding="18,8" AutomationProperties.Name="Review and clean browser data"/>
+                </Grid>
+              </StackPanel>
+            </Expander>            <Expander x:Name="SettingsPrivacySection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Privacy and telemetry">
+              <Expander.Header>
+                <StackPanel>
+                  <TextBlock Text="Privacy &amp; telemetry" Style="{StaticResource CardTitle}"/>
                   <TextBlock x:Name="PrivacySummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
@@ -352,7 +422,7 @@
             <Expander x:Name="SettingsImpactSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="More impact" Margin="0">
               <Expander.Header>
                 <StackPanel>
-                  <TextBlock Text="More impact" FontSize="18" FontWeight="Medium" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
+                  <TextBlock Text="More impact" Style="{StaticResource CardTitle}"/>
                   <TextBlock x:Name="ImpactSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
@@ -379,7 +449,7 @@
         <Border Background="{DynamicResource PanelBrush}" CornerRadius="24" Width="510" Padding="34" HorizontalAlignment="Center" VerticalAlignment="Center">
           <StackPanel>
             <TextBlock Text="Confirm cleanup" FontSize="{DynamicResource CompactFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
-            <TextBlock Text="Are you sure?" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" Margin="0,12,0,0"/>
+            <TextBlock Text="Are you sure?" Style="{StaticResource PopupTitle}" Margin="0,12,0,0"/>
             <TextBlock x:Name="ConfirmSummary" Foreground="{DynamicResource TextBrush}" FontSize="17" TextWrapping="Wrap" Margin="0,22,0,0" LineHeight="26"/>
             <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
               <TextBlock x:Name="ConfirmDetail" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="25" Margin="0,0,10,0"/>
@@ -388,8 +458,8 @@
             <CheckBox x:Name="AdvancedConsentBox" Visibility="Collapsed" Click="AdvancedConsent_Click" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" Margin="0,18,0,0" FontSize="{DynamicResource CompactFontSize}" Content="I understand some of this cannot be undone" IsEnabled="True" AutomationProperties.Name="I understand some of this cannot be undone"/>
             <Border Height="28"/>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
-              <Button x:Name="CancelDeleteButton" Content="Keep my files" Click="CancelDelete_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
-              <Button x:Name="ConfirmDeleteButton" Grid.Column="2" Content="Clean selected" Click="ConfirmDelete_Click" Style="{StaticResource DangerButton}" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
+              <Button x:Name="ConfirmDeleteButton" Content="Clean selected" Click="ConfirmDelete_Click" Style="{StaticResource DangerButton}" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
+              <Button x:Name="CancelDeleteButton" Grid.Column="2" Content="Keep my files" Click="CancelDelete_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
             </Grid>
           </StackPanel>
         </Border>
@@ -397,7 +467,7 @@
       <Border x:Name="WindowsSettingsOverlay" Grid.RowSpan="2" Background="{DynamicResource ModalShadeBrush}" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle">
         <Border x:Name="WindowsSettingsCard" Background="{DynamicResource PanelBrush}" CornerRadius="24" Width="550" MaxHeight="650" Padding="32" HorizontalAlignment="Center" VerticalAlignment="Center">
           <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <TextBlock x:Name="WindowsConfirmTitle" Text="Apply Windows changes?" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}"/>
+            <TextBlock x:Name="WindowsConfirmTitle" Text="Apply Windows changes?" Style="{StaticResource PopupTitle}"/>
             <ScrollViewer Grid.Row="1" MaxHeight="410" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,22,0,24">
               <StackPanel>
                 <TextBlock x:Name="WindowsConfirmSummary" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="25"/>
@@ -405,8 +475,8 @@
               </StackPanel>
             </ScrollViewer>
             <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
-              <Button x:Name="CancelWindowsSettingsButton" Content="Cancel" Click="CancelWindowsSettings_Click" Style="{StaticResource TextButton}"/>
-              <Button x:Name="ConfirmWindowsSettingsButton" Grid.Column="2" Content="Apply changes" Click="ConfirmWindowsSettings_Click"/>
+              <Button x:Name="ConfirmWindowsSettingsButton" Content="Apply changes" Click="ConfirmWindowsSettings_Click"/>
+              <Button x:Name="CancelWindowsSettingsButton" Grid.Column="2" Content="Cancel" Click="CancelWindowsSettings_Click" Style="{StaticResource TextButton}"/>
             </Grid>
           </Grid>
         </Border>
@@ -417,6 +487,8 @@
             <TextBlock Text="Hush" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}"/>
             <TextBlock x:Name="AboutVersion" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0"/>
             <TextBlock x:Name="AboutDescription" Text="A portable Windows cleaner. Review before you clean." FontSize="17" LineHeight="26" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" Margin="0,20,0,0"/>
+            <TextBlock x:Name="AboutTerms" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
+            <Button x:Name="TermsButton" Content="Terms of use" Click="Terms_Click" Style="{StaticResource TextButton}" HorizontalAlignment="Left" Padding="0,8" Height="36" Margin="0,2,0,0" AutomationProperties.Name="Terms of use"/>
             <local:AccordionBody x:Name="AboutUpdatesBody" Visibility="Collapsed" IsEnabled="{Binding Expanded, RelativeSource={RelativeSource Self}}" IsHitTestVisible="{Binding Expanded, RelativeSource={RelativeSource Self}}">
               <StackPanel Margin="0,24,0,0">
                 <ScrollViewer x:Name="UpdateDetailsScroll" MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -433,11 +505,11 @@
                 <Button x:Name="CancelUpdateButton" Content="Cancel" Click="CancelUpdate_Click" Style="{StaticResource TextButton}" Padding="0,9" HorizontalAlignment="Right" Visibility="Collapsed"/>
               </StackPanel>
             </local:AccordionBody>
-            <!-- Footer: quiet secondary Release notes at the left, the primary Cyan Check for updates centered in the open space, Close at the right. -->
-            <Grid Margin="0,28,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <Button x:Name="AboutUpdatesButton" Content="Release notes" Click="AboutUpdates_Click" Style="{StaticResource TextButton}" Padding="0,9" AutomationProperties.Name="Show release notes"/>
-              <Button x:Name="CheckUpdateButton" Grid.Column="1" Content="Check for updates" Click="CheckUpdate_Click" Style="{StaticResource AccentTextButton}" Padding="16,9" HorizontalAlignment="Center"/>
-              <Button x:Name="CloseAboutButton" Grid.Column="2" Content="Close" Click="CloseAbout_Click" Style="{StaticResource TextButton}" Padding="0,9"/>
+            <!-- Footer: the action (Check for updates / Update now) at the left, quiet Release notes beside it, Close (the exit) at the right. -->
+            <Grid Margin="0,28,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <Button x:Name="CheckUpdateButton" Content="Check for updates" Click="CheckUpdate_Click" Style="{StaticResource AccentTextButton}" Padding="16,9" Margin="-16,0,0,0" HorizontalAlignment="Left"/>
+              <Button x:Name="AboutUpdatesButton" Grid.Column="1" Content="Release notes" Click="AboutUpdates_Click" Style="{StaticResource TextButton}" Padding="16,9" AutomationProperties.Name="Show release notes"/>
+              <Button x:Name="CloseAboutButton" Grid.Column="3" Content="Close" Click="CloseAbout_Click" Style="{StaticResource TextButton}" Padding="0,9"/>
             </Grid>
           </StackPanel>
         </Border>
@@ -446,13 +518,13 @@
       <Border x:Name="ConsentOverlay" Grid.RowSpan="2" Background="{DynamicResource ModalShadeBrush}" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle">
         <Border Background="{DynamicResource PanelBrush}" CornerRadius="24" Width="510" Padding="34" HorizontalAlignment="Center" VerticalAlignment="Center">
           <StackPanel>
-            <TextBlock x:Name="ConsentTitle" FontSize="28" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ConsentTitle" Style="{StaticResource PopupTitle}" TextWrapping="Wrap"/>
             <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,18,0,26">
               <TextBlock x:Name="ConsentText" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="25" Margin="0,0,10,0"/>
             </ScrollViewer>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
-              <Button x:Name="ConsentCancelButton" Content="Not now" Click="ConsentCancel_Click" Style="{StaticResource TextButton}" FontSize="{DynamicResource ActionFontSize}"/>
-              <Button x:Name="ConsentConfirmButton" Grid.Column="2" Content="Turn on" Click="ConsentConfirm_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
+              <Button x:Name="ConsentConfirmButton" Content="Turn on" Click="ConsentConfirm_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
+              <Button x:Name="ConsentCancelButton" Grid.Column="2" Content="Not now" Click="ConsentCancel_Click" Style="{StaticResource TextButton}" FontSize="{DynamicResource ActionFontSize}"/>
             </Grid>
           </StackPanel>
         </Border>

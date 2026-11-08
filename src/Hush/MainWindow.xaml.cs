@@ -55,6 +55,8 @@ public partial class MainWindow : Window
     private int aboutSession, updateRequest;
     private bool updateBusy;
     internal bool IsUpdateBusy => updateBusy;
+    // The shortest time a check for updates shows its searching animation.
+    internal TimeSpan MinimumUpdateCheck { get; set; } = TimeSpan.FromMilliseconds(3500);
     internal static readonly DependencyProperty GaugePercentProperty = DependencyProperty.Register(
         nameof(GaugePercent), typeof(double), typeof(MainWindow), new PropertyMetadata(0.0, GaugePercentChanged));
     internal double GaugePercent { get => (double)GetValue(GaugePercentProperty); set => SetValue(GaugePercentProperty, value); }
@@ -65,8 +67,9 @@ public partial class MainWindow : Window
 
     internal MainWindow(CleanupEngine engine, Func<IProgress<ScanProgress>?, CancellationToken, ScanResult>? scan = null, string? preferencesPath = null,
         Func<IUpdateClient>? updateFactory = null, Action<string, AppRelease>? installUpdate = null,
-        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null)
+        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null)
     {
+        this.memoryBooster = memoryBooster ?? new WindowsMemoryBooster();
         this.engine = engine;
         this.scan = scan == null ? engine.Scan : (progress, token, _) => scan(progress, token);
         this.updateFactory = updateFactory ?? (() => new UpdateService());
@@ -186,6 +189,12 @@ public partial class MainWindow : Window
     {
         Opacity = 0;
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(280)));
+        // Only the real app (the application's main window) asks for the terms and tidies old update staging; test windows do neither.
+        if (Application.Current?.MainWindow == this)
+        {
+            ShowTermsOnStart();
+            _ = Task.Run(() => UpdateInstaller.PruneStaging(UpdateInstaller.StagingRoot));
+        }
     }
 
     private void Surface_SizeChanged(object sender, SizeChangedEventArgs e) =>
@@ -242,6 +251,7 @@ public partial class MainWindow : Window
         LoadWindowsSettings();
         LoadStartupApps();
         StartResourceIndicators();
+        RefreshTempFiles();
         Motion.EnterPage(MainContent, () =>
         {
             ScanPage.Visibility = ReviewPage.Visibility = Visibility.Collapsed;
@@ -406,6 +416,8 @@ public partial class MainWindow : Window
         // Quick Boost ends in the usual confirmation; nothing is cleaned before the person clicks Clean.
         OfferQuickBoostConfirmation();
         quickBoostPending = false;
+        OfferBrowserDataConfirmation();
+        browserDataPending = false;
     }
 
     private void HomeClean_Click(object sender, RoutedEventArgs e)
@@ -773,7 +785,7 @@ public partial class MainWindow : Window
         Application.Current.Resources["PrimaryAccentColor"] = (Color)ColorConverter.ConvertFromString(accent);
         Set("TealBrush", accent);
         Set("TealTextBrush", accent);
-        Set("AccentHoverBrush", light ? "#3A66AE" : "#80E0E6");
+        Set("AccentHoverBrush", light ? "#3A66AE" : "#7FE3DD");
         Set("MeterWarnBrush", SafetyPalette.Text(SafetyLevel.Review, light));
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
         if (!busy) ApplyPrimaryAppearance(CanClean && SelectedCount > 0);
@@ -783,6 +795,7 @@ public partial class MainWindow : Window
     {
         if (busy || AboutOverlay.Visibility == Visibility.Visible) return;
         ClearUpdateSession();
+        AboutTerms.Text = Terms.Notice;
         confirmationReturnFocus = Keyboard.FocusedElement;
         AppSurface.IsEnabled = false;
         BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
@@ -896,7 +909,15 @@ public partial class MainWindow : Window
             {
                 UpdateHint.Visibility = Visibility.Collapsed;
                 SetUpdateStatus("Looking for a newer version…");
-                var release = await service.CheckAsync(operation.Token);
+                // Even when the answer is instant, the search animation plays for a calm, readable moment (cancel still stops it at once).
+                var checkClock = Stopwatch.StartNew();
+                AppRelease? release;
+                try { release = await service.CheckAsync(operation.Token); }
+                finally
+                {
+                    var remaining = MinimumUpdateCheck - checkClock.Elapsed;
+                    if (remaining > TimeSpan.Zero && !operation.IsCancellationRequested) await Task.Delay(remaining, operation.Token);
+                }
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 availableRelease = release;
                 if (release == null) SetUpdateStatus($"You're up to date. Installed version {UpdateService.DisplayVersion}.");

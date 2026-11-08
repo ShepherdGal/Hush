@@ -41,7 +41,9 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
     // Totals are computed once per scan result (Replace), never by looping the files in a property getter.
     public long TotalBytes { get; private set; }
     private bool unsized;
-    public string TotalLabel => Id == "Registry" ? (Files.Count == 1 ? "1 entry" : $"{Files.Count:N0} entries") : unsized ? "By Windows" : Sizes.Format(TotalBytes);
+    public string TotalLabel => Id == "Registry" ? (Files.Count == 1 ? "1 entry" : $"{Files.Count:N0} entries")
+        : CountedByItems.Contains(Id) ? (Files.Count == 1 ? "1 Item" : $"{Files.Count:N0} Items")
+        : unsized ? "By Windows" : Sizes.Format(TotalBytes);
     private bool expanded, selecting;
     internal Action<bool>? SelectionBatchState { get; set; }
     // Raised for every single-item selection change so the window can update its totals from counters, not by scanning all files.
@@ -126,6 +128,8 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "Update and app downloads Windows keeps so it can share them with other PCs. They can be fetched again.", "Recommended"),
         new("Setup", "Windows Setup & Upgrade Logs", SafetyLevel.Review, "Old Windows setup and upgrade logs; only useful for diagnosing a failed upgrade",
             "Notes left behind when Windows was installed or upgraded. Only useful for finding out why an upgrade failed.", "Recommended"),
+        new("Defender", "Microsoft Defender Antivirus", SafetyLevel.Review, "Defender's own diagnostic support logs only (MPLog, MpCmdRun and trace files); protection history, quarantine, scan history, definitions and settings are never touched; usually needs administrator rights",
+            "Technical log files Microsoft Defender writes about its own work. Your protection, quarantine and history stay exactly as they are.", "Recommended"),
         // ----- Additional system items -----
         new("DirectX", "DirectX Shader Cache", SafetyLevel.Review, "Rebuildable DirectX shader caches older than seven days; the next game or app launch may take longer while they refill",
             "Saved graphics data for games and apps. It is rebuilt automatically, so the next launch may take a moment longer.", "System"),
@@ -156,8 +160,12 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "Saved copies of web pages that help Chrome open sites quicker. Your passwords, logins and open tabs are not touched.", "Apps"),
         new("BrowserOther", "Other Browsers", SafetyLevel.Review, "Brave, Vivaldi, Opera and other Chromium browser caches; passwords, cookies and saved sessions are never included. The browser must be closed",
             "Saved copies of web pages kept by your other browsers. Passwords and logins are not touched.", "Apps"),
-        new("NvidiaApp", "NVIDIA Application Caches", SafetyLevel.Review, "Driver installer downloads kept by the NVIDIA app; the installed driver is not affected",
-            "Old driver installers the NVIDIA app downloaded. Your installed driver stays as it is.", "Apps"),
+        new("BrowserLogs", "Browser Log Files", SafetyLevel.Review, "Crash reports and usage-metrics files kept by Edge, Chrome and other Chromium browsers; passwords, cookies, history and sessions are never included. The browser must be closed",
+            "Crash reports and small technical logs your browsers keep. Your passwords, logins and open tabs are not touched.", "Apps"),
+        new("BrowserUpdates", "Browser Update Files", SafetyLevel.Review, "Downloaded update packages and update logs of Firefox; the installed browser is not affected. Firefox must be closed",
+            "Update downloads Firefox already used. The browser itself stays as it is.", "Apps"),
+        new("NvidiaApp", "NVIDIA Application Files", SafetyLevel.Review, "Driver installer downloads and driver log files kept by NVIDIA; the installed driver is not affected",
+            "Old driver installers and small log files NVIDIA left behind. Your installed driver stays as it is.", "Apps"),
         new("DevCache", "NuGet & Developer Caches", SafetyLevel.Review, "NuGet, npm, pip, Yarn, Go, Visual Studio, IDE and Adobe media caches; rebuildable, but re-downloading or re-indexing takes time",
             "Downloads and work files kept by programming and design tools. Nothing of yours, but they download again the next time you use those tools.", "Apps"),
         new("Cache", "Other Application Caches", SafetyLevel.Review, "Rebuildable caches of chat, editor, launcher and Store apps; the application must be closed",
@@ -178,6 +186,10 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
         new("BrowserCookies", "Browser Cookies & Site Data", SafetyLevel.Advanced, "Chromium and Firefox cookie databases. You will be signed out of websites. Passwords and saved sessions are never included; the browser must be closed",
             "The small files websites use to remember you. Removing them signs you out of websites.", "Privacy"),
     ];
+    // Chosen only in Settings > Browser data (with a red mark and a warning), never part of a normal scan or Quick Boost.
+    internal static readonly HashSet<string> SettingsOnly = ["BrowserHistory", "BrowserCookies"];
+    // Privacy traces are counted in items (a few hundred bytes each says nothing useful), as Microsoft PC Manager does.
+    internal static readonly HashSet<string> CountedByItems = ["RecentAccess", "RecentDocs", "EventTrace", "UsageHistory", "Clipboard", "BrowserHistory", "BrowserCookies"];
     private static readonly Dictionary<string, SafetyLevel> safetyById = Definitions.ToDictionary(d => d.Id, d => d.Safety);
     internal static ObservableCollection<ReviewCategory> Create()
     {

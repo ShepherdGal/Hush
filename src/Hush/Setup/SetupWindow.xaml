@@ -10,8 +10,11 @@
           <Path Style="{StaticResource CaptionIcon}" Stretch="None" Data="M4,4 L14,14 M14,4 L4,14"/>
         </Button>
       </Grid>
-      <TextBlock x:Name="Heading" Grid.Row="1" FontSize="26" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" Margin="0,24,0,0" TextWrapping="Wrap"/>
-      <TextBlock x:Name="Details" Grid.Row="2" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="24" Margin="0,14,0,0"/>
+      <TextBlock x:Name="Heading" Grid.Row="1" Style="{StaticResource PopupTitle}" Margin="0,24,0,0" TextWrapping="Wrap"/>
+      <StackPanel Grid.Row="2" Margin="0,14,0,0">
+        <TextBlock x:Name="Details" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="24"/>
+        <TextBlock x:Name="TermsNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
+      </StackPanel>
       <StackPanel x:Name="OptionPanel" Grid.Row="3" Margin="0,22,0,0">
         <CheckBox x:Name="OptionBox" FontSize="{DynamicResource BodyFontSize}"/>
         <TextBlock x:Name="OptionHint" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="29,6,0,0"/>
@@ -19,8 +22,8 @@
       <TextBlock x:Name="Status" Grid.Row="4" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="22" Margin="0,18,0,0" Visibility="Collapsed"/>
       <Grid Grid.Row="5" Margin="0,30,0,0">
         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <Button x:Name="SecondaryButton" Style="{StaticResource TextButton}" Padding="0,10" Click="Secondary_Click"/>
-        <Button x:Name="PrimaryButton" Grid.Column="2" MinWidth="150" Padding="22,9" Click="Primary_Click"/>
+        <Button x:Name="PrimaryButton" MinWidth="150" Padding="22,9" Click="Primary_Click"/>
+        <Button x:Name="SecondaryButton" Grid.Column="2" Style="{StaticResource TextButton}" Padding="0,10" Click="Secondary_Click"/>
       </Grid>
     </Grid>
   </Border>

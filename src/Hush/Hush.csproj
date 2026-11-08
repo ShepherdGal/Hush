@@ -8,6 +8,8 @@
     <AssemblyName>Hush</AssemblyName>
     <RootNamespace>Hush</RootNamespace>
     <Version>0.8</Version>
+    <Authors>ShepherdGal</Authors>
+    <Copyright>Copyright (c) 2026 ShepherdGal. MIT License.</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Hush.ico</ApplicationIcon>
   </PropertyGroup>

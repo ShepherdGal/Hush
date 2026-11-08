@@ -108,6 +108,34 @@ internal static class ScaleChecks
         var manyResult = manyEngine.Clean(manyEngine.Scan(null, CancellationToken.None).Items, new Sync(count => { reports++; last = count; }), CancellationToken.None);
         check(manyResult.Deleted == 300 && last == 300 && reports < 300, $"Clean progress is throttled and still ends exactly at the total ({reports} reports for 300 files)");
         check(Directory.Exists(many), "Cleanup never removes the target folder itself");
+
+        // Browser history and cookies are Settings-only: a normal scan never lists them, an on-demand scan lists them unselected.
+        string cookies = Path.Combine(fixture, "settings-only"); Make(cookies, "Cookies", 50); Make(Path.Combine(fixture, "settings-only-temp"), "t.tmp", 50);
+        var settingsEngine = new CleanupEngine([new(cookies, "Chrome cookies", CleanupKind.Junk, TimeSpan.Zero, "Cookies", Category: "BrowserCookies"),
+            new(Path.Combine(fixture, "settings-only-temp"), "Temp", CleanupKind.Temp, age, Category: "Temp")], dataDirectory: Path.Combine(fixture, "audit-settings-only"));
+        var normalScan = settingsEngine.Scan(null, CancellationToken.None);
+        var onDemand = settingsEngine.Scan(null, CancellationToken.None, new(Include: target => target.Category == "BrowserCookies"));
+        check(normalScan.Items.Count == 1 && normalScan.Items[0].CategoryId == "Temp" && onDemand.Items.Count == 1 && onDemand.Items[0].CategoryId == "BrowserCookies" && !onDemand.Items[0].Selected,
+            "A normal scan never lists browser history or cookies; Settings can scan them on demand, unselected");
+        check(ReviewCategory.SettingsOnly.SetEquals(["BrowserHistory", "BrowserCookies"]), "Only browser history and cookies are Settings-only");
+
+        // PC Manager style additions: Defender diagnostics, browser logs, Firefox updates and NVIDIA logs stay narrow.
+        var defaults = CleanupEngine.DefaultTargets();
+        string defenderRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Microsoft", "Windows Defender");
+        check(defaults.Where(t => t.Root.StartsWith(defenderRoot, StringComparison.OrdinalIgnoreCase)).All(t => t.Category == "Defender" && t.Root.EndsWith(@"Windows Defender\Support") && t.DeletableOnly && !t.Recursive
+                && (t.Pattern ?? "").Split(';').All(p => (p.StartsWith("MPLog") || p.StartsWith("MpCmdRun") || p.StartsWith("MpWppTracing") || p.StartsWith("MpDetection")) && (p.EndsWith(".log") || p.EndsWith(".etl")))),
+            "Defender cleaning is limited to its diagnostic support logs; protection history, quarantine, scans and definitions are never targeted");
+        check(defaults.Where(t => t.Category == "BrowserLogs").All(t => t.Pattern is "*.dmp;*.meta" or "*.pma" && t.Processes != null) && defaults.Where(t => t.Category == "BrowserUpdates").All(t => t.Pattern == "*.mar;*.log;*.bak" && t.Processes != null),
+            "Browser log and update rules are narrow file types and need the browser closed");
+        check(ReviewCategory.SafetyOf("Defender") == SafetyLevel.Review && ReviewCategory.SafetyOf("BrowserLogs") == SafetyLevel.Review && ReviewCategory.SafetyOf("BrowserUpdates") == SafetyLevel.Review, "The new categories are Review (opt-in)");
+        var traces = new ReviewCategory("RecentAccess", "Windows Recent Access", SafetyLevel.Review, "fixture");
+        traces.Replace([new CleanupItem { Path = @"C:\r\a.lnk", Root = @"C:\r", Group = "x", Bytes = 600 }, new CleanupItem { Path = @"C:\r\b.lnk", Root = @"C:\r", Group = "x", Bytes = 700 }]);
+        check(traces.TotalLabel == "2 Items", "Usage-trace categories count items instead of bytes, like Microsoft PC Manager");
+
+        // Memory release: only the test process is ever trimmed here; the real call is never pointed at the person's programs by a test.
+        var trimmedSelf = new WindowsMemoryBooster(process => process.Id == Environment.ProcessId).Release(CancellationToken.None);
+        check(trimmedSelf.ProgramsTrimmed == 1 && trimmedSelf.UsedBefore > 0 && trimmedSelf.UsedAfter > 0, "Memory release works through the Windows API and honors its filter (only the test process was trimmed)");
+        check(new MemoryBoostResult(1, 100, 60).Released == 40 && new MemoryBoostResult(1, 100, 130).Released == 0, "Released memory is the measured drop and never negative");
     }
 
     private sealed class Sync(Action<int> report) : IProgress<int> { public void Report(int value) => report(value); }

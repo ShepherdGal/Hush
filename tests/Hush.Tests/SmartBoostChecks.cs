@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
 using Hush;
 
@@ -15,6 +16,12 @@ internal static class SmartBoostChecks
         File.WriteAllBytes(path, new byte[length]);
         File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-30)); File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-30));
         return path;
+    }
+
+    private sealed class FakeBooster : IMemoryBooster
+    {
+        public int Calls;
+        public MemoryBoostResult Release(CancellationToken token) { Calls++; return new(7, 1000L * 1048576, 877L * 1048576); }
     }
 
     private sealed class StartupFixture : IDisposable
@@ -136,12 +143,15 @@ internal static class SmartBoostChecks
         void Toggle(CheckBox box) { box.IsChecked = !(box.IsChecked == true); box.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); }
         string safeFolder = Path.Combine(fixture, "ui-safe"), reviewFolder = Path.Combine(fixture, "ui-review");
         string safeFile = Make(safeFolder, "quick.tmp", 2048), reviewFile = Make(reviewFolder, "cache.bin", 2048);
+        string cookieFolder = Path.Combine(fixture, "ui-cookies"); string cookieFile = Make(cookieFolder, "Cookies", 4096);
         var engine = new CleanupEngine([new(safeFolder, "User temp", CleanupKind.Temp, TimeSpan.FromDays(2), Category: "Temp"),
-            new(reviewFolder, "Chrome cache", CleanupKind.Cache, TimeSpan.FromDays(2), Category: "BrowserChrome")], dataDirectory: Path.Combine(fixture, "audit-ui"));
+            new(reviewFolder, "Chrome cache", CleanupKind.Cache, TimeSpan.FromDays(2), Category: "BrowserChrome"),
+            new(cookieFolder, "Chrome cookies", CleanupKind.Junk, TimeSpan.Zero, "Cookies;Cookies-journal", Recursive: false, Category: "BrowserCookies")], dataDirectory: Path.Combine(fixture, "audit-ui"));
+        var booster = new FakeBooster();
         using var startup = new StartupFixture(fixture);
         startup.SetRun("UserRun", "Alpha", @"C:\Tools\alpha.exe");
         string preferences = Path.Combine(fixture, "boost-ui-preferences.json");
-        var window = new MainWindow(engine, preferencesPath: preferences, startupApps: new StartupAppsService(startup.Locations, Path.Combine(fixture, "startup-ui-logs")));
+        var window = new MainWindow(engine, preferencesPath: preferences, startupApps: new StartupAppsService(startup.Locations, Path.Combine(fixture, "startup-ui-logs")), memoryBooster: booster);
         try
         {
             var root = (FrameworkElement)window.Content;
@@ -156,7 +166,7 @@ internal static class SmartBoostChecks
                 "Smart Boost starts fully off with no background timer");
 
             Click(settingsButton); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning);
-            UiLayoutChecks.Require(window.IsResourceTimerRunning && ((TextBlock)window.FindName("MemoryText")).Text != "…" && ((TextBlock)window.FindName("DiskText")).Text.Contains("free"),
+            UiLayoutChecks.Require(window.IsResourceTimerRunning && ((TextBlock)window.FindName("MemoryText")).Text != "…" && ((TextBlock)window.FindName("DiskText")).Text.EndsWith("%"),
                 "Resource indicators fill in and sample only while Settings is open");
             // The live figures are in their own Info card, separate from the Smart Boost card; every Settings title is weight 500.
             UiLayoutChecks.Layout(root, new Size(920, 820));
@@ -168,9 +178,24 @@ internal static class SmartBoostChecks
             UiLayoutChecks.Require(!boostCard.IsExpanded && ((FrameworkElement)window.FindName("CpuFill")).ActualWidth > 0 && ((FrameworkElement)window.FindName("MemoryText")).ActualWidth > 0
                 && ((FrameworkElement)window.FindName("DiskText")).ActualHeight > 0 && ((FrameworkElement)window.FindName("BoostSummary")).ActualWidth > 0,
                 $"The Info card shows the bars and details without opening anything (expanded {boostCard.IsExpanded}, cpuFill {((FrameworkElement)window.FindName("CpuFill")).ActualWidth > 0}, mem {((FrameworkElement)window.FindName("MemoryText")).ActualWidth}, disk {((FrameworkElement)window.FindName("DiskText")).ActualHeight}, summary {((FrameworkElement)window.FindName("BoostSummary")).ActualWidth > 0})");
-            var titles = Descendants<TextBlock>(root).Where(block => block.Text is "Settings" or "Info" or "Smart Boost" or "Privacy & telemetry" or "More impact").ToList();
-            UiLayoutChecks.Require(titles.Count == 5 && titles.All(block => block.FontWeight == FontWeights.Medium && block.FontStyle == FontStyles.Italic),
-                "The Settings page title and every card title use weight 500 italic");
+            var titles = Descendants<TextBlock>(root).Where(block => block.Text is "Settings" or "Info" or "Smart Boost" or "Browser data" or "Privacy & telemetry" or "More impact").ToList();
+            UiLayoutChecks.Require(titles.Count == 6 && titles.All(block => block.FontWeight == FontWeights.Medium && block.FontStyle == FontStyles.Normal),
+                "The Settings page title and every card title are weight 500 and upright");
+            // Page titles are one style: Review files and Settings match in size, weight, style, color and position.
+            var settingsTitle = (TextBlock)window.FindName("SettingsTitle");
+            var reviewTitle = (TextBlock)window.FindName("ReviewTitle");
+            UiLayoutChecks.Require(ReferenceEquals(settingsTitle.Style, reviewTitle.Style) && settingsTitle.FontSize == reviewTitle.FontSize && settingsTitle.FontWeight == reviewTitle.FontWeight
+                && settingsTitle.FontStyle == reviewTitle.FontStyle && ((SolidColorBrush)settingsTitle.Foreground).Color == ((SolidColorBrush)reviewTitle.Foreground).Color && settingsTitle.FontSize == 29,
+                "Review files and Settings titles share one style: same size, weight, style and color");
+            double settingsTop = settingsTitle.TransformToAncestor(root).Transform(new Point(0, 0)).Y;
+            window.ShowReviewPage(true); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning); UiLayoutChecks.Layout(root, new Size(920, 820));
+            double reviewTop = reviewTitle.TransformToAncestor(root).Transform(new Point(0, 0)).Y;
+            Click(settingsButton); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning); UiLayoutChecks.Layout(root, new Size(920, 820));
+            UiLayoutChecks.Require(Math.Abs(settingsTop - reviewTop) < 0.5 && reviewTop > 0, $"Review files and Settings titles sit at the same position ({reviewTop:0.#} and {settingsTop:0.#})");
+            // Italic audit of everything that exists in the window: only the logo and the home heading may be italic.
+            var italics = Descendants<TextBlock>(root).Where(block => block.FontStyle == FontStyles.Italic).Select(block => block.Text).Distinct().ToList();
+            UiLayoutChecks.Require(italics.All(text => text is "Hush" or "Make more room to breathe") && italics.Contains("Hush") && italics.Contains("Make more room to breathe"),
+                "In the running window only the Hush logo and the home heading are italic" + (italics.All(text => text is "Hush" or "Make more room to breathe") ? "" : ": " + string.Join(" | ", italics)));
             UiLayoutChecks.Require(((ItemsControl)window.FindName("CategoriesList")).Items.Groups == null && Descendants<TextBlock>(root).All(block => block.Text != "Appearance"),
                 "Review Files is a flat list again and Settings has no Appearance section");            UiLayoutChecks.Require(window.StartupChoices.Count == 1 && window.StartupChoices[0].Enabled, "The startup list shows this account's startup apps");
             ((Expander)window.FindName("SettingsBoostSection")).IsExpanded = true;
@@ -241,6 +266,8 @@ internal static class SmartBoostChecks
             UiLayoutChecks.Require(!LowResourceMode.IsActive, "Low-resource mode switches off and restores Hush");
 
             UiLayoutChecks.Require(((Button)window.FindName("AboutButton")).FontWeight == FontWeights.Medium && ((Button)window.FindName("AboutButton")).FontStyle == FontStyles.Italic, "The Hush logo is weight 500 italic");
+            UiLayoutChecks.Require(((TextBlock)window.FindName("Headline")).FontStyle == FontStyles.Italic && ((TextBlock)window.FindName("CompletionLinkText")).FontStyle == FontStyles.Normal
+                && ((TextBlock)window.FindName("CompletionLinkText")).TextDecorations.Count > 0, "The main title stays italic; the scan-complete link is upright and still underlined");
             foreach (bool light in new[] { window.IsLightTheme, !window.IsLightTheme })
             {
                 if (window.IsLightTheme != light) window.ToggleTheme();
@@ -266,6 +293,113 @@ internal static class SmartBoostChecks
             Click((Button)window.FindName("CancelDeleteButton"));
             UiLayoutChecks.PumpUntil(() => modal.Visibility == Visibility.Collapsed);
             UiLayoutChecks.Require(File.Exists(safeFile) && File.Exists(reviewFile), "Declining Quick Boost deletes nothing");
+            // ---- Info card: slim vertical bars like Microsoft PC Manager, with a Boost button ----
+            Click(settingsButton); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning); UiLayoutChecks.Layout(root, new Size(920, 820));
+            var memoryTrack = (FrameworkElement)((FrameworkElement)window.FindName("MemoryFill")).Parent;
+            var tempText = (TextBlock)window.FindName("TempText");
+            UiLayoutChecks.PumpUntil(() => tempText.Text != "…");
+            double BarX(string name) => ((FrameworkElement)window.FindName(name)).TransformToAncestor(root).Transform(new Point(0, 0)).X;
+            UiLayoutChecks.Require(BarX("CpuFill") < BarX("MemoryFill") && BarX("MemoryFill") < BarX("TempFill") && BarX("TempFill") < BarX("DiskFill"),
+                "The Info bars run left to right: Processor, then Memory, then Temporary files and System drive");
+            UiLayoutChecks.Require(memoryTrack.ActualHeight >= memoryTrack.ActualWidth * 3 && ((TextBlock)window.FindName("MemoryText")).Text.EndsWith("%") && ((TextBlock)window.FindName("CpuText")).Text.EndsWith("%")
+                && tempText.Text.Contains("B") && Descendants<TextBlock>(infoCard).Any(block => block.Text == "Temporary files") && Descendants<TextBlock>(infoCard).Any(block => block.Text == "Memory usage"),
+                $"The Info card shows slim vertical bars with a value and label beside each, including Memory usage and Temporary files ({tempText.Text})");
+            var boostButton = (Button)window.FindName("BoostButton");
+            Click(boostButton); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Visible);
+            UiLayoutChecks.Require(((TextBlock)window.FindName("ConsentTitle")).Text == "Boost now?" && ((TextBlock)window.FindName("ConsentText")).Text.Contains("Safe temporary files")
+                && ((TextBlock)window.FindName("ConsentText")).Text.Contains("Nothing is closed") && booster.Calls == 0 && File.Exists(safeFile) && File.Exists(reviewFile),
+                "Boost explains what it will do and asks first; nothing is cleaned or released before the answer");
+            Click((Button)window.FindName("ConsentCancelButton")); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Collapsed);
+            UiLayoutChecks.PumpUntil(() => !window.IsBoosting);
+            UiLayoutChecks.Require(booster.Calls == 0 && File.Exists(safeFile) && boostButton.IsEnabled && boostButton.Content.ToString() == "Boost", "Answering Not now does nothing and leaves Boost ready");
+            Click(boostButton); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Visible);
+            Click((Button)window.FindName("ConsentConfirmButton"));
+            UiLayoutChecks.PumpUntil(() => booster.Calls == 1 && !window.IsBoosting);
+            var boostStatus = (TextBlock)window.FindName("BoostStatus");
+            UiLayoutChecks.Require(!File.Exists(safeFile) && File.Exists(reviewFile) && booster.Calls == 1 && boostStatus.Text.Contains("temporary files cleaned") && boostStatus.Text.Contains("123") && boostStatus.Text.Contains("memory released")
+                && boostStatus.Text.Contains("refill") && boostButton.IsEnabled && boostButton.Content.ToString() == "Boost" && window.ReviewItems.Count == 0,
+                "Boost cleans only the Safe temporary files, releases memory once, reports what was measured (and that memory can refill) and leaves Review files alone");
+            Click((Button)window.FindName("SetUpSmartBoostButton"));
+            UiLayoutChecks.Require(((Expander)window.FindName("SettingsBoostSection")).IsExpanded, "Set up Smart Boost opens the Smart Boost card");
+
+            // ---- Browser data: kept out of scans, chosen in Settings with a red mark and warnings ----
+            ((Expander)window.FindName("SettingsBrowserSection")).IsExpanded = true; UiLayoutChecks.Wait(420); UiLayoutChecks.Layout(root, new Size(920, 820));
+            if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string shots)
+            {
+                var scroll = (ScrollViewer)window.FindName("WindowsSettingsScroll");
+                foreach (bool light in new[] { false, true })
+                {
+                    if (window.IsLightTheme != light) window.ToggleTheme();
+                    UiLayoutChecks.Wait(420);
+                    scroll.ScrollToTop(); UiLayoutChecks.Layout(root, new Size(920, 820)); UiLayoutChecks.Wait(80);
+                    UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, $"info-card-{(light ? "light" : "dark")}.png"));
+                    ((FrameworkElement)window.FindName("SettingsBrowserSection")).BringIntoView(); UiLayoutChecks.Layout(root, new Size(920, 820)); UiLayoutChecks.Wait(120);
+                    scroll.ScrollToVerticalOffset(scroll.ScrollableHeight); UiLayoutChecks.Wait(120);
+                    UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, $"browser-data-{(light ? "light" : "dark")}.png"));
+                }
+                if (window.IsLightTheme) window.ToggleTheme();
+                scroll.ScrollToTop();
+            }
+            var historyBox = (CheckBox)window.FindName("BrowserHistoryBox"); var cookiesBox = (CheckBox)window.FindName("BrowserCookiesBox"); var browserClean = (Button)window.FindName("BrowserCleanButton");
+            var red = ((SolidColorBrush)Application.Current.Resources["CleanTextBrush"]).Color;
+            UiLayoutChecks.Require(historyBox.IsChecked != true && cookiesBox.IsChecked != true && !browserClean.IsEnabled && ((TextBlock)window.FindName("BrowserSummary")).Text.Contains("nothing selected")
+                && ((SolidColorBrush)((TextBlock)window.FindName("BrowserCookiesTitle")).Foreground).Color == red && ((SolidColorBrush)cookiesBox.Tag).Color == red,
+                "Browser data starts with nothing selected and the cookies row is marked in the Clean red");
+            Toggle(cookiesBox); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Visible);
+            UiLayoutChecks.Require(((TextBlock)window.FindName("ConsentTitle")).Text.Contains("cookies") && ((TextBlock)window.FindName("ConsentText")).Text.Contains("signs you out"), "Choosing cookies shows a warning popup first");
+            Click((Button)window.FindName("ConsentCancelButton")); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Collapsed && cookiesBox.IsChecked != true);
+            UiLayoutChecks.Require(cookiesBox.IsChecked != true && !browserClean.IsEnabled, "Declining the cookie warning leaves cookies unselected");
+            Toggle(cookiesBox); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Visible);
+            Click((Button)window.FindName("ConsentConfirmButton")); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Collapsed && browserClean.IsEnabled);
+            UiLayoutChecks.Require(cookiesBox.IsChecked == true && browserClean.IsEnabled && ((TextBlock)window.FindName("BrowserSummary")).Text.Contains("cookies selected"), "Accepting the warning selects cookies and enables Review and clean");
+            Click(browserClean); UiLayoutChecks.PumpUntil(() => modal.Visibility == Visibility.Visible);
+            var advancedConsent = (CheckBox)window.FindName("AdvancedConsentBox");
+            UiLayoutChecks.Require(window.ReviewItems.Count == 1 && window.ReviewItems[0].Path == cookieFile && window.ReviewItems[0].Selected && window.ReviewItems[0].Safety == SafetyLevel.Advanced
+                && advancedConsent.Visibility == Visibility.Visible && !((Button)window.FindName("ConfirmDeleteButton")).IsEnabled && File.Exists(cookieFile),
+                "Review and clean scans only the chosen browser data, then asks again with the Advanced consent box; nothing is removed yet");
+            Click((Button)window.FindName("CancelDeleteButton")); UiLayoutChecks.PumpUntil(() => modal.Visibility == Visibility.Collapsed);
+            UiLayoutChecks.Require(File.Exists(cookieFile), "Cancelling keeps the cookies");
+            var fullScan = window.ActivateGaugeAsync(); UiLayoutChecks.PumpUntil(() => fullScan.IsCompleted);
+            UiLayoutChecks.Require(!window.ReviewItems.Any(item => item.Path == cookieFile), "A normal scan never lists browser cookies");
+            // ---- Terms of use: first run, About notice and the full text ----
+            string termsFile = Path.Combine(fixture, "terms-preferences.json");
+            var termsWindow = new MainWindow(engine, preferencesPath: termsFile, startupApps: new StartupAppsService(startup.Locations, Path.Combine(fixture, "startup-terms-logs")), memoryBooster: booster);
+            try
+            {
+                var termsConsent = (FrameworkElement)termsWindow.FindName("ConsentOverlay");
+                var declined = termsWindow.EnsureTermsAccepted(); UiLayoutChecks.PumpUntil(() => termsConsent.Visibility == Visibility.Visible);
+                UiLayoutChecks.Require(((TextBlock)termsWindow.FindName("ConsentTitle")).Text == "Use Hush at your own risk" && ((TextBlock)termsWindow.FindName("ConsentText")).Text == Terms.Body
+                    && ((Button)termsWindow.FindName("ConsentConfirmButton")).Content.ToString() == "I understand" && ((Button)termsWindow.FindName("ConsentCancelButton")).Content.ToString() == "Quit",
+                    "First run shows the use-at-your-own-risk terms with I understand and Quit");
+                ((Button)termsWindow.FindName("ConsentCancelButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); UiLayoutChecks.PumpUntil(() => declined.IsCompleted);
+                UiLayoutChecks.Require(!declined.Result && (!File.Exists(termsFile) || !File.ReadAllText(termsFile).Contains(Terms.Version)), "Declining the terms returns false and saves nothing (the real app then quits)");
+                UiLayoutChecks.PumpUntil(() => termsConsent.Visibility == Visibility.Collapsed);
+                var accepted = termsWindow.EnsureTermsAccepted(); UiLayoutChecks.PumpUntil(() => termsConsent.Visibility == Visibility.Visible);
+                ((Button)termsWindow.FindName("ConsentConfirmButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); UiLayoutChecks.PumpUntil(() => accepted.IsCompleted);
+                UiLayoutChecks.Require(accepted.Result && File.ReadAllText(termsFile).Contains($"\"TermsAccepted\":\"{Terms.Version}\""), "Accepting saves the accepted version of the terms");
+                UiLayoutChecks.PumpUntil(() => termsConsent.Visibility == Visibility.Collapsed);
+                var again = termsWindow.EnsureTermsAccepted();
+                UiLayoutChecks.Require(again.IsCompleted && again.Result && termsConsent.Visibility == Visibility.Collapsed, "Later starts do not ask again");
+            }
+            finally { termsWindow.Close(); }
+            Click((Button)window.FindName("AboutButton")); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("AboutOverlay")).Visibility == Visibility.Visible);
+            UiLayoutChecks.Require(((TextBlock)window.FindName("AboutTerms")).Text == Terms.Notice && ((Button)window.FindName("TermsButton")).Content.ToString() == "Terms of use", "About shows the use-at-your-own-risk notice and a Terms of use button");
+            Click((Button)window.FindName("TermsButton")); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Visible);
+            UiLayoutChecks.Require(((TextBlock)window.FindName("ConsentText")).Text == Terms.Body && ((TextBlock)window.FindName("ConsentTitle")).Text == "Terms of use", "Terms of use opens the full text");
+            Click((Button)window.FindName("ConsentConfirmButton")); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Collapsed);
+            Click((Button)window.FindName("CloseAboutButton")); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("AboutOverlay")).Visibility == Visibility.Collapsed);
+            // ---- Popup buttons: every action on the left of the button that leaves ----
+            UiLayoutChecks.Layout(root, new Size(920, 820));
+            double LeftOf(string name) { var element = (FrameworkElement)window.FindName(name); return element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize)).Left; }
+            foreach (var (overlayName, action, exit) in new[] { ("ModalOverlay", "ConfirmDeleteButton", "CancelDeleteButton"), ("WindowsSettingsOverlay", "ConfirmWindowsSettingsButton", "CancelWindowsSettingsButton"),
+                ("ConsentOverlay", "ConsentConfirmButton", "ConsentCancelButton"), ("AboutOverlay", "CheckUpdateButton", "CloseAboutButton") })
+            {
+                var overlay = (FrameworkElement)window.FindName(overlayName); var before = overlay.Visibility;
+                overlay.Visibility = Visibility.Visible; UiLayoutChecks.Layout(root, new Size(920, 820));
+                UiLayoutChecks.Require(LeftOf(action) < LeftOf(exit) - 20, $"{overlayName}: the action ({action}) is on the left and the exit ({exit}) on the right");
+                if (overlayName == "AboutOverlay") UiLayoutChecks.Require(LeftOf("AboutUpdatesButton") < LeftOf("CloseAboutButton") - 20, "About: Release notes sits beside the action and Close is at the far right");
+                overlay.Visibility = before;
+            }
             Console.WriteLine("PASS: Smart Boost section, off-by-default timers, resource indicators, startup apps with Undo, consent for Automatic Boost, shared settings file, low-resource mode and Quick Boost confirmation");
         }
         finally { window.Close(); }

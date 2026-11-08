@@ -10,6 +10,9 @@ internal sealed record UpdatePlan(string Target, string Staged, string NewHash, 
 internal static class UpdateInstaller
 {
     private static string UpdateRoot => Path.Combine(CleanupEngine.DataDirectory, "Updates");
+    internal static string StagingRoot => UpdateRoot;
+    // The one rollback copy kept next to Hush.exe. Each update replaces it, so old versions never pile up (they used to be one 25 MB file per update).
+    internal const string RollbackName = "Hush.previous.exe";
     internal static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
     internal static void Start(string staged, AppRelease release)
     {
@@ -63,7 +66,7 @@ internal static class UpdateInstaller
             catch (ArgumentException) { /* Parent exited before the helper started. */ }
             if (Hash(plan.Target) != plan.OldHash) throw new IOException("The installed application changed.");
             string adjacent = Path.Combine(parent, ".hush-update-" + Guid.NewGuid().ToString("N") + ".exe");
-            string backup = Path.Combine(parent, "Hush.previous-" + Guid.NewGuid().ToString("N") + ".exe");
+            string backup = Path.Combine(parent, RollbackName);
             File.Copy(plan.Staged, adjacent, false);
             if (!Hash(adjacent).Equals(plan.NewHash, StringComparison.OrdinalIgnoreCase)) throw new IOException("Copy verification failed.");
             AtomicReplace(adjacent, plan.Target, backup);
@@ -88,6 +91,7 @@ internal static class UpdateInstaller
                 throw;
             }
             await File.WriteAllTextAsync(Path.Combine(directory, "result.txt"), "Installed " + plan.Version + ". Previous version: " + backup);
+            RemoveLegacyRollbackCopies(parent);
             return 0;
         }
         catch (Exception ex)
@@ -96,6 +100,50 @@ internal static class UpdateInstaller
             return 1;
         }
     }
+    // Older versions of Hush left one Hush.previous-<id>.exe per update; after a successful update only the single current rollback copy stays.
+    internal static int RemoveLegacyRollbackCopies(string folder)
+    {
+        int removed = 0;
+        try
+        {
+            foreach (string file in Directory.EnumerateFiles(folder, "Hush.previous-*.exe"))
+            {
+                try { File.Delete(file); removed++; } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return removed;
+    }
+
+    // Update staging (a 25 MB downloaded copy plus a 25 MB helper copy per attempt) is removed once an update has finished or failed, and
+    // after two days for a download that was never installed. A folder whose helper is still running just fails to delete and is retried later.
+    internal static int PruneStaging(string root, DateTime? nowUtc = null)
+    {
+        int removed = 0;
+        try
+        {
+            if (!Directory.Exists(root) || !CleanupEngine.SafePath(root, root)) return 0;
+            var now = nowUtc ?? DateTime.UtcNow;
+            foreach (string directory in Directory.EnumerateDirectories(root))
+            {
+                try
+                {
+                    bool finished = File.Exists(Path.Combine(directory, "started.ok")) || File.Exists(Path.Combine(directory, "result.txt"));
+                    bool stale = Directory.GetLastWriteTimeUtc(directory) < now - TimeSpan.FromDays(2);
+                    if (!(finished || stale) || !CleanupEngine.SafePath(directory, root)) continue;
+                    // Markers go last: if a file is still in use (the helper has not exited yet) the markers stay, so the next pass knows it is finished.
+                    foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+                        if (Path.GetFileName(file) is not ("started.ok" or "result.txt")) File.Delete(file);
+                    Directory.Delete(directory, true);
+                    removed++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return removed;
+    }
+
     internal static void AtomicReplace(string source, string target, string backup) => File.Replace(source, target, backup, false);
     internal static void ConfirmStartup(string receipt)
     {

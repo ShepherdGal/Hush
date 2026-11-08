@@ -66,7 +66,7 @@ public static class Motion
     public static readonly DependencyProperty EnabledProperty = DependencyProperty.RegisterAttached(
         "Enabled", typeof(bool), typeof(Motion), new PropertyMetadata(false, EnabledChanged));
     public static readonly DependencyProperty AccentProperty = DependencyProperty.RegisterAttached(
-        "Accent", typeof(Color), typeof(Motion), new PropertyMetadata(Color.FromRgb(60, 207, 217), AppearanceChanged));
+        "Accent", typeof(Color), typeof(Motion), new PropertyMetadata(Color.FromRgb(56, 207, 200), AppearanceChanged));
     public static readonly DependencyProperty GlowProperty = DependencyProperty.RegisterAttached(
         "Glow", typeof(double), typeof(Motion), new PropertyMetadata(0.08, AppearanceChanged));
     public static readonly DependencyProperty OuterGlowProperty = DependencyProperty.RegisterAttached(

@@ -90,6 +90,9 @@ internal sealed class CleanupEngine
             new(Path.Combine(windows, "Logs", "DISM"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "MoSetup"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log;*.etl", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Debug"), "Windows debug logs", CleanupKind.Temp, Days(30), "*.log", Recursive: false, Category: "SystemLogs", DeletableOnly: true),
+            // Microsoft Defender: only its own diagnostic support logs. Never Scans, Quarantine, History, Definition Updates or Platform.
+            new(Path.Combine(common, "Microsoft", "Windows Defender", "Support"), "Defender diagnostic logs", CleanupKind.Temp, Days(7),
+                "MPLog-*.log;MpCmdRun*.log;MpWppTracing-*.etl;MpDetection*.log", Recursive: false, Category: "Defender", DeletableOnly: true),
             // ----- Additional system items -----
             // Crash reports and memory dumps (never anything but dump files).
             new(Path.Combine(local, "CrashDumps"), "Crash reports", CleanupKind.Temp, Days(14), "*.dmp", Category: "Crash"),
@@ -162,6 +165,9 @@ internal sealed class CleanupEngine
             string userData = Path.Combine(local, browser.Item1);
             if (!Directory.Exists(userData) || !SafePath(userData, userData)) continue;
             AddFolders(browser.Item4, browser.Item2 + " cache", CleanupKind.Cache, 7, userData, ["GrShaderCache", "ShaderCache", "DawnCache", "GraphiteDawnCache"], [browser.Item3]);
+            // Crash reports and usage-metrics files (the "log files" of a Chromium browser).
+            AddFolders("BrowserLogs", browser.Item2 + " crash reports", CleanupKind.Temp, 14, Path.Combine(userData, "Crashpad"), ["reports"], [browser.Item3], "*.dmp;*.meta");
+            AddFolders("BrowserLogs", browser.Item2 + " usage metrics", CleanupKind.Temp, 14, userData, ["BrowserMetrics"], [browser.Item3], "*.pma");
             foreach (var profile in Folders(userData))
             {
                 string name = Path.GetFileName(profile);
@@ -185,6 +191,10 @@ internal sealed class CleanupEngine
                 list.Add(new(profile, "Firefox cookies", CleanupKind.Junk, TimeSpan.Zero, "cookies.sqlite;cookies.sqlite-wal;cookies.sqlite-shm", ["firefox"], false, "BrowserCookies"));
         // NVIDIA app: driver installers it downloaded (the installed driver is not affected).
         AddFolders("NvidiaApp", "NVIDIA installer downloads", CleanupKind.Cache, 30, Path.Combine(common, "NVIDIA Corporation"), ["Downloader"], deletableOnly: true);
+        AddFolders("NvidiaApp", "NVIDIA driver logs", CleanupKind.Temp, 14, Path.Combine(common, "NVIDIA Corporation"), ["umdlogs"], pattern: "*.log;*.txt", deletableOnly: true, recursive: false);
+        // Firefox keeps downloaded update packages per installation; only the package and log files, only while Firefox is closed.
+        foreach (var updates in Folders(Path.Combine(local, "Mozilla", "updates")))
+            AddFolders("BrowserUpdates", "Firefox update files", CleanupKind.Cache, 7, updates, ["updates"], ["firefox"], "*.mar;*.log;*.bak");
         // Chat, editor and launcher apps built on web engines: their caches rebuild on next start.
         AddFolders("Cache", "Discord cache", CleanupKind.Cache, 7, Path.Combine(roaming, "discord"), ["Cache", "Code Cache", "GPUCache"], ["discord"]);
         AddFolders("Cache", "Slack cache", CleanupKind.Cache, 7, Path.Combine(roaming, "Slack"), ["Cache", "Code Cache", "GPUCache"], ["slack"]);
@@ -255,7 +265,10 @@ internal sealed class CleanupEngine
     {
         options ??= new();
         using var background = options.Background ? LowResourceMode.BackgroundScope() : null;
-        IReadOnlyList<CleanupTarget> active = options.Include == null ? targets : targets.Where(options.Include).ToList();
+        // A normal scan leaves out the Settings-only categories (browser history and cookies); they are scanned only when Settings asks for them.
+        IReadOnlyList<CleanupTarget> active = options.Include == null
+            ? targets.Where(target => !ReviewCategory.SettingsOnly.Contains(target.Category ?? "")).ToList()
+            : targets.Where(options.Include).ToList();
         List<CleanupItem> found = [];
         int inaccessible = 0, busy = 0, examined = 0;
         long fileCount = 0, bytes = 0;

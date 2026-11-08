@@ -4,19 +4,39 @@
 
 Version 0.8. A compact native Windows cleaner: scan, review results by category, clean what you choose, with a light or dark theme. No ads, telemetry, startup tasks, or third-party application packages.
 
+## Download
+
+**Latest version: https://github.com/ShepherdGal/Hush/releases/latest.** You only need one of these:
+
+| I want to... | Download | What it is |
+| --- | --- | --- |
+| Just run it, nothing installed | **[Hush.exe, portable](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush.exe)** | One file. Put it anywhere you can write to (for example `D:\Hush\`) and make a shortcut to it. |
+| Install it like a normal app | **[Hush-Setup.exe, installer](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-Setup.exe)** | For your account only, no administrator rights. Adds a Start menu entry, an optional desktop shortcut and a Settings > Apps entry. |
+| Everything in one zip | [Hush-windows-x64.zip](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-windows-x64.zip) | The portable app plus this README, the terms and the MIT license. |
+
+Needs Windows 10 or 11 (64-bit) and the **.NET 10 Desktop Runtime** (Windows offers to download it if it is missing). Hush is not code-signed, so Windows SmartScreen may show "Windows protected your PC": choose **More info > Run anyway**. Both versions update themselves from inside the app (click **Hush** > **Check for updates** > **Update now**).
+
+## Use at your own risk
+
+Hush comes without warranty and is used entirely at your own risk; the author is not responsible for any loss of data or settings or any other damage. Hush shows you what it found and asks before it acts, but you decide what to remove, and some changes cannot be undone, so keep backups of anything important. The app asks you to accept the [terms](docs/TERMS.md) the first time it runs, and they are always available under **Hush** > **Terms of use**.
+
+## License
+
+Hush is free and open source under the [MIT License](LICENSE) (copyright 2026 ShepherdGal): you may use, copy, modify and share it, and it comes without warranty (see also the [terms of use](docs/TERMS.md)).
+
 ## Project layout
 
 ```
 src/Hush/       the app: Cleaning/, Updates/, Setup/, WindowsSettings/, UI/, Assets/
 tests/Hush.Tests/   verification runner and fixtures-only checks
 docs/           design system, handoff, changelog, releasing, Windows settings
-scripts/        Build.ps1, Verify.ps1, Backup.ps1
+scripts/        Build.ps1, Verify.ps1, Backup.ps1, Tidy.ps1
 Hush.sln        opens the app and its tests together
 ```
 
 ## Run
 
-Two ways to get Hush, both from the release page (both need the **.NET 10 Desktop Runtime** and are unsigned):
+Two ways to use Hush (see **Download** above; both need the **.NET 10 Desktop Runtime** and are unsigned):
 
 - **Installer:** run `Hush-Setup.exe`. It installs Hush for your account only (no administrator rights) to `%LOCALAPPDATA%\Programs\Hush`, adds a Start menu entry (and, if you like, a desktop shortcut) and lists Hush under Settings > Apps, where Windows can uninstall it. Setup also offers "Run without installing".
 - **Portable:** run `Hush.exe` from any writable folder, or unzip `Hush-windows-x64.zip`. Nothing is installed or registered.
@@ -26,7 +46,7 @@ Both keep their settings in `%LOCALAPPDATA%\Hush` and both update themselves in 
 1. The gauge starts empty at **0%**. Click to scan; click again to stop. The arc starts at twelve o'clock and fills clockwise. A live files-found counter runs beneath it; byte totals appear when the scan ends.
 2. Click the completed gauge to rescan, or the **Scan complete. Take a look. →** link to open Review Files. Real file count and combined size appear beneath the link; registry entries are counted separately.
 3. Review categories or expand individual sections. Category checkboxes select their own files; Select All Categories selects all candidates. Mixed selection shows a dash. **Expand all / Collapse all** controls every section.
-4. Aqua (soft blue in the light theme) means **Safe**; orange marks **Review recommended** and red (the same red as the Clean button) marks **Advanced**, with written labels. Review/caution candidates start unselected. Checked category titles and filenames adopt their checkbox accent; unchecked text returns to normal.
+4. Teal (soft blue in the light theme) means **Safe**; orange marks **Review recommended** and red (the same red as the Clean button) marks **Advanced**, with written labels. Review/caution candidates start unselected. Checked category titles and filenames adopt their checkbox accent; unchecked text returns to normal.
 5. After a successful complete scan, Home **Clean** and Review **Clean selected** confirm the current selection over a softly blurred app. Partial results are read-only; scan again before selecting/cleaning. Deletion is permanent and bypasses the Recycle Bin. Keep my files or Escape cancels.
 6. Click **Hush** for About, version, current patch notes and updates. A finished scan never forces navigation; Back preserves results and selections.
 
@@ -68,7 +88,8 @@ Requires .NET 10 SDK on Windows. No NuGet application packages.
 
 ```powershell
 .\scripts\Verify.ps1          # Safety, updater and WPF checks; controlled failure regression
-.\scripts\Build.ps1                 # Small portable executable and ZIP
+.\scripts\Build.ps1                 # artifacts\Hush.exe (portable), Hush-Setup.exe (installer), the zip and WHICH FILE.txt
+.\scripts\Tidy.ps1                  # Lists (and with -Apply removes) rebuildable bin/obj clutter; artifacts\ and Backups\ are never touched
 .\scripts\Build.ps1 -Standalone     # Larger build including Desktop Runtime
 .\scripts\Backup.ps1                # Immutable source/portable snapshots with verified hashes
 ```

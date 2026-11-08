@@ -2,6 +2,14 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## MIT license and popup button order (November 8, 2026)
+
+Added LICENSE (MIT, copyright 2026 ShepherdGal; also in the zip and the exe's file properties) and put every popup's action on the left and its exit on the right (test-enforced). scripts/Verify.ps1 passes (213 engine checks plus all UI suites). rtifacts\Hush.exe was rebuilt from this source. Still not committed or released.
+
+## Terms, downloads and one place for files (November 8, 2026)
+
+Added the use-at-your-own-risk terms (first run, About, installer note, docs/TERMS.md), Info bars ordered Processor / Memory / Temporary files / System drive, a README Download table, flat rtifacts\ output (Hush.exe, Hush-Setup.exe, the zip, WHICH FILE.txt), scripts/Tidy.ps1, and updater cleanup (one rollback copy, staging pruned). scripts/Verify.ps1 passes (206 engine checks plus all UI suites). Nothing is committed or released: the published v0.8 release still has the earlier binaries, so a new release (and decision on version) is needed before other people or the in-app updater see any of this.
+
 ## Hush 0.8 (November 7, 2026)
 
 New ice-blue brush icon (crisp border, transparent corners; GenerateIcon.ps1), ice-blue Dark accent #7FE0F6, one red for the whole app (locked by ColorRuleChecks), Info card in Settings, header wordmark weight 500, version 0.8. scripts/Verify.ps1 passes (170 engine checks plus all UI suites). Built with scripts/Build.ps1; published as GitHub release v0.8 (see docs/RELEASING.md for the steps). The in-app update from 0.7 to 0.8 is for the owner to try on a real install (never run on the development PC by an agent).

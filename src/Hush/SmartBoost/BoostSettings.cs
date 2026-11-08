@@ -33,6 +33,8 @@ public sealed class BoostSettings
 public sealed class Preferences
 {
     public bool Light { get; set; }
+    // The version of the terms of use the person accepted ("Use at your own risk"); empty until they accept.
+    public string TermsAccepted { get; set; } = "";
     public BoostSettings Boost { get; set; } = new();
 
     public static Preferences Load(string path)

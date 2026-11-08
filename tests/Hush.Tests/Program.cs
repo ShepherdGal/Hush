@@ -135,6 +135,8 @@ static void RunChecks()
         CategoryChecks.Run(fixture, Check);
         ScaleChecks.Run(fixture, Check);
         ColorRuleChecks.Run(Check);
+        TypographyChecks.Run(Check);
+        DistributionChecks.Run(fixture, Check);
         SmartBoostChecks.RunEngine(fixture, Check);
         UiLayoutChecks.Run();
         Console.WriteLine($"\n{assertions} safety checks plus UI layout verification passed. No user files or registry entries were cleaned.");

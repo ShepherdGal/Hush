@@ -24,6 +24,7 @@ public partial class SetupWindow : Window
         this.openInstalled = openInstalled ?? (path => Process.Start(new ProcessStartInfo(path) { UseShellExecute = false, WorkingDirectory = System.IO.Path.GetDirectoryName(path)! })?.Dispose());
         this.runPortable = runPortable ?? (() => { var window = new MainWindow(); Application.Current.MainWindow = window; window.Show(); });
         InitializeComponent();
+        TermsNote.Text = Terms.Notice + " Read the full terms under About > Terms of use after installing, or in TERMS.md.";
         ShowIntro();
     }
 

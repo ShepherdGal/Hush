@@ -660,13 +660,13 @@ internal static class UiLayoutChecks
     private static bool HasInvisibleAncestor(DependencyObject child)
     { for (var parent = VisualTreeHelper.GetParent(child); parent != null; parent = VisualTreeHelper.GetParent(parent)) if (parent is UIElement element && (element.Opacity == 0 || element.Visibility != Visibility.Visible)) return true; return false; }
     internal static void Wait(int milliseconds) { var clock = System.Diagnostics.Stopwatch.StartNew(); PumpUntil(() => clock.ElapsedMilliseconds >= milliseconds); }
-    internal static void PumpUntil(Func<bool> complete)
+    internal static void PumpUntil(Func<bool> complete, [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(complete))] string what = "")
     {
         var frame = new DispatcherFrame(); var clock = System.Diagnostics.Stopwatch.StartNew();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
         timer.Tick += (_, _) => { if (complete() || clock.Elapsed > TimeSpan.FromSeconds(5)) frame.Continue = false; };
         timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
-        Require(complete(), "Animation or operation did not finish or cancel within five seconds");
+        Require(complete(), "Animation or operation did not finish or cancel within five seconds: " + what);
     }
     internal static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject

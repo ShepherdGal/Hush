@@ -13,14 +13,14 @@
     <SolidColorBrush x:Key="MutedBrush" Color="#9BA8BA"/>
     <SolidColorBrush x:Key="FaintBrush" Color="#8794A8"/>
     <SolidColorBrush x:Key="HeadingBrush" Color="#D8DFE9"/>
-    <Color x:Key="PrimaryAccentColor">#3CCFD9</Color>
+    <Color x:Key="PrimaryAccentColor">#38CFC8</Color>
     <SolidColorBrush x:Key="TealBrush" Color="{DynamicResource PrimaryAccentColor}"/>
-    <SolidColorBrush x:Key="TealTextBrush" Color="#3CCFD9"/>
+    <SolidColorBrush x:Key="TealTextBrush" Color="#38CFC8"/>
     <!-- Hover state of the one primary Cyan: lighter in Dark, deeper in Light. Set per theme in ApplyTheme. -->
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#80E0E6"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#7FE3DD"/>
     <SolidColorBrush x:Key="ActionFillBrush" Color="#252C38"/>
     <SolidColorBrush x:Key="ModalShadeBrush" Color="#750C1016"/>
-    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#3CCFD9"/>
+    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#38CFC8"/>
     <!-- Resource meters turn Review-orange (never red) when a reading is high. -->
     <SolidColorBrush x:Key="MeterWarnBrush" Color="#FFA24D"/>
     <SolidColorBrush x:Key="CleanFillBrush" Color="#08FF795C"/>
@@ -34,6 +34,26 @@
       <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
       <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale"/>
       <Setter Property="UseLayoutRounding" Value="True"/>
+    </Style>
+    <!-- Typography rules (locked by TypographyChecks). Page titles (Review files, Settings) are one style: 29, Medium 500, upright.
+         Popup titles are 28 Regular; Settings card titles 18 Medium in the accent. Italic is reserved for the Hush logo and the home heading. -->
+    <Style x:Key="PageTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="29"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="FontStyle" Value="Normal"/>
+      <Setter Property="Foreground" Value="{DynamicResource HeadingBrush}"/>
+    </Style>
+    <Style x:Key="PopupTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="28"/>
+      <Setter Property="FontWeight" Value="Normal"/>
+      <Setter Property="FontStyle" Value="Normal"/>
+      <Setter Property="Foreground" Value="{DynamicResource HeadingBrush}"/>
+    </Style>
+    <Style x:Key="CardTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="18"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="FontStyle" Value="Normal"/>
+      <Setter Property="Foreground" Value="{DynamicResource TealTextBrush}"/>
     </Style>
     <Style x:Key="Mono" TargetType="TextBlock">
       <Setter Property="FontFamily" Value="Cascadia Mono, Consolas"/>

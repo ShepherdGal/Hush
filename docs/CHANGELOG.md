@@ -2,6 +2,32 @@
 
 Dates use Asia/Jerusalem.
 
+## 0.8 (follow-up: MIT license, popup button order) — November 8, 2026
+
+- **MIT License:** `LICENSE` (copyright 2026 ShepherdGal) is in the repository root and in the portable zip; the README has a License section, `docs/TERMS.md` points to it, and the exe's file properties carry the copyright. The previous "no LICENSE file yet" note is gone.
+- **Popup buttons:** in every popup the action is on the left and the button that leaves is on the right (Clean selected / Keep my files, Apply / Cancel, I understand / Quit, Boost / Not now, Update now / Not now, Install / Run without installing, Check for updates beside Release notes with Close at the far right). The action is also first in tab order. A test checks every popup's positions and the Setup window's layout.
+## 0.8 (follow-up: terms, bar order, easy downloads, one place for files) — November 8, 2026
+
+- **Terms of use ("use at your own risk"):** a first-run popup (declining quits), a notice and a Terms of use button in About, a note in the installer window, `docs/TERMS.md`, and README and release-notes text. The wording lives once in `Terms.cs`; a test checks the docs copy matches and that first-run, accept, decline and the saved choice work. Not legal advice; the repository still has no LICENSE file, which is the owner's decision.
+- **Info bars order:** Processor first, then Memory usage, then Temporary files and System drive used (tested left to right).
+- **Easy downloads:** the README opens with a Download table (portable, installer, zip) using the stable `releases/latest/download/...` links, plus requirements and the SmartScreen note; `docs/RELEASING.md` has a "Which file?" release-notes template and asset labels. File names are unchanged because the in-app updater needs `Hush.exe`.
+- **One place for the files on the build PC:** `scripts/Build.ps1` now writes exactly `artifacts\Hush.exe`, `Hush-Setup.exe`, `Hush-windows-x64.zip` and `WHICH FILE.txt` (the nested `artifacts\Hush\` is gone); new `scripts/Tidy.ps1` lists and removes rebuildable `bin`/`obj` clutter (about 130 MB and ten extra `Hush.exe` copies) without touching running programs, `artifacts` or `Backups`.
+- **Updater leftovers:** an update keeps one rollback copy (`Hush.previous.exe`, replacing the old one) instead of one 25 MB file per update, removes legacy `Hush.previous-*.exe` files after a successful update, and the app removes finished update staging (about 50 MB per attempt) on its next start. Tested with fixtures.
+- Not published: nothing was committed, pushed or released.
+## 0.8 (follow-up: Boost, Info bars, Browser data, PC Manager items) — November 7, 2026
+
+- **Browser data moved to Settings:** history and cookies are no longer part of any scan. Settings has a new Browser data card: history (orange mark) and cookies (the Clean red, "Advanced"), a warning popup when cookies are chosen, and "Review and clean…" which scans only what was chosen and then shows the normal confirmation with the Advanced consent box. A normal scan, Quick Boost and Automatic Boost never include them (tested).
+- **Info card restyled like PC Manager:** slim vertical pill bars with a value and label beside each (Memory usage, Temporary files, Processor, System drive used), plus a small **Boost** button and a "Set up Smart Boost" link.
+- **Boost:** cleans Safe temporary files and asks Windows to release idle memory (never closes a program, never touches services; skips Windows' own processes, security software and Hush), after a popup that says exactly that. It reports the measured result honestly, clears stale Review results and logs to `Logs\boost.jsonl`. Tests use a fake memory releaser; the real one is only pointed at the test process.
+- **From the PC Manager pictures:** new categories Microsoft Defender Antivirus (diagnostic support logs only; protection history, quarantine and definitions stay untouched, test-enforced), Browser Log Files (Chromium crash reports and usage metrics), Browser Update Files (Firefox), NVIDIA driver logs (added to the NVIDIA category, now "NVIDIA Application Files"); trace categories (Recent Access, Event Trace, Clipboard...) count "N Items". Windows Log Files, Thumbnail cache, Temporary Internet files, NuGet, shader caches and the Recycle Bin were already there.
+- Tests: 193 engine checks plus new UI assertions for the bars, Boost (decline and accept), the Browser data warnings and the Settings-only rule. Not committed.
+## 0.8 (follow-up: teal, upright type, shared titles, update search) — November 7, 2026
+
+- **Teal accent:** the Dark accent is a bit greener, #38CFC8 (hover #7FE3DD), replacing #3CCFD9; the icon, README icon and social-preview image were regenerated in the same teal. Light is unchanged. Tests fail if the old aqua or the ice blue return.
+- **Upright type:** everything that was italic is regular again except the Hush logo (header, and the same word in About and Setup) and the home heading "Make more room to breathe". The scan-complete link is now upright and underlined.
+- **Shared titles:** Review files now looks exactly like Settings (same style, size 29, Medium 500, same position) through one `PageTitle` style; popup titles share `PopupTitle` (28 Regular) and Settings card titles share `CardTitle` (18 Medium, accent). `TypographyChecks` scans the XAML and the running window to lock these rules (no hand-styled titles, no stray italics).
+- **Update search:** a check for updates always shows its searching animation for at least 3.5 seconds; the animation is a calm arc with a faint trailing arc travelling along a quiet track (the chosen "orbit" look laid out as a line; no glow, 2.4 s per pass); Cancel still stops it immediately. The rest of the suite sets the minimum to zero; one test measures the real 3.5 s and the cancel.
+- `scripts/Verify.ps1 -Configuration Release` passes (182 engine checks, all UI suites, Smart Boost stage). Not committed or released.
 ## 0.8 (follow-up: accent, icon, update popup) — November 7, 2026
 
 - **Accent reverted:** the Dark accent is aqua #3CCFD9 again (hover #80E0E6); the ice blue was rejected. Tests now fail if the ice-blue values return.
