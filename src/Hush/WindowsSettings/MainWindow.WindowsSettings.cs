@@ -50,11 +50,107 @@ public partial class MainWindow
         }
     }
     // Rows are grouped under small topic headings (Telemetry & diagnostics, Search & Cortana, Microsoft Edge ...), in catalog order.
-    private static System.ComponentModel.ICollectionView Grouped(IEnumerable<AdjustmentChoice> rows)
+    private System.Windows.Data.ListCollectionView Grouped(IEnumerable<AdjustmentChoice> rows)
     {
         var view = new System.Windows.Data.ListCollectionView(rows.ToList());
         view.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(AdjustmentChoice.Topic)));
+        view.Filter = SearchFilter();
         return view;
+    }
+
+    // ----- Compact Settings: collapsible topics, search, and the Actions menu -----
+    private readonly HashSet<string> openTopics = new(StringComparer.OrdinalIgnoreCase);
+    private bool topicsProgrammatic;
+    private string settingsFilter = "";
+
+    private Predicate<object>? SearchFilter()
+    {
+        string text = settingsFilter;
+        if (text.Length == 0) return null;
+        return row => row is AdjustmentChoice choice && (choice.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || choice.Description.Contains(text, StringComparison.OrdinalIgnoreCase) || choice.Topic.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void Topic_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Primitives.ToggleButton { DataContext: System.Windows.Data.CollectionViewGroup group } toggle) return;
+        topicsProgrammatic = true;
+        try { toggle.IsChecked = settingsFilter.Length > 0 || openTopics.Contains(group.Name?.ToString() ?? ""); }
+        finally { topicsProgrammatic = false; }
+    }
+
+    private void Topic_Changed(object sender, RoutedEventArgs e)
+    {
+        if (topicsProgrammatic || settingsFilter.Length > 0) return; // a search opens everything without changing what the person left open
+        if (sender is not System.Windows.Controls.Primitives.ToggleButton { DataContext: System.Windows.Data.CollectionViewGroup group } toggle) return;
+        string name = group.Name?.ToString() ?? "";
+        if (toggle.IsChecked == true) openTopics.Add(name); else openTopics.Remove(name);
+    }
+
+    private IEnumerable<System.Windows.Controls.Primitives.ToggleButton> TopicToggles()
+    {
+        var found = new List<System.Windows.Controls.Primitives.ToggleButton>();
+        void Walk(DependencyObject parent)
+        {
+            for (int index = 0; index < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, index);
+                if (child is System.Windows.Controls.Primitives.ToggleButton { Uid: "topic" } toggle) found.Add(toggle);
+                Walk(child);
+            }
+        }
+        Walk(PrivacyAdjustments); Walk(AdvancedAdjustments);
+        return found;
+    }
+
+    // Opens or closes every topic (a search opens all; tests use it too). Opening for good is remembered like a click.
+    internal void SetAllTopicsExpanded(bool expanded)
+    {
+        foreach (var toggle in TopicToggles()) toggle.IsChecked = expanded;
+    }
+
+    private void SettingsSearch_Changed(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        settingsFilter = SettingsSearch.Text.Trim();
+        foreach (var items in new[] { PrivacyAdjustments, AdvancedAdjustments })
+            if (items.ItemsSource is System.Windows.Data.ListCollectionView view) view.Filter = SearchFilter();
+        if (settingsFilter.Length > 0) { SettingsPrivacySection.IsExpanded = true; SettingsImpactSection.IsExpanded = true; }
+        // Groups that already existed keep their state; open them all while searching and restore what the person had open afterwards.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            topicsProgrammatic = true;
+            try { foreach (var toggle in TopicToggles()) toggle.IsChecked = settingsFilter.Length > 0 || (toggle.DataContext is System.Windows.Data.CollectionViewGroup group && openTopics.Contains(group.Name?.ToString() ?? "")); }
+            finally { topicsProgrammatic = false; }
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void Actions_Click(object sender, RoutedEventArgs e) => ActionsPopup.IsOpen = !ActionsPopup.IsOpen;
+
+    private enum BulkLevel { Recommended, Somewhat, All }
+
+    // Switches on every choice of a level and opens the usual review (nothing is written until it is confirmed). The first two skip choices that only
+    // take effect on Enterprise/Education while this PC runs another edition; "all" includes them.
+    private void StageBulk(BulkLevel level)
+    {
+        ActionsPopup.IsOpen = false;
+        foreach (var choice in adjustmentChoices)
+        {
+            if (!choice.CanEdit) continue;
+            bool include = level switch { BulkLevel.Recommended => !choice.Advanced && choice.TakesEffect, BulkLevel.Somewhat => choice.TakesEffect, _ => true };
+            if (include) choice.Selected = true;
+        }
+        if (adjustmentChoices.Count(choice => choice.CanEdit && choice.Selected != choice.Baseline.Enabled) == 0)
+        { WindowsSettingsStatus.Text = "Nothing to change: those settings are already on."; return; }
+        ApplyWindowsSettings_Click(this, new RoutedEventArgs());
+    }
+    private void ActionRecommended_Click(object sender, RoutedEventArgs e) => StageBulk(BulkLevel.Recommended);
+    private void ActionSomewhat_Click(object sender, RoutedEventArgs e) => StageBulk(BulkLevel.Somewhat);
+    private void ActionAll_Click(object sender, RoutedEventArgs e) => StageBulk(BulkLevel.All);
+    private void ActionUndo_Click(object sender, RoutedEventArgs e)
+    {
+        ActionsPopup.IsOpen = false;
+        if (UndoWindowsSettingsButton.IsEnabled) UndoWindowsSettings_Click(sender, e);
+        else WindowsSettingsStatus.Text = "Nothing to undo: Hush has not changed any Windows setting.";
     }
     private void UpdateWindowsChanges()
     {

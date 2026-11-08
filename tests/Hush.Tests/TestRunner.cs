@@ -19,6 +19,7 @@ internal static class TestRunner
             else if (args is ["--stress-scan", var count]) return ScaleChecks.Stress(int.Parse(count));
             else if (args is ["--scan-report"]) return PerformanceChecks.ScanReport();
             else if (args is ["--windows-report"]) return PerformanceChecks.WindowsReport();
+            else if (args is ["--target-report"]) return PerformanceChecks.TargetReport();
             else throw new ArgumentException("Unknown test arguments.");
             return 0;
         }

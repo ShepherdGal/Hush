@@ -88,8 +88,9 @@ public static class Sizes
 // Pattern may list several simple wildcards separated by ';'. Category assigns the review category (and risk level).
 // DeletableOnly marks a system-protected location: a file is listed only if it can be opened for deletion right now,
 // and permission errors there are not reported as skipped locations. ExcludeFolders names sub-folders (any depth) that are never entered.
+// LockFiles are files an app keeps while it runs (Chromium's "lockfile"): if one exists the app is open and the location is skipped, like a running browser.
 internal sealed record CleanupTarget(string Root, string Group, CleanupKind Kind, TimeSpan MinimumAge, string? Pattern = null, string[]? Processes = null, bool Recursive = true,
-    string? Category = null, bool DeletableOnly = false, string[]? ExcludeFolders = null);
+    string? Category = null, bool DeletableOnly = false, string[]? ExcludeFolders = null, string[]? LockFiles = null);
 internal sealed record ScanProgress(string Location, int Examined, int Found, long Bytes, double Fraction, int RegistryEntries = 0)
 {
     public int FilesFound => Math.Max(0, Found - RegistryEntries);

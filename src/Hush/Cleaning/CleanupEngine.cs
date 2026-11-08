@@ -16,8 +16,13 @@ internal sealed class CleanupEngine
     internal static string DataDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hush");
     // Targets (and the delete-time lookup of the approved target for an item) are built on first use: the default list
     // looks at the disk, which must not slow window startup, and the lookup is never a per-file scan of the list.
-    private readonly Lazy<IReadOnlyList<CleanupTarget>> targetSource;
-    private readonly Lazy<Dictionary<string, Approved>> approvedSource;
+    private Lazy<IReadOnlyList<CleanupTarget>> targetSource;
+    private Lazy<Dictionary<string, Approved>> approvedSource;
+    private readonly bool defaultTargets;
+    // Settings > Temporary files: how old a file in the Temp folders must be before it is listed. Read when the default targets are built (and again
+    // by ReloadTargets after the choice changes); the delete-time check uses the same target, so scan and clean can never disagree.
+    internal static string TempAgeChoice = "day";
+    internal static TimeSpan TempAge => TempAgeChoice switch { "hour" => TimeSpan.FromHours(1), "any" => TimeSpan.FromMinutes(10), _ => TimeSpan.FromDays(1) };
     private IReadOnlyList<CleanupTarget> targets => targetSource.Value;
     private Dictionary<string, Approved> approved => approvedSource.Value;
     private readonly bool includeRegistry;
@@ -29,26 +34,38 @@ internal sealed class CleanupEngine
     // A target the engine will delete from, with its wildcards parsed once instead of once per file.
     private sealed record Approved(CleanupTarget Target, string[]? Patterns);
 
-    public CleanupEngine() : this(new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets), true, null, new ShellRecycleBin(), new WindowsSystemTools()) { }
+    public CleanupEngine() : this(new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets), true, null, new ShellRecycleBin(), new WindowsSystemTools(), defaultTargets: true) { }
     internal CleanupEngine(IReadOnlyList<CleanupTarget> targets, bool includeRegistry = false, string? dataDirectory = null, IRecycleBin? recycleBin = null, ISystemTools? systemTools = null)
         : this(new Lazy<IReadOnlyList<CleanupTarget>>(targets), includeRegistry, dataDirectory, recycleBin, systemTools) { }
-    private CleanupEngine(Lazy<IReadOnlyList<CleanupTarget>> targetSource, bool includeRegistry, string? dataDirectory, IRecycleBin? recycleBin, ISystemTools? systemTools)
+    private CleanupEngine(Lazy<IReadOnlyList<CleanupTarget>> targetSource, bool includeRegistry, string? dataDirectory, IRecycleBin? recycleBin, ISystemTools? systemTools, bool defaultTargets = false)
     {
+        this.defaultTargets = defaultTargets;
         this.targetSource = targetSource;
         this.includeRegistry = includeRegistry;
         this.recycleBin = recycleBin;
         this.systemTools = systemTools;
         this.dataDirectory = dataDirectory ?? DataDirectory;
-        approvedSource = new(() =>
+        approvedSource = NewApprovedSource();
+    }
+
+    private Lazy<Dictionary<string, Approved>> NewApprovedSource() => new(() =>
+    {
+        var lookup = new Dictionary<string, Approved>(StringComparer.OrdinalIgnoreCase);
+        foreach (var target in targetSource.Value)
         {
-            var lookup = new Dictionary<string, Approved>(StringComparer.OrdinalIgnoreCase);
-            foreach (var target in targetSource.Value)
-            {
-                try { lookup.TryAdd(ApprovalKey(Path.GetFullPath(target.Root), target.Kind, target.Group), new(target, Patterns(target.Pattern))); }
-                catch (ArgumentException) { } // An unresolvable location can never be scanned or cleaned.
-            }
-            return lookup;
-        });
+            try { lookup.TryAdd(ApprovalKey(Path.GetFullPath(target.Root), target.Kind, target.Group), new(target, Patterns(target.Pattern))); }
+            catch (ArgumentException) { } // An unresolvable location can never be scanned or cleaned.
+        }
+        return lookup;
+    });
+
+    // Rebuilds the default targets (after the Temporary files age changed). Only the real engine has default targets. A stricter age makes
+    // a clean of results from an older scan skip the files that are now too young, which is the safe direction.
+    internal void ReloadTargets()
+    {
+        if (!defaultTargets) return;
+        targetSource = new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets);
+        approvedSource = NewApprovedSource();
     }
 
     private static string ApprovalKey(string root, CleanupKind kind, string group) => $"{root}|{kind}|{group}";
@@ -68,8 +85,8 @@ internal sealed class CleanupEngine
         var list = new List<CleanupTarget>
         {
             // ----- Recommended -----
-            new(Path.GetTempPath(), "User temp", CleanupKind.Temp, Days(2), Category: "Temp"),
-            new(Path.Combine(windows, "Temp"), "Windows temp", CleanupKind.Temp, Days(7), Category: "Temp"),
+            new(Path.GetTempPath(), "User temp", CleanupKind.Temp, TempAge, Category: "Temp"),
+            new(Path.Combine(windows, "Temp"), "Windows temp", CleanupKind.Temp, TempAge, Category: "Temp"),
             // Explorer keeps these open, so only unlocked files are listed.
             new(Path.Combine(local, "Microsoft", "Windows", "Explorer"), "Thumbnail cache", CleanupKind.Cache, Days(1),
                 "thumbcache_*.db;iconcache_*.db", Recursive: false, Category: "Thumbnails", DeletableOnly: true),
@@ -147,6 +164,11 @@ internal sealed class CleanupEngine
         // Old CHKDSK fragments at the drive root (found.000 ...).
         foreach (var folder in Folders(systemDrive, "found.*"))
             list.Add(new(folder, "Old CHKDSK files", CleanupKind.Temp, Days(30), "*.chk", Category: "Installer", DeletableOnly: true));
+        // Prefetch: Windows' own hints about which programs you start. It rebuilds them (the next launch of each program can be a little slower),
+        // so it is Review, never Safe. System-protected: listed only when this user may delete the file.
+        string prefetch = Path.Combine(windows, "Prefetch");
+        if (Directory.Exists(prefetch))
+            list.Add(new(prefetch, "Prefetch files", CleanupKind.Cache, Days(1), "*.pf", Recursive: false, Category: "Prefetch", DeletableOnly: true));
         // Shader caches are rebuilt by the graphics driver on demand.
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, local, ["D3DSCache"]);
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft"), ["DirectX Shader Cache"]);
@@ -162,6 +184,21 @@ internal sealed class CleanupEngine
             AddFolders("Cache", "Windows app cache", CleanupKind.Cache, 7, package, [Path.Combine("AC", "INetCache")]);
         }
         AddFolders("Cache", "Microsoft Store cache", CleanupKind.Cache, 7, Path.Combine(local, "Packages", "Microsoft.WindowsStore_8wekyb3d8bbwe"), ["LocalCache"], ["WinStore.App"]);
+        // CapCut keeps effect, template and AI caches in User Data\Cache and downloads them again when needed; drafts and exports live elsewhere.
+        AddFolders("Cache", "CapCut cache", CleanupKind.Cache, 7, Path.Combine(local, "CapCut", "User Data"), ["Cache"], ["CapCut"]);
+        // Office keeps downloaded add-ins (web extensions) in Wef and fetches them again. OfficeFileCache and UnsavedFiles are never touched.
+        AddFolders("Cache", "Office add-in cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft", "Office", "16.0"), ["Wef"],
+            ["WINWORD", "EXCEL", "POWERPNT", "OUTLOOK", "ONENOTE", "MSACCESS", "VISIO", "MSPUB"]);
+        // Installers that apps downloaded for their next update (electron-updater style: installer.exe and a pending folder inside <app>-updater).
+        // The app downloads the update again if it still needs it. Only these exact files and the pending folder, only when that layout is present.
+        foreach (var updater in Folders(local, "*-updater").Concat(Folders(local, "*.update")))
+        {
+            string name = Path.GetFileName(updater), pending = Path.Combine(updater, "pending");
+            bool hasPending = Directory.Exists(pending);
+            if (!hasPending && !File.Exists(Path.Combine(updater, "installer.exe"))) continue;
+            list.Add(new(updater, $"Update downloads ({name})", CleanupKind.Cache, Days(7), "installer.exe;current.blockmap", Recursive: false, Category: "Cache"));
+            if (hasPending) list.Add(new(pending, $"Update downloads ({name} pending)", CleanupKind.Cache, Days(7), null, Category: "Cache"));
+        }
         AddFolders("Cache", "Remote Desktop cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft", "Terminal Server Client"), ["Cache"], pattern: "*.bmc;*.bin");
         // Chromium browsers. Per profile: rebuildable caches (Review), history files (Review) and the cookie database (Advanced). Passwords
         // ("Login Data"), bookmarks, saved sessions, autofill and extensions are never listed. Group names stay stable (Brave-Browser) for audit logs.
@@ -238,7 +275,17 @@ internal sealed class CleanupEngine
         AddFolders("DevCache", "Adobe media cache", CleanupKind.Cache, 14, Path.Combine(roaming, "Adobe", "Common"),
             ["Media Cache Files", "Media Cache", "Peak Files"], ["Adobe Premiere Pro", "AfterFX", "Adobe Media Encoder", "Audition"]);
         // Application usage logs written by the .NET runtime (which programs ran); the programs themselves are untouched.
+        // More developer and creator caches found on a real PC (all rebuilt by the tools themselves).
+        AddFolders("DevCache", "uv cache", CleanupKind.Cache, 14, Path.Combine(local, "uv"), ["cache"]);
+        AddFolders("DevCache", "node-gyp cache", CleanupKind.Cache, 14, Path.Combine(local, "node-gyp"), ["Cache"]);
+        AddFolders("DevCache", "Adobe analyzer cache", CleanupKind.Cache, 14, Path.Combine(roaming, "Adobe", "Common"), ["Analyzer Cache Files"],
+            ["Adobe Premiere Pro", "AfterFX", "Adobe Media Encoder", "Audition"]);
+        AddFolders("Cache", "Squirrel installer temp", CleanupKind.Temp, 14, local, ["SquirrelTemp"]);
+        list.Add(new(Path.Combine(common, "Microsoft", "EdgeUpdate", "Log"), "Edge updater logs", CleanupKind.Temp, Days(14), "*.log;*.log.*", Category: "SystemLogs", DeletableOnly: true));
         AddFolders("UsageHistory", ".NET usage logs", CleanupKind.Temp, 0, Path.Combine(local, "Microsoft"), ["CLR_v4.0\\UsageLogs", "CLR_v4.0_32\\UsageLogs"], pattern: "*.log", recursive: false);
+        // Apps without a hand-written rule: Electron/WebView2/CEF caches, Firefox-family caches, per-app logs, temp and crash dumps (see AppDiscovery).
+        // Locations the rules above already own are not added twice. The walk is bounded, so it cannot slow the first scan noticeably.
+        list.AddRange(AppDiscovery.Discover(local, roaming, Path.GetTempPath(), list.Select(target => target.Root).ToList()));
         return list;
     }
 
@@ -429,7 +476,7 @@ internal sealed class CleanupEngine
         options.OnTargetStart?.Invoke(target);
         if (run.Abandoned) return;
         if (!Directory.Exists(target.Root) || !SafePath(target.Root, target.Root)) return;
-        if (BrowserRunning(target, fresh: true)) { run.Busy = true; return; }
+        if (BrowserRunning(target, fresh: true) || AppOpen(target)) { run.Busy = true; return; }
         bool countOnly = options.CountOnly;
         string fullRoot = Path.GetFullPath(target.Root);
         string[]? patterns = Patterns(target.Pattern);
@@ -688,7 +735,7 @@ internal sealed class CleanupEngine
         if (!FolderChainSafe(Path.GetDirectoryName(full)!, context)) throw new IOException("The path is unsafe or has changed.");
         if (entry.Patterns != null && !Matches(entry.Patterns, Path.GetFileName(full)))
             throw new IOException("File is not an approved cleanup type.");
-        if (BrowserRunning(target)) throw new IOException("The browser is running.");
+        if (BrowserRunning(target) || AppOpen(target)) throw new IOException("The browser is running.");
 
         // Hold an exclusive handle through metadata validation and deletion. Never follow a final symlink.
         using SafeFileHandle handle = Native.CreateFile(itemPath, 0x80010080, 0, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
@@ -772,6 +819,28 @@ internal sealed class CleanupEngine
     // One process snapshot answers every "is the application running" question until it ages out: a scan asks about
     // dozens of cache folders and a clean about every file, so enumerating processes each time would dominate the run.
     // Scans accept half a second of age, cleans two seconds; a browser that starts mid-clean is still protected by the exclusive file handle.
+    // An app that keeps a lock file while it runs (Chromium's "lockfile") is open while that file exists. Answers are cached for two seconds per target
+    // so a clean never stats the disk once per file.
+    private readonly Dictionary<string, (long Tick, bool Open)> openApps = new(StringComparer.OrdinalIgnoreCase);
+    internal static int AppOpenCacheMilliseconds = 2000; // tests set 0 so they need not wait
+    private bool AppOpen(CleanupTarget target)
+    {
+        if (target.LockFiles == null) return false;
+        lock (openApps)
+        {
+            long now = Environment.TickCount64;
+            if (openApps.TryGetValue(target.Root, out var known) && now - known.Tick < AppOpenCacheMilliseconds) return known.Open;
+            bool open = false;
+            foreach (string file in target.LockFiles)
+            {
+                try { if (File.Exists(file)) { open = true; break; } }
+                catch (Exception ex) when (IsFileError(ex)) { open = true; break; } // cannot tell: treat the app as open
+            }
+            openApps[target.Root] = (now, open);
+            return open;
+        }
+    }
+
     private bool BrowserRunning(CleanupTarget target, bool fresh = false)
     {
         foreach (string name in target.Processes ?? [])

@@ -48,7 +48,7 @@ internal static class UiLayoutChecks
                 Motion.Ensure(circle);
                 Require(circle.Template.Triggers.Count == 0 && circle.Opacity == 1, "Gauge has no focus dimming");
                 Require(circle.RenderTransform.Value.IsIdentity, "Gauge hover does not scale its content");
-                Require(((TextBlock)window.FindName("Headline")).Text == "Make more room to breathe", "Main heading uses the requested wording");
+                Require(((TextBlock)window.FindName("Headline")).Text == "Make more room to breathe.", "Main heading uses the requested wording");
                 Require(window.FindName("HeroDescription") == null, "Home has no subtitle");
                 Require(window.GaugePercent == 0 && ((TextBlock)window.FindName("GaugeValue")).Text == "0%"
                     && ((System.Windows.Shapes.Path)window.FindName("GaugeArc")).Data.IsEmpty(), "Initial gauge is truly empty at zero percent");
@@ -61,13 +61,21 @@ internal static class UiLayoutChecks
                     Layout(root, size);
                     var before = Bounds(circle, root);
                     Require(Math.Abs(before.Left + before.Width / 2 - size.Width / 2) < 1 && before.Width == 320, "Gauge stays centered at both window sizes");
-                    ((TextBlock)window.FindName("StatusTitle")).Text = "Scan complete. Take a look.";
-                    results.Visibility = Visibility.Visible;
-                    ((TextBlock)window.FindName("StatusTitle")).Visibility = Visibility.Collapsed;
+                    var title = (TextBlock)window.FindName("StatusTitle"); var detail = (TextBlock)window.FindName("StatusDetail"); var clean = (Button)window.FindName("HomeCleanButton");
+                    title.Text = "Scan Completed";
+                    results.Visibility = Visibility.Visible; clean.Visibility = Visibility.Visible;
                     Layout(root, size);
-                    Require(Bounds(circle, root) == before, "Completion message cannot shift the gauge");
-                    results.Visibility = Visibility.Collapsed;
-                    ((TextBlock)window.FindName("StatusTitle")).Visibility = Visibility.Visible;
+                    Require(Bounds(circle, root) == before, "Completion message and buttons cannot shift the gauge");
+                    // Scan Completed is plain text; below the details sit two buttons of exactly the same size and font, side by side and centered.
+                    var take = Bounds(results, root); var cleanBox = Bounds(clean, root);
+                    Require(title.Visibility == Visibility.Visible && title.FontSize == 18 && results.Content?.ToString() == "Take a look",
+                        "Scan Completed is plain status text and the other button reads Take a look");
+                    Require(Math.Abs(take.Width - cleanBox.Width) < 0.5 && Math.Abs(take.Height - cleanBox.Height) < 0.5 && results.FontSize == clean.FontSize && clean.FontSize == title.FontSize
+                        && results.Padding == clean.Padding && results.BorderThickness == clean.BorderThickness,
+                        "Take a look and Clean are exactly the same size and font, and that font matches the status text");
+                    Require(cleanBox.Left - take.Right is > 4 and < 30 && Math.Abs((take.Left + cleanBox.Right) / 2 - size.Width / 2) < 2 && take.Top >= Bounds(detail, root).Bottom - 1,
+                        "The two buttons sit close together, centered below the found-files details");
+                    results.Visibility = Visibility.Collapsed; clean.Visibility = Visibility.Collapsed;
                     var bitmap = Render(root, size);
                     var pixels = new byte[(int)size.Width * (int)size.Height * 4];
                     bitmap.CopyPixels(pixels, (int)size.Width * 4, 0);
@@ -341,6 +349,7 @@ internal static class UiLayoutChecks
                 VerifyScanRipples(engine);
                 Console.WriteLine("PASS: The scan cue (soft ripples drifting out from the gauge) is off until a scan runs, moves while it runs and fades out afterwards");
                 UiSizeChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                UiSizeChecks.RunTempAge(engine, fixture, (ok, message) => Require(ok, message));
                 Console.WriteLine("PASS: Interface size (Smart, 75%, 100%, 120%) rescales the real window, is remembered, and always fits the screen");
                 Console.WriteLine("PASS: Empty gauge, real live odometer count, safety selection, shared motion, About/update popup, blurred confirmation and responsive layout verified");
             }
@@ -637,7 +646,7 @@ internal static class UiLayoutChecks
         Directory.CreateDirectory(directory);
         var finish = window.CompleteGauge();
         PumpUntil(() => finish.IsCompleted); finish.GetAwaiter().GetResult();
-        ((TextBlock)window.FindName("StatusTitle")).Text = "Scan complete. Take a look.";
+        ((TextBlock)window.FindName("StatusTitle")).Text = "Scan Completed";
         window.LoadReviewItems(PreviewItems()); window.ShowReviewPage(true); Wait(360);
         foreach (bool light in new[] { false, true })
         {
@@ -660,6 +669,12 @@ internal static class UiLayoutChecks
             window.Categories[0].Expanded = true; Layout(root, new Size(920, 820)); ((ScrollViewer)window.FindName("ReviewScroll")).ScrollToTop(); root.UpdateLayout(); Wait(360);
             Save(root, new Size(920, 820), Path.Combine(directory, $"review-{(light ? "light" : "dark")}-expanded.png"));
             window.ShowReviewPage(false); Wait(300); Layout(root, new Size(920, 820));
+            var homeLink = (Button)window.FindName("CompletionLinkButton"); var homeClean = (Button)window.FindName("HomeCleanButton");
+            // This test window is never shown, so WPF does not re-measure on its own after the theme change; do it by hand (a shown window sizes the buttons itself).
+            void Remeasure(DependencyObject node) { if (node is UIElement element) element.InvalidateMeasure(); for (int k = 0; k < VisualTreeHelper.GetChildrenCount(node); k++) Remeasure(VisualTreeHelper.GetChild(node, k)); }
+            Remeasure((DependencyObject)window.FindName("StatusSlot")); Layout(root, new Size(920, 820));
+            Require(homeLink.Visibility == Visibility.Visible && homeClean.Visibility == Visibility.Visible && Math.Abs(homeLink.ActualWidth - homeClean.ActualWidth) < 0.5
+                && ((TextBlock)window.FindName("StatusTitle")).Text == "Scan Completed", $"The home screen shows Scan Completed with Take a look and Clean side by side in both themes (light={light})");
             Save(root, new Size(920, 820), Path.Combine(directory, $"home-{(light ? "light" : "dark")}.png"));
             ExportCounterPreviews(window, root, directory, light);
             ((Button)window.FindName("HomeCleanButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(330);

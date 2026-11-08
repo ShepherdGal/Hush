@@ -133,6 +133,7 @@ static void RunChecks()
         Check(Sizes.Format(1536) == "1.5 KB", "Human-readable byte sizes");
         ExpandedSafetyChecks.Run(fixture, Check);
         CategoryChecks.Run(fixture, Check);
+        DiscoveryChecks.Run(fixture, Check);
         ScaleChecks.Run(fixture, Check);
         UiSizeChecks.Run(Check);
         ColorRuleChecks.Run(Check);

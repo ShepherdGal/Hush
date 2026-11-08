@@ -35,7 +35,8 @@ internal interface IWindowsPolicyStore
 
 // CanEdit is false only for a real blocker (recovery pending, or a value Hush could not restore). Everything else is a note in Status.
 // NeedsAdministrator marks device-wide choices while Hush is not running as administrator: the confirmation then restarts Hush with Windows' own permission prompt.
-internal sealed record AdjustmentState(WindowsAdjustment Definition, PolicyValue Current, bool Enabled, bool CanEdit, string Status, bool NeedsAdministrator = false);
+// TakesEffect is false for a choice that only works on Enterprise/Education while this PC runs another edition (the bulk "recommended" actions skip those).
+internal sealed record AdjustmentState(WindowsAdjustment Definition, PolicyValue Current, bool Enabled, bool CanEdit, string Status, bool NeedsAdministrator = false, bool TakesEffect = true);
 internal sealed record WindowsSettingsState(IReadOnlyList<AdjustmentState> Settings, string Summary, bool CanUndo, string UndoHint);
 internal sealed record AdjustmentChange(string Id, PolicyValue Expected, PolicyValue Target);
 internal sealed record AdjustmentPlan(IReadOnlyList<AdjustmentChange> Changes, bool Undo);
@@ -266,7 +267,7 @@ internal sealed class WindowsSettingsService
         if (!setting.Machine && store.Read(setting, machineOverride: true).Exists) notes.Add("A device-wide policy also exists and takes priority");
         if (setting.EnterpriseOnly && !environment.Enterprise) notes.Add("Only takes effect on Enterprise or Education");
         string status = blocked ?? (notes.Count > 0 ? string.Join(" · ", notes) : saved == null ? NotConfigured : "Applied by Hush · can be undone");
-        return new(setting, current, enabled, blocked == null, status, setting.Machine && !environment.Administrator);
+        return new(setting, current, enabled, blocked == null, status, setting.Machine && !environment.Administrator, !(setting.EnterpriseOnly && !environment.Enterprise));
     }
     private bool CanRestore(WindowsAdjustment setting, SavedValue saved)
     {
@@ -492,6 +493,11 @@ internal sealed class AdjustmentChoice(AdjustmentState state) : INotifyPropertyC
     public bool HasNotice => Baseline.Status != WindowsSettingsService.NotConfigured;
     public bool CanEdit => Baseline.CanEdit;
     public bool NeedsAdministrator => Baseline.NeedsAdministrator;
+    public bool TakesEffect => Baseline.TakesEffect;
+    // The dot and word at the right of a row (green Recommended, amber Somewhat recommended), and the text of its "?" help popup.
+    public string LevelLabel => Advanced ? "Somewhat recommended" : "Recommended";
+    public string HelpText => HasNotice ? Description + "\n\n" + Status : Description;
+    public bool IsBlocked => !Baseline.CanEdit;
     public bool Advanced => Baseline.Definition.Advanced;
     public string Topic => Baseline.Definition.Topic;
     private bool selected = state.Enabled;

@@ -91,6 +91,7 @@ public partial class MainWindow : Window
         prefs = Preferences.Load(settingsPath);
         light = prefs.Light;
         InitializeUiSize();
+        InitializeTempAge();
         ApplyTheme();
         ResetGauge();
         RefreshSelection();
@@ -307,7 +308,7 @@ public partial class MainWindow : Window
     private void Back_Click(object sender, RoutedEventArgs e)
     {
         if (busy) return;
-        Headline.Text = "Make more room to breathe";
+        Headline.Text = "Make more room to breathe.";
         GaugeValue.Text = $"{Math.Floor(GaugePercent):0}%";
         GaugeLabel.Text = scanned ? "Click to scan again" : "Click to scan";
         ScanCircleButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, scanned ? "Scan again" : "Ready to scan");
@@ -396,9 +397,9 @@ public partial class MainWindow : Window
             if (stopped) FreezeIncompleteScanGauge();
             scanSkippedLocations = result.BusyCaches > 0 || result.Inaccessible > 0 || result.Stalled > 0;
             GaugeLabel.Text = "Click to scan again";
-            StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan complete. Take a look.";
+            StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan Completed";
             var notes = new List<string>();
-            if (result.BusyCaches > 0) notes.Add("open browser caches skipped");
+            if (result.BusyCaches > 0) notes.Add("caches of open apps skipped");
             if (result.Inaccessible > 0) notes.Add($"{result.Inaccessible:N0} inaccessible paths skipped");
             if (result.Stalled > 0) notes.Add($"{result.Stalled:N0} location{(result.Stalled == 1 ? "" : "s")} did not respond and {(result.Stalled == 1 ? "was" : "were")} skipped (see Logs\\scan-issues.log)");
             if (foundRegistry > 0) notes.Add("registry entries are opt-in");
@@ -672,13 +673,13 @@ public partial class MainWindow : Window
             CompletionLinkButton.BeginAnimation(OpacityProperty, Motion.Tween(0, 1, 500));
         }
         else if (!ready) CompletionLinkButton.Visibility = Visibility.Collapsed;
-        StatusTitle.Visibility = ready || (busy && currentOperation != "scan") ? Visibility.Collapsed : Visibility.Visible;
+        StatusTitle.Visibility = busy && currentOperation != "scan" ? Visibility.Collapsed : Visibility.Visible; // "Scan Completed" stays as plain text above the details
         // Once a scan has completed with results the Clean button stays on screen: dimmed while nothing is selected, so it never "disappears".
         bool showClean = CanClean && SelectedCount > 0;
         bool offerClean = CanClean && items.Count > 0;
         bool revealClean = offerClean && HomeCleanButton.Visibility != Visibility.Visible;
         HomeCleanButton.IsEnabled = showClean;
-        HomeCleanButton.Visibility = offerClean ? Visibility.Visible : Visibility.Hidden;
+        HomeCleanButton.Visibility = offerClean ? Visibility.Visible : Visibility.Collapsed;
         HomeCleanButton.ToolTip = offerClean && !showClean ? "Select something to clean first" : null;
         if (revealClean) HomeCleanButton.BeginAnimation(OpacityProperty, Motion.Tween(0, HomeCleanButton.IsEnabled ? 1 : 0.45, 500));
     }
@@ -847,6 +848,7 @@ public partial class MainWindow : Window
         Set("GoodBrush", SafetyPalette.Good(light));
         Set("CleanTextBrush", SafetyPalette.Danger(light));
         Set("CleanFillBrush", "#08FF795C");
+        Set("AccentFillBrush", "#08" + SafetyPalette.Accent(light).TrimStart('#'));
         foreach (var category in Categories) category.SetTheme(light);
         ThemeSunCore.Opacity = light ? 1 : 0.3;
         ThemeSunRays.Opacity = light ? 1 : 0.55;

@@ -59,6 +59,32 @@ internal static class UiSizeChecks
         using var stream = File.Create(Path.Combine(directory, name + ".png")); encoder.Save(stream);
     }
 
+    // Settings > Temporary files: the saved choice is applied when the window starts, the chips change it live and save it.
+    internal static void RunTempAge(CleanupEngine engine, string fixture, Action<bool, string> check)
+    {
+        string saved = CleanupEngine.TempAgeChoice;
+        string preferences = Path.Combine(fixture, "temp-age-preferences.json");
+        new Preferences { TempAge = "hour" }.Save(preferences);
+        var window = new MainWindow(engine, preferencesPath: preferences);
+        try
+        {
+            check(CleanupEngine.TempAgeChoice == "hour" && ((RadioButton)window.FindName("TempAgeHour")).IsChecked == true
+                && ((TextBlock)window.FindName("TempAgeSummary")).Text == "Older than 1 hour", "A saved Temporary files choice is applied when Hush starts");
+            ((Button)window.FindName("SettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            ((Expander)window.FindName("SettingsTempSection")).IsExpanded = true;
+            Capture(window, "temp-age");
+            var any = (RadioButton)window.FindName("TempAgeAny");
+            any.IsChecked = true; any.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            check(CleanupEngine.TempAgeChoice == "any" && Preferences.Load(preferences).TempAge == "any"
+                && ((TextBlock)window.FindName("TempAgeSummary")).Text == "Almost everything not in use" && ((TextBlock)window.FindName("TempAgeNote")).Text.Contains("10 minutes"),
+                "Choosing Almost everything applies at once, saves the choice and explains it");
+            var day = (RadioButton)window.FindName("TempAgeDay");
+            day.IsChecked = true; day.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            check(CleanupEngine.TempAgeChoice == "day" && Preferences.Load(preferences).TempAge == "day", "Returning to the 1-day default saves it");
+        }
+        finally { window.Close(); CleanupEngine.TempAgeChoice = saved; }
+    }
+
     // Real window: the saved size is applied before the window shows, the chips change it live and save it, and nothing escapes the screen.
     internal static void RunUi(CleanupEngine engine, string fixture, Action<bool, string> check)
     {

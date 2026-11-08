@@ -23,6 +23,21 @@ internal static class PerformanceChecks
         return 0;
     }
 
+    // Read-only: lists every default location Hush would visit on this PC (after discovery), by category, with its rule. Never scans or cleans.
+    internal static int TargetReport()
+    {
+        var clock = Stopwatch.StartNew();
+        var targets = CleanupEngine.DefaultTargets();
+        Console.WriteLine($"{targets.Count} default locations built in {clock.ElapsedMilliseconds} ms");
+        foreach (var group in targets.GroupBy(target => target.Category).OrderBy(group => group.Key))
+        {
+            Console.WriteLine($"[{group.Key}] {group.Count()}");
+            foreach (var target in group)
+                Console.WriteLine($"   {target.Group,-40} {target.MinimumAge.TotalDays,5:0.##}d {(target.Pattern ?? "*"),-26} {(target.LockFiles != null ? "lock " : "")}{(target.Processes != null ? "proc " : "")}{target.Root}");
+        }
+        return 0;
+    }
+
     internal static int ScanReport()
     {
         var engine = new CleanupEngine();

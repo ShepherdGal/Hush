@@ -191,7 +191,7 @@ internal static class CategoryChecks
         string[] userData = new[] { Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData }.Select(Environment.GetFolderPath).Select(Path.GetFullPath).ToArray();
         string programData = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
         bool InUserData(CleanupTarget t) => userData.Any(root => Path.GetFullPath(t.Root).StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase));
-        var appCategories = new[] { "Cache", "DevCache", "DirectX", "GpuShader", "NvidiaShader", "NvidiaApp", "InternetCache", "BrowserEdge", "BrowserFirefox", "BrowserChrome", "BrowserOther", "BrowserHistory", "BrowserCookies", "UsageHistory" };
+        var appCategories = new[] { "Cache", "AppLogs", "AppTemp", "DevCache", "DirectX", "GpuShader", "NvidiaShader", "NvidiaApp", "InternetCache", "BrowserEdge", "BrowserFirefox", "BrowserChrome", "BrowserOther", "BrowserHistory", "BrowserCookies", "UsageHistory" };
         check(defaults.Where(t => appCategories.Contains(t.Category)).All(t => InUserData(t) || (t.DeletableOnly && Path.GetFullPath(t.Root).StartsWith(programData + "\\", StringComparison.OrdinalIgnoreCase) && t.Category is "NvidiaShader" or "NvidiaApp")),
             "Application, browser, developer and shader caches are only inside the current user's AppData (the NVIDIA machine-wide cache is deletable-only)");
         string inetCache = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Windows", "INetCache"));
@@ -211,5 +211,32 @@ internal static class CategoryChecks
         check(defaults.Where(t => t.Kind == CleanupKind.Shortcut).All(t => t.Pattern == "*.lnk")
             && defaults.Where(t => Path.GetFullPath(t.Root).StartsWith(windowsRoot, StringComparison.OrdinalIgnoreCase) && !t.Group.EndsWith("temp")).All(t => t.DeletableOnly),
             "Shortcuts use narrow rules and every Windows-folder location (except Windows temp) uses the deletable-only probe");
+
+        // Settings > Temporary files: the age of both Temp folders follows the choice (unknown values read as the 1-day default).
+        string savedChoice = CleanupEngine.TempAgeChoice;
+        try
+        {
+            foreach (var (choice, age) in new[] { ("day", TimeSpan.FromDays(1)), ("hour", TimeSpan.FromHours(1)), ("any", TimeSpan.FromMinutes(10)), ("nonsense", TimeSpan.FromDays(1)) })
+            {
+                CleanupEngine.TempAgeChoice = choice;
+                var temps = CleanupEngine.DefaultTargets().Where(t => t.Category == "Temp" && t.Group is "User temp" or "Windows temp").ToList();
+                check(temps.Count >= 1 && temps.All(t => t.MinimumAge == age && t.Kind == CleanupKind.Temp), $"The Temp folders use the '{choice}' age choice ({age})");
+            }
+        }
+        finally { CleanupEngine.TempAgeChoice = savedChoice; }
+        check(Preferences.NormalizeTempAge("hour") == "hour" && Preferences.NormalizeTempAge("any") == "any" && Preferences.NormalizeTempAge(null) == "day"
+            && Preferences.NormalizeTempAge("weekly") == "day" && new Preferences().TempAge == "day", "The Temporary files choice normalizes and defaults to one day");
+
+        // Rules added after a real PC showed what was missing: narrow, user-AppData-only (Prefetch is the one deletable-only system folder), Review level.
+        string windowsPrefetch = Path.Combine(windowsRoot, "Prefetch");
+        check(defaults.Where(t => t.Category == "Prefetch").All(t => Path.GetFullPath(t.Root).Equals(windowsPrefetch, StringComparison.OrdinalIgnoreCase)
+                && t.Pattern == "*.pf" && !t.Recursive && t.DeletableOnly && ReviewCategory.SafetyOf("Prefetch") == SafetyLevel.Review),
+            "Prefetch cleaning lists only .pf files, is deletable-only and stays a Review (opt-in) category");
+        check(defaults.Where(t => t.Group.StartsWith("Update downloads (", StringComparison.Ordinal)).All(t => InUserData(t) && t.Kind == CleanupKind.Cache && !t.DeletableOnly
+                && (t.Pattern == "installer.exe;current.blockmap" && !t.Recursive || t.Pattern == null && Path.GetFileName(t.Root) == "pending")),
+            "Updater download cleaning removes only installer.exe, current.blockmap and the pending folder inside an app's own updater folder");
+        check(defaults.Where(t => t.Group is "CapCut cache" or "Office add-in cache").All(t => InUserData(t) && t.Kind == CleanupKind.Cache && t.Processes is { Length: > 0 }
+                && (Path.GetFileName(t.Root) is "Cache" or "Wef") && !t.Root.Contains("OfficeFileCache", StringComparison.OrdinalIgnoreCase) && !t.Root.Contains("UnsavedFiles", StringComparison.OrdinalIgnoreCase)),
+            "CapCut and Office add-in caches are user-AppData caches cleaned only while the program is closed, never Office's unsaved or unsynced work");
     }
 }

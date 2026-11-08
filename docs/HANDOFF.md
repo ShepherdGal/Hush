@@ -2,6 +2,10 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## 0.8.3 (November 8, 2026)
+
+Home polish (heading dot, bigger gauge and status text, "Scan Completed, Take a look." as an accent outline button), compact ShutUp10++-style Settings (one line per choice, "?" popups, collapsible topics, search, Actions menu), the Temporary files age setting, new cleaning rules and app discovery (`AppDiscovery.cs`). Version is 0.8.3 in Hush.csproj; the release build is in artifacts. See CHANGELOG 0.8.3.
+
 ## 0.8.2 (November 8, 2026)
 
 Released as v0.8.2 ("Hush 0.8.2", not a prerelease, tag on commit c6153e1) with Hush-Portable.zip, Hush-Setup.zip, LICENSE and Hush-icon.png; the portable zip SHA-256 is a9580204100f34aa0c217ad90e4eba4f5829e35fabebb6bf80be7027e6d8a002. Release notes text: artifacts/RELEASE NOTES 0.8.2.md (local, not in Git).

@@ -37,6 +37,9 @@ public sealed class Preferences
     public string TermsAccepted { get; set; } = "";
     // Interface size: "smart" (fits the screen), "75", "100" or "120" (percent). Anything else reads as smart.
     public string UiSize { get; set; } = UiScale.Smart;
+    // How old a file in the Temp folders must be before Hush lists it: "day" (default, like Windows' Storage Sense), "hour" or "any" (almost everything not in use).
+    public string TempAge { get; set; } = "day";
+    internal static string NormalizeTempAge(string? value) => value is "hour" or "any" ? value : "day";
     public BoostSettings Boost { get; set; } = new();
 
     public static Preferences Load(string path)
@@ -46,7 +49,7 @@ public sealed class Preferences
             if (File.Exists(path))
             {
                 var loaded = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path));
-                if (loaded != null) { loaded.Boost = (loaded.Boost ?? new()).Normalized(); loaded.UiSize = UiScale.Normalize(loaded.UiSize); return loaded; }
+                if (loaded != null) { loaded.Boost = (loaded.Boost ?? new()).Normalized(); loaded.UiSize = UiScale.Normalize(loaded.UiSize); loaded.TempAge = NormalizeTempAge(loaded.TempAge); return loaded; }
             }
         }
         catch { }

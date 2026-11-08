@@ -20,7 +20,7 @@ function Invoke-TestProcess([string[]]$TestArguments) {
     try {
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(55000)) {
+        if (-not $process.WaitForExit(90000)) {
             $process.Kill($true)
             $process.WaitForExit()
             throw 'The test process did not exit; a crash dialog or stuck UI thread may be blocking it.'

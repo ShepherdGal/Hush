@@ -107,7 +107,7 @@
         <Grid x:Name="ScanPage">
           <Grid.RowDefinitions><RowDefinition Height="100"/><RowDefinition Height="*"/><RowDefinition Height="166"/><RowDefinition Height="24"/></Grid.RowDefinitions>
           <StackPanel HorizontalAlignment="Center" Margin="16,20,16,0" MaxWidth="660">
-            <TextBlock x:Name="Headline" Text="Make more room to breathe" FontSize="33" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock x:Name="Headline" Text="Make more room to breathe." FontSize="33" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource HeadingBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
           </StackPanel>
           <Button x:Name="ScanCircleButton" local:Motion.Glow="0.04" Grid.Row="1" Width="320" Height="320" Click="Circle_Click" Padding="0" Background="Transparent" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Start a scan. Click again while scanning to stop." AutomationProperties.Name="Ready to scan">
             <Button.Template><ControlTemplate TargetType="Button"><ContentPresenter x:Name="CircleContent"/></ControlTemplate></Button.Template>
@@ -122,24 +122,22 @@
                 </Path>
               </Grid></Viewbox>
               <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="230">
-                <TextBlock x:Name="GaugeValue" Text="0%" Foreground="{DynamicResource TextBrush}" FontSize="34" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="GaugeLabel" Text="Click to scan" FontSize="16" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                <TextBlock x:Name="GaugeValue" Text="0%" Foreground="{DynamicResource TextBrush}" FontSize="36" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="GaugeLabel" Text="Click to scan" FontSize="18" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" Margin="0,12,0,0"/>
               </StackPanel>
             </Grid>
           </Button>
           <Grid x:Name="StatusSlot" Grid.Row="2" HorizontalAlignment="Center" Width="670" MaxWidth="670" Margin="20,0,20,8">
-            <Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition Height="40"/><RowDefinition Height="56"/></Grid.RowDefinitions>
-            <TextBlock x:Name="StatusTitle" Text="Your files stay yours." Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Medium" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center"/>
+            <Grid.RowDefinitions><RowDefinition Height="50"/><RowDefinition Height="38"/><RowDefinition Height="52"/></Grid.RowDefinitions>
+            <TextBlock x:Name="StatusTitle" Text="Your files stay yours." Foreground="{DynamicResource TextBrush}" FontSize="18" FontWeight="Medium" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center"/>
             <local:ScanActivity x:Name="FileScanActivity" Width="140" Height="36" Visibility="Hidden" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-            <Button x:Name="CompletionLinkButton" Click="OpenResults_Click" Visibility="Collapsed" Style="{StaticResource AccentTextButton}" Padding="12,5" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Open the list of what was found" AutomationProperties.Name="Open scanned files">
-              <!-- Reads as a link: italic and underlined in its own ink, so the underline follows the hover color. No looping animation. -->
-              <TextBlock x:Name="CompletionLinkText" Text="{Binding Text, ElementName=StatusTitle}" MaxWidth="570" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center">
-                <TextBlock.TextDecorations><TextDecoration Location="Underline" PenOffset="4" PenOffsetUnit="Pixel"/></TextBlock.TextDecorations>
-              </TextBlock>
-            </Button>
-            <TextBlock x:Name="StatusDetail" Grid.Row="1" Text="Personal files and passwords are left alone." Foreground="{DynamicResource MutedBrush}" FontSize="{DynamicResource CompactFontSize}" FontWeight="Medium" TextWrapping="Wrap" TextAlignment="Center" LineHeight="22" VerticalAlignment="Top" Margin="0,4,0,0"/>
+            <TextBlock x:Name="StatusDetail" Grid.Row="1" Text="Personal files and passwords are left alone." Foreground="{DynamicResource MutedBrush}" FontSize="17" FontWeight="Medium" TextWrapping="Wrap" TextAlignment="Center" LineHeight="24" VerticalAlignment="Top" Margin="0,4,0,0"/>
             <local:RollingFileCount x:Name="LiveFileCounter" Grid.Row="1" Visibility="Hidden" Height="22" Margin="0,4,0,0" HorizontalAlignment="Stretch" VerticalAlignment="Top" FontFamily="{Binding FontFamily, ElementName=StatusDetail}" FontSize="{Binding FontSize, ElementName=StatusDetail}" FontWeight="{Binding FontWeight, ElementName=StatusDetail}" Foreground="{Binding Foreground, ElementName=StatusDetail}"/>
-            <Button x:Name="HomeCleanButton" Grid.Row="2" Content="Clean" Click="HomeClean_Click" Style="{StaticResource DangerButton}" MinWidth="108" Height="40" FontSize="{DynamicResource CompactFontSize}" Padding="20,7" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <!-- Below the details, two buttons of exactly the same size and font: Take a look (the theme's accent) and Clean (the Clean red), side by side. -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Button x:Name="CompletionLinkButton" Content="Take a look" Click="OpenResults_Click" Visibility="Collapsed" Style="{StaticResource AccentOutlineButton}" Width="140" Height="40" FontSize="18" Padding="20,7" ToolTip="Open the list of what was found" AutomationProperties.Name="Open scanned files"/>
+              <Button x:Name="HomeCleanButton" Content="Clean" Click="HomeClean_Click" Style="{StaticResource DangerButton}" Width="140" Height="40" FontSize="18" Padding="20,7" Margin="14,0,0,0" Visibility="Collapsed"/>
+            </StackPanel>
           </Grid>
         </Grid>
         <Grid x:Name="ReviewPage" Visibility="Collapsed">
@@ -194,32 +192,44 @@
           <Grid.Resources>
             <!-- One settings row: title, plain description and (only when it matters) a status line on the left, the on/off switch on the right.
                  A hairline divider separates rows; the first row of each card has none. -->
+            <!-- Each topic is a collapsible group (chevron, name, count); open topics are remembered while Settings is open, and a search opens them all. -->
             <GroupStyle x:Key="AdjustmentGroups">
               <GroupStyle.ContainerStyle>
                 <Style TargetType="GroupItem">
                   <Setter Property="Template"><Setter.Value>
-                    <ControlTemplate TargetType="GroupItem"><StackPanel><ContentPresenter/><ItemsPresenter/></StackPanel></ControlTemplate>
+                    <ControlTemplate TargetType="GroupItem">
+                      <StackPanel>
+                        <ToggleButton x:Name="TopicToggle" Uid="topic" Style="{StaticResource TopicHeader}" Loaded="Topic_Loaded" Checked="Topic_Changed" Unchecked="Topic_Changed">
+                          <TextBlock FontSize="{DynamicResource CompactFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"><Run Text="{Binding Name, Mode=OneWay}"/><Run Text="{Binding ItemCount, Mode=OneWay, StringFormat=' · {0}'}" Foreground="{DynamicResource FaintBrush}" FontWeight="Normal"/></TextBlock>
+                        </ToggleButton>
+                        <local:AccordionBody Expanded="{Binding IsChecked, ElementName=TopicToggle}" IsEnabled="{Binding Expanded, RelativeSource={RelativeSource Self}}"><ItemsPresenter/></local:AccordionBody>
+                      </StackPanel>
+                    </ControlTemplate>
                   </Setter.Value></Setter>
                 </Style>
               </GroupStyle.ContainerStyle>
-              <GroupStyle.HeaderTemplate>
-                <DataTemplate><TextBlock Text="{Binding Name}" FontSize="{DynamicResource CompactFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,22,0,2"/></DataTemplate>
-              </GroupStyle.HeaderTemplate>
             </GroupStyle>
+            <!-- One compact line per choice, laid out like O&O ShutUp10++: the switch first, then the name with a "?" (the explanation opens in a popup),
+                 and the level (green dot Recommended, amber dot Somewhat recommended) at the right. A note shows only when a choice is blocked. -->
             <DataTemplate x:Key="AdjustmentTemplate">
               <StackPanel>
                 <Border x:Name="RowDivider" Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
-                <Grid Margin="0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                  <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Title}" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding Description}" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="21"/>
-                    <TextBlock x:Name="RowStatus" Text="{Binding Status}" Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                <Grid Margin="0,9">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <CheckBox Style="{StaticResource SwitchCheckBox}" IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" VerticalAlignment="Center" AutomationProperties.Name="{Binding Title}"/>
+                  <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                    <TextBlock FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" TextWrapping="Wrap"><Run Text="{Binding Title, Mode=OneWay}"/><InlineUIContainer BaselineAlignment="Center"><local:HelpMark Style="{StaticResource HelpMark}" HelpText="{Binding HelpText}" AutomationProperties.Name="More about this setting"/></InlineUIContainer></TextBlock>
+                    <TextBlock x:Name="RowStatus" Text="{Binding Status}" Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MeterWarnBrush}" Margin="0,3,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
-                  <CheckBox Grid.Column="2" Style="{StaticResource SwitchCheckBox}" IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" VerticalAlignment="Center" AutomationProperties.Name="{Binding Title}"/>
+                  <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="LevelDot" Width="10" Height="10" Fill="{DynamicResource GoodBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding LevelLabel}" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                  </StackPanel>
                 </Grid>
               </StackPanel>
               <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding HasNotice}" Value="True"><Setter TargetName="RowStatus" Property="Visibility" Value="Visible"/></DataTrigger>
+                <DataTrigger Binding="{Binding IsBlocked}" Value="True"><Setter TargetName="RowStatus" Property="Visibility" Value="Visible"/></DataTrigger>
+                <DataTrigger Binding="{Binding Advanced}" Value="True"><Setter TargetName="LevelDot" Property="Fill" Value="{DynamicResource MeterWarnBrush}"/></DataTrigger>
                 <DataTrigger Binding="{Binding Path=(ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ContentPresenter}}" Value="0"><Setter TargetName="RowDivider" Property="Visibility" Value="Collapsed"/></DataTrigger>
               </DataTemplate.Triggers>
             </DataTemplate>
@@ -307,6 +317,24 @@
                   <RadioButton x:Name="UiSize120" GroupName="UiSize" Content="120%" Tag="120" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="120 percent"/>
                 </StackPanel>
                 <TextBlock x:Name="UiSizeNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,4,0,0"/>
+              </StackPanel>
+            </Expander>
+            <!-- Temporary files: how old a file in the Temp folders must be before Hush lists it (see CleanupEngine.TempAge). -->
+            <Expander x:Name="SettingsTempSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Temporary files">
+              <Expander.Header>
+                <StackPanel>
+                  <TextBlock Text="Temporary files" Style="{StaticResource CardTitle}"/>
+                  <TextBlock x:Name="TempAgeSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel Margin="0,16,0,8">
+                <TextBlock Text="How old a file in the Windows and user Temp folders must be before Hush lists it. Files that programs are using are always skipped. A lower choice frees more, but can remove files a running program planned to reuse." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21"/>
+                <StackPanel Orientation="Horizontal" Margin="-13,10,0,0">
+                  <RadioButton x:Name="TempAgeDay" GroupName="TempAge" Content="Older than 1 day" Tag="day" Style="{StaticResource ChoiceChip}" Click="TempAge_Click" AutomationProperties.Name="Older than one day"/>
+                  <RadioButton x:Name="TempAgeHour" GroupName="TempAge" Content="Older than 1 hour" Tag="hour" Style="{StaticResource ChoiceChip}" Click="TempAge_Click" AutomationProperties.Name="Older than one hour"/>
+                  <RadioButton x:Name="TempAgeAny" GroupName="TempAge" Content="Almost everything" Tag="any" Style="{StaticResource ChoiceChip}" Click="TempAge_Click" AutomationProperties.Name="Almost everything not in use"/>
+                </StackPanel>
+                <TextBlock x:Name="TempAgeNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,4,0,0"/>
               </StackPanel>
             </Expander>
             <Expander x:Name="SettingsBoostSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Smart Boost">
@@ -446,6 +474,7 @@
               </Expander.Header>
               <StackPanel>
                 <TextBlock x:Name="WindowsSettingsSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
+                <TextBox x:Name="SettingsSearch" Style="{StaticResource SearchBox}" Tag="Find a Windows privacy setting…" TextChanged="SettingsSearch_Changed" Margin="0,14,0,4" AutomationProperties.Name="Find a Windows privacy setting"/>
                 <TextBlock FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"><Run Text="Recommended" FontWeight="SemiBold" Foreground="{DynamicResource GoodBrush}"/><Run Text=" · little or no effect on how Windows works. Choices for every user need administrator rights: Hush asks Windows when you apply them."/></TextBlock>
                 <ItemsControl x:Name="PrivacyAdjustments" AlternationCount="100" ItemTemplate="{StaticResource AdjustmentTemplate}" Margin="0,0,0,0"><ItemsControl.GroupStyle><StaticResource ResourceKey="AdjustmentGroups"/></ItemsControl.GroupStyle></ItemsControl>
               </StackPanel>
@@ -468,7 +497,24 @@
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <TextBlock x:Name="WindowsSettingsStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="22" Margin="0,0,0,10"/>
             <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <Button x:Name="RefreshWindowsSettingsButton" Content="Refresh" Click="RefreshWindowsSettings_Click" Style="{StaticResource TextButton}"/>
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="RefreshWindowsSettingsButton" Content="Refresh" Click="RefreshWindowsSettings_Click" Style="{StaticResource TextButton}"/>
+                <Button x:Name="ActionsButton" Click="Actions_Click" Style="{StaticResource AccentOutlineButton}" Padding="18,9" AutomationProperties.Name="Actions: apply recommended settings" Margin="10,0,0,0">
+                  <StackPanel Orientation="Horizontal"><TextBlock Text="Actions"/><Path Data="M 0,0 L 4,4 L 8,0" Stroke="{Binding (TextElement.Foreground), RelativeSource={RelativeSource Self}}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" VerticalAlignment="Center" Margin="9,2,0,0"/></StackPanel>
+                </Button>
+                <Popup x:Name="ActionsPopup" PlacementTarget="{Binding ElementName=ActionsButton}" Placement="Top" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade" VerticalOffset="-4">
+                  <Border Background="{DynamicResource RaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="6" Margin="14,14,14,18">
+                    <Border.Effect><DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.35" Color="#000000"/></Border.Effect>
+                    <StackPanel MinWidth="380">
+                      <Button x:Name="ActionRecommendedButton" Style="{StaticResource MenuAction}" Click="ActionRecommended_Click"><StackPanel Orientation="Horizontal"><Ellipse Width="11" Height="11" Fill="{DynamicResource GoodBrush}" Margin="0,0,14,0"/><TextBlock Text="Apply only recommended settings"/></StackPanel></Button>
+                      <Button x:Name="ActionSomewhatButton" Style="{StaticResource MenuAction}" Click="ActionSomewhat_Click"><StackPanel Orientation="Horizontal"><Ellipse Width="11" Height="11" Fill="{DynamicResource MeterWarnBrush}" Margin="0,0,14,0"/><TextBlock Text="Recommended and somewhat recommended settings"/></StackPanel></Button>
+                      <Button x:Name="ActionAllButton" Style="{StaticResource MenuAction}" Click="ActionAll_Click"><StackPanel Orientation="Horizontal"><Ellipse Width="11" Height="11" Fill="{DynamicResource CleanTextBrush}" Margin="0,0,14,0"/><TextBlock Text="Apply all settings"/></StackPanel></Button>
+                      <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="8,5"/>
+                      <Button x:Name="ActionUndoButton" Style="{StaticResource MenuAction}" Click="ActionUndo_Click"><TextBlock Text="Undo all changes"/></Button>
+                    </StackPanel>
+                  </Border>
+                </Popup>
+              </StackPanel>
               <Button x:Name="UndoWindowsSettingsButton" Grid.Column="2" Content="Undo changes" Click="UndoWindowsSettings_Click" Style="{StaticResource TextButton}" IsEnabled="False"/>
               <Button x:Name="ApplyWindowsSettingsButton" Grid.Column="4" Content="Review changes" Click="ApplyWindowsSettings_Click" IsEnabled="False"/>
             </Grid>

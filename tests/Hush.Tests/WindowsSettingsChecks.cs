@@ -224,6 +224,37 @@ internal static class WindowsSettingsChecks
             Capture(root, "settings-summary-dark");
             foreach (var section in sections) section.IsExpanded = true;
             Wait(380); Layout(new Size(920, 820));
+            // Compact layout: topics start collapsed, every choice is one line with a "?" help popup and a level dot, and a search narrows the list.
+            void ScrollToSearch()
+            {
+                var box = (FrameworkElement)window.FindName("SettingsSearch");
+                scroll.ScrollToVerticalOffset(Math.Max(0, box.TransformToAncestor((Visual)scroll.Content).Transform(new Point()).Y - 12));
+            }
+            var topics = Descendants<ToggleButton>(root).Where(toggle => toggle.Uid == "topic").ToList();
+            Require(topics.Count >= 10 && topics.All(toggle => toggle.IsChecked != true), "Windows choices start as a short list of collapsed topics");
+            ScrollToSearch(); Wait(150); Layout(new Size(920, 820));
+            Capture(root, "settings-topics-collapsed-dark");
+            window.SetAllTopicsExpanded(true); Wait(420); Layout(new Size(920, 820));
+            ScrollToSearch(); Wait(150); Layout(new Size(920, 820));
+            Capture(root, "settings-topics-open-dark");
+            var helps = Descendants<HelpMark>(root).ToList();
+            Require(helps.Count == WindowsSettingsService.Catalog.Count && helps.All(help => help.HelpText.Length > 20), $"Every choice has a \"?\" with its explanation ({helps.Count} found)");
+            var firstHelp = helps[0];
+            var invoke = (System.Windows.Automation.Provider.IInvokeProvider)new System.Windows.Automation.Peers.ButtonAutomationPeer(firstHelp).GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke);
+            invoke.Invoke(); Wait(150);
+            Require(firstHelp.IsPopupOpen && firstHelp.IsPinned, "Clicking the \"?\" opens and pins a popup with the explanation");
+            if (firstHelp.Bubble != null) Capture(firstHelp.Bubble, "windows-help-bubble-dark");
+            invoke.Invoke(); Wait(150);
+            Require(!firstHelp.IsPopupOpen, "Clicking it again closes the popup");
+            var search = (TextBox)window.FindName("SettingsSearch");
+            int RowCount() => Descendants<CheckBox>((ItemsControl)window.FindName("PrivacyAdjustments")).Count() + Descendants<CheckBox>((ItemsControl)window.FindName("AdvancedAdjustments")).Count();
+            int all = RowCount();
+            search.Text = "edge"; Wait(450); Layout(new Size(920, 820));
+            int expected = window.AdjustmentChoices.Count(choice => choice.Title.Contains("edge", StringComparison.OrdinalIgnoreCase)
+                || choice.Description.Contains("edge", StringComparison.OrdinalIgnoreCase) || choice.Topic.Contains("edge", StringComparison.OrdinalIgnoreCase));
+            Require(expected >= 10 && RowCount() == expected, $"Searching narrows the list to the matching choices ({RowCount()} of {all})");
+            search.Text = ""; Wait(450); Layout(new Size(920, 820));
+            Require(RowCount() == all, "Clearing the search brings every choice back");
             int before = store.Writes;
             Toggle("diagnostics", true); Toggle("tailored", true);
             Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 changes", "Actual checkbox bindings stage choices without writing");
@@ -286,6 +317,35 @@ internal static class WindowsSettingsChecks
                 Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
                 Click("RefreshWindowsSettingsButton");
             }
+            // Actions menu (like ShutUp10++): recommended only, plus somewhat recommended, all; each stages the switches and opens the usual review.
+            Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820)); before = store.Writes;
+            void Bulk(string menuButton)
+            {
+                Click("ActionsButton"); Wait(150);
+                Require(((Popup)window.FindName("ActionsPopup")).IsOpen, "The Actions button opens its menu");
+                Capture((FrameworkElement)((Popup)window.FindName("ActionsPopup")).Child, "windows-actions-menu-dark");
+                Click(menuButton); Wait(340);
+            }
+            IReadOnlyList<AdjustmentChoice> Choices() => window.AdjustmentChoices; // the list is replaced by every refresh
+            Bulk("ActionRecommendedButton");
+            Require(overlay.Visibility == Visibility.Visible && store.Writes == before && !((Popup)window.FindName("ActionsPopup")).IsOpen
+                && Choices().Where(choice => !choice.Advanced && choice.TakesEffect && choice.CanEdit).All(choice => choice.Selected)
+                && Choices().Where(choice => choice.Advanced).All(choice => !choice.Selected), "Apply only recommended settings stages the green choices and asks for confirmation");
+            Capture(root, "windows-bulk-recommended-dark");
+            Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));
+            Bulk("ActionSomewhatButton");
+            Require(overlay.Visibility == Visibility.Visible && Choices().Where(choice => choice.TakesEffect && choice.CanEdit).All(choice => choice.Selected)
+                && Choices().Where(choice => !choice.TakesEffect && choice.CanEdit).All(choice => !choice.Selected), "Recommended and somewhat recommended stages both levels but skips choices this edition ignores");
+            Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));
+            Bulk("ActionAllButton");
+            Require(overlay.Visibility == Visibility.Visible && Choices().Where(choice => choice.CanEdit).All(choice => choice.Selected) && store.Writes == before, "Apply all settings stages every available choice and still only asks");
+            Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));
+            Click("ActionsButton"); Wait(150); Click("ActionUndoButton"); Wait(150);
+            Require(((TextBlock)window.FindName("WindowsSettingsStatus")).Text.Contains("Nothing to undo") && overlay.Visibility == Visibility.Collapsed, "Undo all changes says so when Hush has changed nothing");
+            Click("RefreshWindowsSettingsButton");
             // A device-wide choice without administrator rights: the popup says so, nothing is written, and the restart is only a launcher call (faked here).
             var launched = new List<string>(); bool exited = false, grant = true;
             var oldLauncher = MainWindow.ElevatedLauncher; var oldExit = MainWindow.ExitForRestart;

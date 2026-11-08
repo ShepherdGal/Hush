@@ -191,3 +191,7 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 ## Clean popup and Clean button (0.8.2)
 
 The Clean confirmation ("Are you sure?") keeps its normal window and shows what will be cleaned in tiny text: one line per safety level in its color (green Safe `GoodBrush`, amber Review `MeterWarnBrush`, red Advanced `CleanTextBrush`) with the item count and size, then one muted line per category, then a few short notes (permanent deletion, special items). Text uses the shared `CompactFontSize`. After a completed scan with results the red Clean button stays visible: dimmed with a tooltip while nothing is selected. Settings rows are grouped under small muted topic headings; the Privacy & telemetry card is the Recommended level (green word in its intro line) and More impact the Somewhat recommended level (amber word).
+
+## Home and Settings polish (0.8.3)
+
+Home: heading "Make more room to breathe." (period), gauge value 36 and label 18, status title 18 and the line under it 17. "Scan Completed" is plain text; below the details are two buttons of exactly the same size (140x40, text 18, padding 20,7): Take a look (`AccentOutlineButton`: Clean's shape and glow in the theme accent, fill `AccentFillBrush`) and Clean, 14 apart and centered. Settings: one compact line per Windows choice (switch, name with "?" popup, level dot), collapsible topic headings, a search box at the top of the Privacy card and an Actions menu in the footer (an outlined accent button like Take a look) (see CLAUDE.md, "Compact Settings").

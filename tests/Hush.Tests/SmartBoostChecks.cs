@@ -194,8 +194,8 @@ internal static class SmartBoostChecks
             UiLayoutChecks.Require(Math.Abs(settingsTop - reviewTop) < 0.5 && reviewTop > 0, $"Review files and Settings titles sit at the same position ({reviewTop:0.#} and {settingsTop:0.#})");
             // Italic audit of everything that exists in the window: only the logo and the home heading may be italic.
             var italics = Descendants<TextBlock>(root).Where(block => block.FontStyle == FontStyles.Italic).Select(block => block.Text).Distinct().ToList();
-            UiLayoutChecks.Require(italics.All(text => text is "Hush" or "Make more room to breathe") && italics.Contains("Hush") && italics.Contains("Make more room to breathe"),
-                "In the running window only the Hush logo and the home heading are italic" + (italics.All(text => text is "Hush" or "Make more room to breathe") ? "" : ": " + string.Join(" | ", italics)));
+            UiLayoutChecks.Require(italics.All(text => text is "Hush" or "Make more room to breathe.") && italics.Contains("Hush") && italics.Contains("Make more room to breathe."),
+                "In the running window only the Hush logo and the home heading are italic" + (italics.All(text => text is "Hush" or "Make more room to breathe.") ? "" : ": " + string.Join(" | ", italics)));
             UiLayoutChecks.Require(((ItemsControl)window.FindName("CategoriesList")).Items.Groups == null && Descendants<TextBlock>(root).All(block => block.Text != "Appearance"),
                 "Review Files is a flat list again and Settings has no Appearance section");            UiLayoutChecks.Require(window.StartupChoices.Count == 1 && window.StartupChoices[0].Enabled, "The startup list shows this account's startup apps");
             ((Expander)window.FindName("SettingsBoostSection")).IsExpanded = true;
@@ -266,8 +266,10 @@ internal static class SmartBoostChecks
             UiLayoutChecks.Require(!LowResourceMode.IsActive, "Low-resource mode switches off and restores Hush");
 
             UiLayoutChecks.Require(((Button)window.FindName("AboutButton")).FontWeight == FontWeights.Medium && ((Button)window.FindName("AboutButton")).FontStyle == FontStyles.Italic, "The Hush logo is weight 500 italic");
-            UiLayoutChecks.Require(((TextBlock)window.FindName("Headline")).FontStyle == FontStyles.Italic && ((TextBlock)window.FindName("CompletionLinkText")).FontStyle == FontStyles.Normal
-                && ((TextBlock)window.FindName("CompletionLinkText")).TextDecorations.Count > 0, "The main title stays italic; the scan-complete link is upright and still underlined");
+            UiLayoutChecks.Require(((TextBlock)window.FindName("Headline")).FontStyle == FontStyles.Italic && ((TextBlock)window.FindName("StatusTitle")).FontStyle == FontStyles.Normal
+                && ((Button)window.FindName("CompletionLinkButton")).BorderThickness.Left == 1 && ((Button)window.FindName("CompletionLinkButton")).Width == ((Button)window.FindName("HomeCleanButton")).Width
+                && ((Button)window.FindName("CompletionLinkButton")).FontSize == ((Button)window.FindName("HomeCleanButton")).FontSize,
+                "The main title stays italic; Scan Completed is upright plain text and Take a look is an outlined button exactly like Clean");
             foreach (bool light in new[] { window.IsLightTheme, !window.IsLightTheme })
             {
                 if (window.IsLightTheme != light) window.ToggleTheme();

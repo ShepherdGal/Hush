@@ -2,5 +2,5 @@ namespace Hush;
 
 internal static class ReleaseNotes
 {
-    internal const string Current = "• Clean stays on screen after a scan (dimmed until you select something)\n• Compact Clean popup that lists what will go in green, amber and red\n• About 80 Windows privacy choices in Settings, rated Recommended or Somewhat recommended and grouped by topic\n• Windows choices are no longer locked as read-only; device-wide ones restart Hush as administrator, and a popup tells you when to restart\n• Stronger hover on the Clean buttons\n• Review list ordered Safe, Review, Advanced";
+    internal const string Current = "• Compact Settings like ShutUp10++: one line per choice, a ? for the explanation, collapsible topics, a search box and an Actions menu (recommended / somewhat recommended / all)\n• Temporary files age choice (1 day, 1 hour or almost everything) and a much wider search for app junk: Electron and WebView2 caches, Zen and other Firefox forks, logs, temp folders, crash dumps, updater installers\n• Scan Completed with Take a look and Clean buttons side by side; bigger gauge and status text\n• About 80 Windows privacy choices, no more false read-only lock, restart advice after changes\n• Clean stays on screen after a scan; compact green, amber and red Clean popup";
 }
