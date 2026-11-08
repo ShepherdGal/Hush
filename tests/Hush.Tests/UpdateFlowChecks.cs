@@ -69,6 +69,16 @@ internal static class UpdateFlowChecks
             Click("CheckUpdateButton"); Wait(360); Layout(new Size(800, 740));
             Require(window.IsUpdateBusy && sweep.IsRunning && body.Expanded && !check.IsEnabled,
                 "Checking shows progress and never asks for credentials");
+            // One bar only: sample the running track several times; at most one bright run may ever exist (nothing follows the bar), and the track is 5 px thick.
+            int RunsAcross(byte[] pixels)
+            {
+                int width = (int)Math.Ceiling(sweep.ActualWidth), row = (int)Math.Ceiling(sweep.ActualHeight) / 2, runs = 0; bool inside = false;
+                for (int x = 0; x < width; x++) { bool on = pixels[(row * width + x) * 4 + 3] > 150; if (on && !inside) runs++; inside = on; }
+                return runs;
+            }
+            int mostRuns = 0, framesWithBar = 0;
+            for (int frame = 0; frame < 6; frame++) { int runs = RunsAcross(SweepPixels()); mostRuns = Math.Max(mostRuns, runs); if (runs > 0) framesWithBar++; Wait(300); }
+            Require(mostRuns == 1 && framesWithBar >= 2 && Math.Abs(sweep.ActualHeight - 5) < 0.01, $"The update search is a single moving bar, 5 px thick, with nothing following it (max {mostRuns} bar in {framesWithBar} of 6 frames)");
             var before = SweepPixels(); Wait(260);
             Require(!before.SequenceEqual(SweepPixels()), "The checking glide changes actual rendered pixels");
             Capture("about-checking-" + (window.IsLightTheme ? "light" : "dark"));

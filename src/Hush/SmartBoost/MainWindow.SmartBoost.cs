@@ -34,7 +34,6 @@ public partial class MainWindow
     private CancellationTokenSource? boostCancellation;
     private bool boostRunning, quickBoostPending, boostLoading;
     private JunkReading? lastReading;
-    private string boostActivity = "";
     private List<StartupChoice> startupChoices = [];
     private (string Id, bool WasEnabled, string Name)? lastStartupChange;
     private TaskCompletionSource<bool>? consent;
@@ -95,9 +94,6 @@ public partial class MainWindow
         string state = Boost.AutoBoost ? "Automatic Boost on" : Boost.MonitorJunk ? "Junk monitoring on" : "Manual only";
         if (Boost.LowResource) state += " · Low-resource mode";
         BoostSummary.Text = state;
-        string reading = lastReading == null ? "" : $"Last check {lastReading.WhenUtc.ToLocalTime():t}: {lastReading.Describe}.";
-        BoostStatus.Text = string.Join(" ", new[] { reading, boostActivity }.Where(part => part.Length > 0));
-        BoostStatus.Visibility = BoostStatus.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     // ----- Quick Boost -----
@@ -185,21 +181,20 @@ public partial class MainWindow
                 if (result != null)
                 {
                     string measured = result.MeasuredFreed > 0 ? $" (disk reports {Sizes.Format(result.MeasuredFreed)} more free)" : "";
-                    boostActivity = $"Automatic Boost cleaned {Sizes.Format(result.Bytes)} at {DateTime.Now:t}{measured}.";
+                    ShowInfoNote($"Automatic Boost cleaned {Sizes.Format(result.Bytes)}", $"Automatic Boost cleaned {Sizes.Format(result.Bytes)} of Safe temporary files at {DateTime.Now:t}{measured}.");
                     lastReading = new JunkReading(0, 0, DateTime.UtcNow);
                 }
             }
             else if (reached && CurrentScanState == ScanState.Ready && !busy)
             {
                 StatusDetail.Text = $"About {Sizes.Format(reading.Bytes)} of safe junk is waiting. Quick Boost can clean it.";
-                boostActivity = "";
             }
             UpdateBoostSummary();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            boostActivity = "The last check couldn't finish.";
+            ShowInfoNote("The last junk check couldn't finish", "");
             UpdateBoostSummary();
         }
         finally { boostRunning = false; }
@@ -225,6 +220,8 @@ public partial class MainWindow
 
     private void StopResourceIndicators() => resourceTimer?.Stop();
 
+    private ResourceSnapshot lastSample;
+
     private void ResourceTick(object? sender, EventArgs e)
     {
         var sample = resourceMonitor.Sample();
@@ -233,18 +230,22 @@ public partial class MainWindow
         MemoryText.ToolTip = $"{Sizes.Format(sample.MemoryUsed)} of {Sizes.Format(sample.MemoryTotal)} in use";
         ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{sample.DiskUsedPercent:0}%", ResourceSnapshot.Full);
         DiskText.ToolTip = $"{Sizes.Format(sample.DiskFree)} free of {Sizes.Format(sample.DiskTotal)} on the system drive";
-        InfoSummary.Text = sample.Headline;
-        ResourceNote.Text = $"Hush itself is using {Sizes.Format(sample.HushWorkingSet)} of memory. These figures come from Windows and update only while this page is open.";
+        lastSample = sample;
+        if (DateTime.UtcNow >= infoNoteUntilUtc)
+        {
+            InfoSummary.Text = sample.Headline;
+            InfoSummary.ToolTip = $"Figures come from Windows and update only while this page is open. Hush itself uses {Sizes.Format(sample.HushWorkingSet)} of memory.";
+        }
     }
 
     // A bar uses the theme accent and turns Review-orange (never red) once its reading is high.
-    private static void ShowMeter(Border fill, TextBlock text, double percent, string label, double warnAt)
+    private static void ShowMeter(Border fill, TextBlock text, double percent, string label, double warnAt, int milliseconds = 400)
     {
         text.Text = label;
         fill.SetResourceReference(Border.BackgroundProperty, percent >= warnAt ? "MeterWarnBrush" : "TealBrush");
         // The slim vertical bar fills from the bottom (transform animation, no layout work).
         var scale = (ScaleTransform)fill.RenderTransform;
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Motion.Tween(scale.ScaleY, Math.Clamp(percent, 0, 100) / 100, 400));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Motion.Tween(scale.ScaleY, Math.Clamp(percent, 0, 100) / 100, milliseconds));
     }
 
     // ----- Startup apps -----

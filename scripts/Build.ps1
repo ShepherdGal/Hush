@@ -2,6 +2,8 @@
 #   artifacts\Hush.exe                  portable app (run it anywhere; nothing is installed)
 #   artifacts\Hush-Setup.exe            installer (the same program; started by that name it opens setup)
 #   artifacts\Hush-windows-x64.zip      the portable app plus README and Terms, for manual downloads
+#   artifacts\LICENSE                   the MIT license (also attached to the release, and inside the zip)
+#   artifacts\Hush-icon.png             the app icon (also attached to the release)
 #   artifacts\WHICH FILE.txt            one paragraph saying which file to use
 # Old layouts (artifacts\Hush\ and stray copies) are removed so there is exactly one place and one copy of each file.
 param([switch]$Standalone)
@@ -25,6 +27,9 @@ foreach ($name in 'Hush.exe', 'Hush-Setup.exe') {
     try { Copy-Item -LiteralPath $built -Destination (Join-Path $artifacts $name) -Force }
     catch { throw "Could not replace $name (is Hush running from the artifacts folder?). Close it and build again. $($_.Exception.Message)" }
 }
+# Loose copies of the license and the icon, so they sit beside the downloads (and are attached to the release).
+Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $artifacts 'LICENSE') -Force
+Copy-Item -LiteralPath (Join-Path $root 'docs\Hush-icon.png') -Destination (Join-Path $artifacts 'Hush-icon.png') -Force
 # Zip: the portable app, README and the terms.
 $zipFolder = Join-Path $stage 'zip'
 New-Item -ItemType Directory -Force -Path $zipFolder | Out-Null
@@ -44,6 +49,7 @@ Hush $version - which file do I use?
 
 Both run the same program and both update themselves from inside the app (About > Check for updates).
 You only need one of them. Needs Windows 10/11 64-bit and the .NET 10 Desktop Runtime.
+LICENSE (MIT) and Hush-icon.png are loose copies for reading and for the project page; you do not need them to run Hush.
 "@ | Set-Content -LiteralPath (Join-Path $artifacts 'WHICH FILE.txt') -Encoding utf8
 # Remove staging and the old nested layout (artifacts\Hush\) so nothing is duplicated.
 Remove-Item -LiteralPath $stage -Recurse -Force

@@ -301,6 +301,16 @@ internal static class SmartBoostChecks
             double BarX(string name) => ((FrameworkElement)window.FindName(name)).TransformToAncestor(root).Transform(new Point(0, 0)).X;
             UiLayoutChecks.Require(BarX("CpuFill") < BarX("MemoryFill") && BarX("MemoryFill") < BarX("TempFill") && BarX("TempFill") < BarX("DiskFill"),
                 "The Info bars run left to right: Processor, then Memory, then Temporary files and System drive");
+            Rect BoundsOf(FrameworkElement element) => element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize));
+            var infoTexts = Descendants<TextBlock>(infoCard).Where(block => block.Text.Length > 0).ToList();
+            var boostCardButton = (Button)window.FindName("BoostButton");
+            var infoTitle = infoTexts.Single(block => block.Text == "Info"); var infoLine = (TextBlock)window.FindName("InfoSummary");
+            double contentRight = BoundsOf(infoCard).Right - 28, buttonMiddle = BoundsOf(boostCardButton).Top + BoundsOf(boostCardButton).Height / 2;
+            UiLayoutChecks.Require(window.FindName("ResourceNote") == null && window.FindName("BoostStatus") == null && window.FindName("SetUpSmartBoostButton") == null && infoTexts.Count <= 11,
+                $"The Info card is minimal: a title, one short line, four values and four labels, and the Boost button ({infoTexts.Count} texts)");
+            UiLayoutChecks.Require(Math.Abs(BoundsOf(boostCardButton).Right - contentRight) <= 1 && buttonMiddle > BoundsOf(infoTitle).Top && buttonMiddle < BoundsOf(infoLine).Bottom
+                && BoundsOf(boostCardButton).Left > BoundsOf(infoLine).Left + 200,
+                "The Boost button sits on the same row as the title, vertically centered on it, with its right edge on the card's content edge");
             UiLayoutChecks.Require(memoryTrack.ActualHeight >= memoryTrack.ActualWidth * 3 && ((TextBlock)window.FindName("MemoryText")).Text.EndsWith("%") && ((TextBlock)window.FindName("CpuText")).Text.EndsWith("%")
                 && tempText.Text.Contains("B") && Descendants<TextBlock>(infoCard).Any(block => block.Text == "Temporary files") && Descendants<TextBlock>(infoCard).Any(block => block.Text == "Memory usage"),
                 $"The Info card shows slim vertical bars with a value and label beside each, including Memory usage and Temporary files ({tempText.Text})");
@@ -312,15 +322,25 @@ internal static class SmartBoostChecks
             Click((Button)window.FindName("ConsentCancelButton")); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Collapsed);
             UiLayoutChecks.PumpUntil(() => !window.IsBoosting);
             UiLayoutChecks.Require(booster.Calls == 0 && File.Exists(safeFile) && boostButton.IsEnabled && boostButton.Content.ToString() == "Boost", "Answering Not now does nothing and leaves Boost ready");
+            window.BoostStageMinimum = TimeSpan.FromMilliseconds(500); window.BoostDoneHold = TimeSpan.FromMilliseconds(500); // slow enough to watch each stage
+            var boostSweep = (UpdateActivity)window.FindName("BoostSweep");
+            UiLayoutChecks.Require(!boostSweep.IsRunning, "The Boost sweep is idle (just a hairline) until Boost runs");
             Click(boostButton); UiLayoutChecks.PumpUntil(() => consent.Visibility == Visibility.Visible);
             Click((Button)window.FindName("ConsentConfirmButton"));
-            UiLayoutChecks.PumpUntil(() => booster.Calls == 1 && !window.IsBoosting);
-            var boostStatus = (TextBlock)window.FindName("BoostStatus");
-            UiLayoutChecks.Require(!File.Exists(safeFile) && File.Exists(reviewFile) && booster.Calls == 1 && boostStatus.Text.Contains("temporary files cleaned") && boostStatus.Text.Contains("123") && boostStatus.Text.Contains("memory released")
-                && boostStatus.Text.Contains("refill") && boostButton.IsEnabled && boostButton.Content.ToString() == "Boost" && window.ReviewItems.Count == 0,
-                "Boost cleans only the Safe temporary files, releases memory once, reports what was measured (and that memory can refill) and leaves Review files alone");
-            Click((Button)window.FindName("SetUpSmartBoostButton"));
-            UiLayoutChecks.Require(((Expander)window.FindName("SettingsBoostSection")).IsExpanded, "Set up Smart Boost opens the Smart Boost card");
+            UiLayoutChecks.PumpUntil(() => boostButton.Content.ToString() == "Cleaning…");
+            UiLayoutChecks.Require(window.IsBoosting && boostSweep.IsRunning && !boostButton.IsEnabled && booster.Calls == 0, "While Boost cleans, the sweep runs, the button reads Cleaning… and memory has not been touched yet");
+            if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string boostShots) UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(boostShots, "boost-running-dark.png"));
+            UiLayoutChecks.PumpUntil(() => boostButton.Content.ToString() == "Freeing memory…");
+            UiLayoutChecks.Require(!File.Exists(safeFile) && boostSweep.IsRunning && File.Exists(reviewFile), "The temporary files are gone before the memory stage starts and the sweep keeps running");
+            UiLayoutChecks.PumpUntil(() => boostButton.Content.ToString() == "Done");
+            UiLayoutChecks.Require(!boostSweep.IsRunning && booster.Calls == 1 && !boostButton.IsEnabled, "Boost ends on Done: the sweep stops and the button rests for a moment");
+            UiLayoutChecks.PumpUntil(() => !window.IsBoosting);
+            window.BoostStageMinimum = TimeSpan.Zero; window.BoostDoneHold = TimeSpan.Zero;
+            var infoSummary = (TextBlock)window.FindName("InfoSummary");
+            UiLayoutChecks.Require(!File.Exists(safeFile) && File.Exists(reviewFile) && booster.Calls == 1 && infoSummary.Text.StartsWith("Boosted") && infoSummary.Text.Contains("123") && infoSummary.Text.Contains("cleaned")
+                && infoSummary.ToolTip?.ToString()!.Contains("refill") == true && boostButton.IsEnabled && boostButton.Content.ToString() == "Boost" && tempText.Text == "0 B" && ((TextBlock)window.FindName("MemoryText")).Text.EndsWith("%")
+                && window.ReviewItems.Count == 0,
+                "Boost cleans only the Safe temporary files, releases memory once, reports the measured result in the one line (the refill note is its tooltip) and leaves Review files alone");
 
             // ---- Browser data: kept out of scans, chosen in Settings with a red mark and warnings ----
             ((Expander)window.FindName("SettingsBrowserSection")).IsExpanded = true; UiLayoutChecks.Wait(420); UiLayoutChecks.Layout(root, new Size(920, 820));

@@ -45,6 +45,8 @@ internal static class DistributionChecks
         string build = Read("scripts", "Build.ps1");
         check(build.Contains("WHICH FILE.txt") && build.Contains("Join-Path $artifacts 'Hush.exe'") && build.Contains("Hush-Setup.exe") && !build.Contains(@"artifacts\Hush\Hush.exe"),
             "The build writes one flat set of files (portable, installer, zip, WHICH FILE.txt) and no nested copy");
+        check(build.Contains("Join-Path $artifacts 'LICENSE'") && build.Contains("Hush-icon.png") && releasing.Contains(@"artifacts\LICENSE#") && releasing.Contains(@"artifacts\Hush-icon.png#"),
+            "The build puts LICENSE and the icon beside the downloads and the release command attaches both");
         string tidy = Read("scripts", "Tidy.ps1");
         check(tidy.Contains("-Apply") && tidy.Contains("a program is running from here") && !tidy.Contains("Remove-Item -LiteralPath (Join-Path $root 'artifacts')") && !tidy.Contains("Backups' -Recurse"),
             "Tidy never touches artifacts or Backups and skips folders with a running program");

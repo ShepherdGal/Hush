@@ -218,64 +218,61 @@
           <!-- The 8 DIP overlay scrollbar lives in a 22 DIP strip to the right of the cards (viewer extends into the page margin), so cards never shift or sit under it. -->
           <ScrollViewer x:Name="WindowsSettingsScroll" Grid.Row="1" Style="{StaticResource PageScroll}" Margin="0,8,-22,0" Padding="0,0,22,16">
             <StackPanel>
-            <!-- Info: live figures from Windows as slim vertical pill bars (value and label beside each), one smart summary line, and a small Boost button
-                 that cleans Safe temporary files and asks Windows to release idle memory (always after a confirmation; nothing is closed).
-                 It is a plain card, not an accordion: the figures are always on screen and the Smart Boost controls stay uncluttered. -->
-            <Border x:Name="SettingsInfoCard" Background="{DynamicResource PanelBrush}" CornerRadius="14" Padding="28,18,28,22" Margin="0,0,0,16" AutomationProperties.Name="Info">
+            <!-- Info: as simple as it gets. A title with one short line, the Boost button on the right of that same row (centered on it, its right edge
+                 on the card's content edge like the last bar), a hairline that becomes the Boost sweep while Boost runs, and four slim vertical bars
+                 with a value and a label each. Everything else (explanations, last check, memory use) is in tooltips, not on the card. -->
+            <Border x:Name="SettingsInfoCard" Background="{DynamicResource PanelBrush}" CornerRadius="14" Padding="28,22,28,26" Margin="0,0,0,16" AutomationProperties.Name="Info">
               <StackPanel>
                 <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                  <StackPanel>
-                    <TextBlock Text="Info" Style="{StaticResource CardTitle}"/>
-                    <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
-                  </StackPanel>
-                  <Button x:Name="SetUpSmartBoostButton" Grid.Column="1" Content="Set up Smart Boost" Click="SetUpSmartBoost_Click" Style="{StaticResource AccentTextButton}" Height="34" Padding="10,5" Margin="0,-6,-10,0" VerticalAlignment="Top" AutomationProperties.Name="Set up Smart Boost"/>
-                </Grid>
-                <Grid Margin="0,22,0,0">
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="CpuFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
-                    </Border>
-                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                      <TextBlock x:Name="CpuText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock Text="Processor" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                  </StackPanel>
-                  <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="MemoryFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
-                    </Border>
-                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                      <TextBlock x:Name="MemoryText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock Text="Memory usage" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                  </StackPanel>
-                  <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="TempFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
-                    </Border>
-                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                      <TextBlock x:Name="TempText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock Text="Temporary files" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                  </StackPanel>
-                  <StackPanel Grid.Column="3" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="DiskFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
-                    </Border>
-                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                      <TextBlock x:Name="DiskText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
-                      <TextBlock Text="System drive used" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                  </StackPanel>                </Grid>
-                <Grid Margin="0,22,0,0">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <StackPanel VerticalAlignment="Center">
-                    <TextBlock x:Name="ResourceNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource FaintBrush}" TextWrapping="Wrap" LineHeight="21"/>
-                    <TextBlock x:Name="BoostStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,6,0,0" Visibility="Collapsed"/>
+                    <TextBlock Text="Info" Style="{StaticResource CardTitle}"/>
+                    <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
-                  <Button x:Name="BoostButton" Grid.Column="2" Content="Boost" Click="Boost_Click" Height="38" MinWidth="104" Padding="22,7" VerticalAlignment="Center" AutomationProperties.Name="Boost" ToolTip="Clean Safe temporary files and release idle memory"/>
+                  <Button x:Name="BoostButton" Grid.Column="2" Content="Boost" Click="Boost_Click" Height="42" MinWidth="124" Padding="26,0" VerticalAlignment="Center" AutomationProperties.Name="Boost" ToolTip="Clean Safe temporary files and release idle memory"/>
+                </Grid>
+                <Grid Height="5" Margin="0,20,0,20">
+                  <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7" VerticalAlignment="Center"/>
+                  <local:UpdateActivity x:Name="BoostSweep" Height="5"/>
+                </Grid>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="CpuFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="CpuText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Processor" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="MemoryFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="MemoryText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Memory usage" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="TempFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="TempText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="Temporary files" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="DiskFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="DiskText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
+                      <TextBlock Text="System drive used" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
                 </Grid>
               </StackPanel>
             </Border>
@@ -495,7 +492,7 @@
                   <StackPanel Margin="0,0,8,0">
                     <TextBlock x:Name="UpdateStatus" Text="Check for the latest release." FontSize="{DynamicResource CompactFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="22"/>
                     <TextBlock x:Name="UpdateHint" Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="22" Margin="0,8,0,0"/>
-                    <local:UpdateActivity x:Name="UpdateSweep" Height="4" Margin="0,14,0,0"/>
+                    <local:UpdateActivity x:Name="UpdateSweep" Height="5" Margin="0,14,0,0"/>
                     <Border x:Name="PatchNotesPanel" Margin="0,20,0,0"><StackPanel>
                       <TextBlock x:Name="PatchNotesHeading" Text="Installed release" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
                       <TextBlock x:Name="PatchNotes" FontSize="{DynamicResource CompactFontSize}" TextWrapping="Wrap" LineHeight="23" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0"/>

@@ -2,6 +2,13 @@
 
 Dates use Asia/Jerusalem.
 
+## 0.8.1 — November 8, 2026
+
+- **Simpler Info card:** a title, one short line, the Boost button on the same row at the right, and four bars; the paragraph of notes, the last-check line and the "Set up Smart Boost" link are gone (the details are tooltips). Tested: at most eleven texts, button on the title row and on the content edge.
+- **Boost animation:** one calm sequence for loading and cleaning (single sweeping bar, "Cleaning…" with the Temporary files bar and number easing down together, "Freeing memory…" with the Memory bar and percent easing down, then "Done" with a soft glow). Results appear in the Info card's one line. Timing is injectable so tests stay fast.
+- **Update popup bar:** a single moving bar with nothing following it, 5 px thick instead of 4 (tested by sampling the rendered track).
+- **Version 0.8.1.** LICENSE and the app icon are now also files in `artifacts\` and are attached to the release (`docs/RELEASING.md` has the command); they are already in the repository, the README and the zip. The README is unchanged.
+- Not published by the agent: the owner commits and pushes (steps given in chat).
 ## 0.8 (follow-up: MIT license, popup button order) — November 8, 2026
 
 - **MIT License:** `LICENSE` (copyright 2026 ShepherdGal) is in the repository root and in the portable zip; the README has a License section, `docs/TERMS.md` points to it, and the exe's file properties carry the copyright. The previous "no LICENSE file yet" note is gone.

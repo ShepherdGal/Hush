@@ -2,6 +2,10 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## Version 0.8.1 (November 8, 2026)
+
+Simpler Info card, Boost animation, single-bar update search, version 0.8.1, LICENSE and icon as release files. README untouched on purpose. `scripts/Verify.ps1` passes. The owner publishes (commit, push, tag v0.8.1, release with the files in `artifacts\`).
+
 ## MIT license and popup button order (November 8, 2026)
 
 Added LICENSE (MIT, copyright 2026 ShepherdGal; also in the zip and the exe's file properties) and put every popup's action on the left and its exit on the right (test-enforced). scripts/Verify.ps1 passes (213 engine checks plus all UI suites). rtifacts\Hush.exe was rebuilt from this source. Still not committed or released.
