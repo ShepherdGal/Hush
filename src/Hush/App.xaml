@@ -21,6 +21,8 @@
     <SolidColorBrush x:Key="ActionFillBrush" Color="#252C38"/>
     <SolidColorBrush x:Key="ModalShadeBrush" Color="#750C1016"/>
     <SolidColorBrush x:Key="SafetyGreenBrush" Color="#38CFC8"/>
+    <!-- The calm green for good news and Safe items (SafetyPalette.Good); themed in MainWindow.ApplyTheme. -->
+    <SolidColorBrush x:Key="GoodBrush" Color="#5CC98F"/>
     <!-- Resource meters turn Review-orange (never red) when a reading is high. -->
     <SolidColorBrush x:Key="MeterWarnBrush" Color="#FFA24D"/>
     <SolidColorBrush x:Key="CleanFillBrush" Color="#08FF795C"/>

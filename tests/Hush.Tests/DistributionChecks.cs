@@ -37,14 +37,14 @@ internal static class DistributionChecks
         check(!setupXaml.Contains("x:Name=\"PrimaryButton\" Grid.Column") && setupXaml.Contains("x:Name=\"SecondaryButton\" Grid.Column=\"2\""), "In Setup the action (Install / Open Hush) is on the left and Run without installing / Close on the right");
 
         // Easy downloads.
-        check(readme.Contains("releases/latest/download/Hush.exe") && readme.Contains("releases/latest/download/Hush-Setup.exe") && readme.Contains("releases/latest/download/Hush-windows-x64.zip")
+        check(readme.Contains("releases/latest/download/Hush-Portable.zip") && readme.Contains("releases/latest/download/Hush-Setup.zip")
             && readme.IndexOf("## Download", StringComparison.Ordinal) < readme.IndexOf("## Project layout", StringComparison.Ordinal) && readme.Contains("Portable") || readme.Contains("portable"),
-            "The README leads with a Download table: portable, installer and zip, each a direct latest-release link");
+            "The README leads with a Download table: portable and installer, each a zip with a direct latest-release link");
         string releasing = Read("docs", "RELEASING.md");
-        check(releasing.Contains("**Which file?**") && releasing.Contains("Hush.exe#") && releasing.Contains("scripts/Tidy.ps1"), "The release process has a Which file? template, asset labels and the tidy step");
+        check(releasing.Contains("**Which file?**") && releasing.Contains("Hush-Portable.zip#") && releasing.Contains("scripts/Tidy.ps1"), "The release process has a Which file? template, asset labels and the tidy step");
         string build = Read("scripts", "Build.ps1");
-        check(build.Contains("WHICH FILE.txt") && build.Contains("Join-Path $artifacts 'Hush.exe'") && build.Contains("Hush-Setup.exe") && !build.Contains(@"artifacts\Hush\Hush.exe"),
-            "The build writes one flat set of files (portable, installer, zip, WHICH FILE.txt) and no nested copy");
+        check(build.Contains("WHICH FILE.txt") && build.Contains("Hush-Portable.exe") && build.Contains("Hush-Setup.exe") && build.Contains("Hush-Portable.zip") && build.Contains("Hush-Setup.zip") && !build.Contains(@"artifacts\Hush\Hush.exe"),
+            "The build writes one flat set of files (portable and installer, each also zipped, WHICH FILE.txt) and no nested copy");
         check(build.Contains("Join-Path $artifacts 'LICENSE'") && build.Contains("Hush-icon.png") && releasing.Contains(@"artifacts\LICENSE#") && releasing.Contains(@"artifacts\Hush-icon.png#"),
             "The build puts LICENSE and the icon beside the downloads and the release command attaches both");
         string tidy = Read("scripts", "Tidy.ps1");

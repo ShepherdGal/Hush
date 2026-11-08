@@ -8,9 +8,9 @@ namespace Hush;
 internal sealed class NumberTween : Animatable
 {
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(double), typeof(NumberTween),
-        new PropertyMetadata(0.0, (owner, args) => ((NumberTween)owner).Changed?.Invoke((double)args.NewValue)));
+        new PropertyMetadata(0.0, (owner, args) => ((NumberTween)owner).ValueChanged?.Invoke((double)args.NewValue)));
     public double Value { get => (double)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
-    public Action<double>? Changed { get; set; }
+    public Action<double>? ValueChanged { get; set; }
     protected override Freezable CreateInstanceCore() => new NumberTween();
 
     // Completes when the roll has finished (or immediately for a zero duration). The last value is always exactly `to`.

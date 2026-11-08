@@ -10,11 +10,10 @@ Version 0.8. A compact native Windows cleaner: scan, review results by category,
 
 | I want to... | Download | What it is |
 | --- | --- | --- |
-| Just run it, nothing installed | **[Hush.exe, portable](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush.exe)** | One file. Put it anywhere you can write to (for example `D:\Hush\`) and make a shortcut to it. |
-| Install it like a normal app | **[Hush-Setup.exe, installer](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-Setup.exe)** | For your account only, no administrator rights. Adds a Start menu entry, an optional desktop shortcut and a Settings > Apps entry. |
-| Everything in one zip | [Hush-windows-x64.zip](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-windows-x64.zip) | The portable app plus this README, the terms and the MIT license. |
+| Just run it, nothing installed | **[Hush-Portable.zip](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-Portable.zip)** | Unzip it anywhere you can write to (for example `D:\Hush\`), run `Hush-Portable.exe` and make a shortcut to it. |
+| Install it like a normal app | **[Hush-Setup.zip](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-Setup.zip)** | Unzip it and run `Hush-Setup.exe`. For your account only, no administrator rights. Adds a Start menu entry, an optional desktop shortcut and a Settings > Apps entry. |
 
-Needs Windows 10 or 11 (64-bit) and the **.NET 10 Desktop Runtime** (Windows offers to download it if it is missing). Hush is not code-signed, so Windows SmartScreen may show "Windows protected your PC": choose **More info > Run anyway**. Both versions update themselves from inside the app (click **Hush** > **Check for updates** > **Update now**).
+Needs Windows 10 or 11 (64-bit) and the **.NET 10 Desktop Runtime** (Windows offers to download it if it is missing). Hush is not code-signed, so Windows SmartScreen may show "Windows protected your PC": choose **More info > Run anyway**. Each zip holds one program plus the terms and the MIT license. Both versions update themselves from inside the app (click **Hush** > **Check for updates** > **Update now**).
 
 ## Use at your own risk
 
@@ -38,8 +37,8 @@ Hush.sln        opens the app and its tests together
 
 Two ways to use Hush (see **Download** above; both need the **.NET 10 Desktop Runtime** and are unsigned):
 
-- **Installer:** run `Hush-Setup.exe`. It installs Hush for your account only (no administrator rights) to `%LOCALAPPDATA%\Programs\Hush`, adds a Start menu entry (and, if you like, a desktop shortcut) and lists Hush under Settings > Apps, where Windows can uninstall it. Setup also offers "Run without installing".
-- **Portable:** run `Hush.exe` from any writable folder, or unzip `Hush-windows-x64.zip`. Nothing is installed or registered.
+- **Installer:** unzip `Hush-Setup.zip` and run `Hush-Setup.exe`. It installs Hush for your account only (no administrator rights) to `%LOCALAPPDATA%\Programs\Hush`, adds a Start menu entry (and, if you like, a desktop shortcut) and lists Hush under Settings > Apps, where Windows can uninstall it. Setup also offers "Run without installing".
+- **Portable:** unzip `Hush-Portable.zip` into any writable folder and run `Hush-Portable.exe`. Nothing is installed or registered.
 
 Both keep their settings in `%LOCALAPPDATA%\Hush` and both update themselves in place. Uninstalling keeps your settings and history unless you tick "Also delete my Hush settings, history and logs".
 
@@ -88,7 +87,7 @@ Requires .NET 10 SDK on Windows. No NuGet application packages.
 
 ```powershell
 .\scripts\Verify.ps1          # Safety, updater and WPF checks; controlled failure regression
-.\scripts\Build.ps1                 # artifacts\Hush.exe (portable), Hush-Setup.exe (installer), the zip and WHICH FILE.txt
+.\scripts\Build.ps1                 # artifacts\Hush-Portable.zip and Hush-Setup.zip (the uploads), the unzipped exes and WHICH FILE.txt
 .\scripts\Tidy.ps1                  # Lists (and with -Apply removes) rebuildable bin/obj clutter; artifacts\ and Backups\ are never touched
 .\scripts\Build.ps1 -Standalone     # Larger build including Desktop Runtime
 .\scripts\Backup.ps1                # Immutable source/portable snapshots with verified hashes

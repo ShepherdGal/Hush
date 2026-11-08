@@ -86,7 +86,7 @@ public partial class MainWindow
             var cleaned = await Task.Run(() => boostController.RunAutomaticBoost(token));
             var after = await Task.Run(() => boostController.Measure(token));
             await Pace(clock);
-            var tempText = new NumberTween { Changed = value => TempText.Text = Sizes.Format((long)Math.Max(0, value)) };
+            var tempText = new NumberTween { ValueChanged = value => TempText.Text = Sizes.Format((long)Math.Max(0, value)) };
             double drain = BoostStageMinimum == TimeSpan.Zero ? 0 : 900;
             ShowTempFiles(after, (int)drain);
             await tempText.RunAsync(reading.Bytes, after.Files == 0 ? 0 : after.Bytes, (int)drain);
@@ -100,7 +100,7 @@ public partial class MainWindow
             await Pace(clock);
             double total = lastSample.MemoryTotal > 0 ? lastSample.MemoryTotal : new ResourceMonitor().Sample().MemoryTotal;
             double beforePercent = total <= 0 ? 0 : 100.0 * memory.UsedBefore / total, afterPercent = total <= 0 ? 0 : 100.0 * memory.UsedAfter / total;
-            var memoryText = new NumberTween { Changed = value => MemoryText.Text = $"{value:0}%" };
+            var memoryText = new NumberTween { ValueChanged = value => MemoryText.Text = $"{value:0}%" };
             ShowMeter(MemoryFill, MemoryText, afterPercent, $"{afterPercent:0}%", ResourceSnapshot.Busy, (int)drain);
             await memoryText.RunAsync(beforePercent, afterPercent, (int)drain);
             MemoryText.Text = $"{afterPercent:0}%";

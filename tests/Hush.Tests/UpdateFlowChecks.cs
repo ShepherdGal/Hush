@@ -176,20 +176,30 @@ internal static class UpdateFlowChecks
     private static async Task ProtocolChecks(string fixture)
     {
         byte[] executable = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Hush.exe"));
+        // Releases carry a zip (GitHub does not accept .exe uploads); the updater unpacks Hush-Portable.exe from it.
+        byte[] package = Zip((UpdateService.PackagedExecutable, executable), ("README.txt", [1, 2, 3]));
         var release = new AppRelease(UpdateService.CurrentVersion, "Fixture", new Uri($"https://api.github.com/repos/{UpdateService.Repository}/releases/assets/1"),
-            executable.Length, Convert.ToHexString(SHA256.HashData(executable)));
+            package.Length, Convert.ToHexString(SHA256.HashData(package)));
         using var validClient = new UpdateService(new Handler(request =>
         {
             Require(request.Headers.Authorization == null, "Downloads are anonymous: no Authorization header is ever sent");
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(executable) };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(package) };
         }));
         string verified = await validClient.DownloadAsync(release, null, CancellationToken.None, Path.Combine(fixture, "verified-download"));
-        Require(File.Exists(verified) && File.ReadAllBytes(verified).SequenceEqual(executable), "Actual hash, size and x64 PE/product/version validation accept a known fixture executable");
+        Require(File.Exists(verified) && File.ReadAllBytes(verified).SequenceEqual(executable), "Actual hash, size and x64 PE/product/version validation accept a known fixture executable unpacked from the release zip");
+        Require(File.Exists(Path.Combine(Path.GetDirectoryName(verified)!, UpdateService.StagedHashName)) && !File.Exists(Path.Combine(Path.GetDirectoryName(verified)!, UpdateService.AssetName)),
+            "The unpacked app's hash is recorded and the downloaded zip is removed");
         bool rejected = false;
         try { await validClient.DownloadAsync(release with { Version = new Version(9, 0, 0) }, null, CancellationToken.None, Path.Combine(fixture, "bad-version")); }
         catch (InvalidDataException) { rejected = true; }
         Require(rejected && !Directory.EnumerateFiles(Path.Combine(fixture, "bad-version"), "*.exe", SearchOption.AllDirectories).Any(),
             "Correctly hashed downloads with a wrong version are rejected and their partial executable is removed");
+        byte[] wrongName = Zip(("Other.exe", executable));
+        using var wrongClient = new UpdateService(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(wrongName) }));
+        rejected = false;
+        try { await wrongClient.DownloadAsync(release with { Bytes = wrongName.Length, Sha256 = Convert.ToHexString(SHA256.HashData(wrongName)) }, null, CancellationToken.None, Path.Combine(fixture, "wrong-package")); }
+        catch (InvalidDataException) { rejected = true; }
+        Require(rejected, "A correctly hashed zip without Hush-Portable.exe is rejected");
         foreach (var code in new[] { HttpStatusCode.NotFound, HttpStatusCode.Forbidden, HttpStatusCode.Unauthorized })
         {
             using var service = new UpdateService(new Handler(_ => new HttpResponseMessage(code)));
@@ -212,6 +222,13 @@ internal static class UpdateFlowChecks
         Console.WriteLine("PASS: Anonymous update requests, known-PE download verification, wrong-version cleanup and unavailable/current/prerelease update responses");
     }
 
+    private static byte[] Zip(params (string Name, byte[] Data)[] files)
+    {
+        using var memory = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, true))
+            foreach (var (name, data) in files) { using var entry = archive.CreateEntry(name).Open(); entry.Write(data); }
+        return memory.ToArray();
+    }
     private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation) => Task.FromResult(respond(request));

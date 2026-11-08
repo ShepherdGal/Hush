@@ -22,6 +22,17 @@ internal static class WindowsSettingsChecks
         Require(environment.Build > 0 && environment.Edition.Length > 0 && environment.Owner != "unknown", "Native Windows environment can be read safely");
         foreach (var setting in WindowsSettingsService.Catalog) { _ = native.Read(setting); _ = native.Read(setting, machineOverride: true); }
         Console.WriteLine("PASS: Native Windows build/edition/management/account and policy probes are read-only");
+        // The catalog is the only source of registry destinations: ids are unique, every key is a Microsoft policy key, and the scope is deliberate.
+        var catalog = WindowsSettingsService.Catalog;
+        Require(catalog.Select(item => item.Id).Distinct().Count() == catalog.Count && catalog.All(item => item.Key.Contains(@"Policies\Microsoft", StringComparison.OrdinalIgnoreCase) && item.ValueName.Length > 0),
+            "Every Windows setting has a unique id and sits under a Microsoft policy key");
+        string[] perUser = ["diagnostics", "tailored", "suggestions", "location", "office-telemetry", "office-personal", "office-ceip", "search-web", "typing"];
+        string[] perDevice = ["widgets", "telemetry", "feedback", "advertising-id", "windows-ceip", "inventory", "activity", "delivery", "maps", "error-reporting", "background-apps"];
+        Require(perUser.All(id => !Definition(id).Machine) && perDevice.All(id => Definition(id).Machine) && perUser.Length + perDevice.Length == catalog.Count,
+            "Office and per-user choices write only the current user; device-wide choices are marked administrator-only");
+        Require(Definition("office-telemetry").Value == 3 && Definition("office-personal").Value == 0 && Definition("office-ceip").Value == 0
+            && Definition("advertising-id").ValueName == "DisabledByGroupPolicy" && Definition("delivery").Value == 0,
+            "The Office, advertising ID and Delivery Optimization policies use the documented values");
         // Every registry write maps to this fresh test-only HKCU root, including simulated HKLM.
         string registryRoot = @"Software\Hush.TestFixtures\" + Guid.NewGuid().ToString("N");
         var store = new FixtureStore(registryRoot);
@@ -157,8 +168,8 @@ internal static class WindowsSettingsChecks
             var sections = new[] { "SettingsBoostSection", "SettingsPrivacySection", "SettingsImpactSection" }.Select(name => (Expander)window.FindName(name)).ToArray();
             Require(sections.All(section => !section.IsExpanded)
                 && ((TextBlock)window.FindName("BoostSummary")).Text == "Manual only"
-                && ((TextBlock)window.FindName("PrivacySummary")).Text == "0 of 3 turned on"
-                && ((TextBlock)window.FindName("ImpactSummary")).Text.StartsWith("0 of 2 turned on"),
+                && ((TextBlock)window.FindName("PrivacySummary")).Text == "0 of 16 turned on"
+                && ((TextBlock)window.FindName("ImpactSummary")).Text.StartsWith("0 of 4 turned on"),
                 "Settings opens as three collapsed summary cards that state each section's current state");
             Capture(root, "settings-summary-dark");
             foreach (var section in sections) section.IsExpanded = true;
@@ -166,7 +177,7 @@ internal static class WindowsSettingsChecks
             int before = store.Writes;
             Toggle("diagnostics", true); Toggle("tailored", true);
             Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 changes", "Actual checkbox bindings stage choices without writing");
-            Require(((TextBlock)window.FindName("PrivacySummary")).Text == "2 of 3 turned on · 2 waiting for review", "A section summary shows staged choices before anything is applied");
+            Require(((TextBlock)window.FindName("PrivacySummary")).Text == "2 of 16 turned on · 2 waiting for review", "A section summary shows staged choices before anything is applied");
             Click("ApplyWindowsSettingsButton"); Wait(350);
             Require(overlay.Visibility == Visibility.Visible && !((UIElement)window.FindName("AppSurface")).IsEnabled
                 && ((BlurEffect)((UIElement)window.FindName("AppSurface")).Effect).Radius == 7 && store.Writes == before

@@ -1,5 +1,5 @@
 # Shows (and with -Apply removes) the rebuildable clutter in the Hush folder, so there is only one place to look for the app:
-#   artifacts\          <- the real files (Hush.exe, Hush-Setup.exe, the zip). Never touched here.
+#   artifacts\          <- the real files (Hush-Portable.exe, Hush-Setup.exe and their zips). Never touched here.
 # Removed with -Apply: every bin\ and obj\ folder under src\ and tests\ (dozens of extra Hush.exe copies from test builds), leftover
 # test fixtures and preview pictures. Never touched: artifacts\, Backups\, docs\, source, .build-home (NuGet cache) and other projects.
 # A build folder that has a running program in it is skipped, so nothing you have open is ever pulled out from under you.

@@ -78,17 +78,26 @@ internal sealed class CleanupEngine
             new(Path.Combine(local, "Microsoft", "Windows", "WER", "ReportQueue"), "Windows diagnostics", CleanupKind.Junk, Days(30), "*.wer;" + dumps, Category: "Junk"),
             new(Path.Combine(common, "Microsoft", "Windows", "WER", "ReportArchive"), "Windows diagnostics", CleanupKind.Junk, Days(30), "*.wer;" + dumps, Category: "Junk", DeletableOnly: true),
             new(Path.Combine(common, "Microsoft", "Windows", "WER", "ReportQueue"), "Windows diagnostics", CleanupKind.Junk, Days(30), "*.wer;" + dumps, Category: "Junk", DeletableOnly: true),
+            // Scratch space Windows Error Reporting uses while it packages a report.
+            new(Path.Combine(local, "Microsoft", "Windows", "WER", "Temp"), "Windows diagnostics", CleanupKind.Temp, Days(7), Category: "Junk"),
+            new(Path.Combine(common, "Microsoft", "Windows", "WER", "Temp"), "Windows diagnostics", CleanupKind.Temp, Days(7), Category: "Junk", DeletableOnly: true),
             // Windows Update downloads, update logs, Delivery Optimization and setup logs (Review, opt-in, usually need administrator rights).
             new(Path.Combine(windows, "SoftwareDistribution", "Download"), "Windows Update downloads", CleanupKind.Temp, Days(14), Category: "Update", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "WindowsUpdate"), "Windows Update logs", CleanupKind.Temp, Days(14), "*.etl", Category: "Update", DeletableOnly: true),
             new(Path.Combine(windows, "ServiceProfiles", "NetworkService", "AppData", "Local", "Microsoft", "Windows", "DeliveryOptimization", "Cache"),
                 "Delivery Optimization cache", CleanupKind.Cache, Days(7), Category: "Delivery", DeletableOnly: true),
             new(Path.Combine(windows, "SoftwareDistribution", "DeliveryOptimization"), "Delivery Optimization cache", CleanupKind.Cache, Days(7), Category: "Delivery", DeletableOnly: true),
+            new(Path.Combine(common, "USOShared", "Logs"), "Update Orchestrator logs", CleanupKind.Temp, Days(14), "*.etl;*.log", Category: "Update", DeletableOnly: true),
             new(Path.Combine(windows, "Panther"), "Windows setup logs", CleanupKind.Temp, Days(30), "*.log;*.etl", Category: "Setup", DeletableOnly: true),
             // Windows servicing and DISM logs (Review, opt-in, protected). The Event Log, security logs and boot logs are never listed.
             new(Path.Combine(windows, "Logs", "CBS"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log;*.cab", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "DISM"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log", Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "MoSetup"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log;*.etl", Category: "SystemLogs", DeletableOnly: true),
+            new(Path.Combine(windows, "Logs", "waasmedic"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.etl;*.log", Category: "SystemLogs", DeletableOnly: true),
+            new(Path.Combine(windows, "Logs", "NetSetup"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log;*.etl", Category: "SystemLogs", DeletableOnly: true),
+            new(Path.Combine(windows, "Logs", "DPX"), "Windows servicing logs", CleanupKind.Temp, Days(30), "*.log", Category: "SystemLogs", DeletableOnly: true),
+            // Driver-install history (setupapi.dev.log and friends) is only useful for troubleshooting a driver install.
+            new(Path.Combine(windows, "INF"), "Windows driver-install logs", CleanupKind.Temp, Days(30), "setupapi*.log", Recursive: false, Category: "SystemLogs", DeletableOnly: true),
             new(Path.Combine(windows, "Debug"), "Windows debug logs", CleanupKind.Temp, Days(30), "*.log", Recursive: false, Category: "SystemLogs", DeletableOnly: true),
             // Microsoft Defender: only its own diagnostic support logs. Never Scans, Quarantine, History, Definition Updates or Platform.
             new(Path.Combine(common, "Microsoft", "Windows Defender", "Support"), "Defender diagnostic logs", CleanupKind.Temp, Days(7),
@@ -141,7 +150,7 @@ internal sealed class CleanupEngine
         // Shader caches are rebuilt by the graphics driver on demand.
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, local, ["D3DSCache"]);
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft"), ["DirectX Shader Cache"]);
-        AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA"), ["DXCache", "GLCache", "ComputeCache"]);
+        AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA"), ["DXCache", "GLCache", "ComputeCache", "OptixCache"]);
         AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(local, "NVIDIA Corporation"), ["NV_Cache"]);
         AddFolders("NvidiaShader", "NVIDIA shader cache", CleanupKind.Cache, 7, Path.Combine(common, "NVIDIA Corporation"), ["NV_Cache"], deletableOnly: true);
         AddFolders("GpuShader", "AMD shader cache", CleanupKind.Cache, 7, Path.Combine(local, "AMD"), ["DxCache", "DxcCache", "GLCache", "VkCache"]);
@@ -165,6 +174,8 @@ internal sealed class CleanupEngine
             string userData = Path.Combine(local, browser.Item1);
             if (!Directory.Exists(userData) || !SafePath(userData, userData)) continue;
             AddFolders(browser.Item4, browser.Item2 + " cache", CleanupKind.Cache, 7, userData, ["GrShaderCache", "ShaderCache", "DawnCache", "GraphiteDawnCache"], [browser.Item3]);
+            // Component and extension installer downloads that the browser fetches again when it needs them.
+            AddFolders(browser.Item4, browser.Item2 + " cache", CleanupKind.Cache, 14, userData, ["component_crx_cache", "extensions_crx_cache"], [browser.Item3]);
             // Crash reports and usage-metrics files (the "log files" of a Chromium browser).
             AddFolders("BrowserLogs", browser.Item2 + " crash reports", CleanupKind.Temp, 14, Path.Combine(userData, "Crashpad"), ["reports"], [browser.Item3], "*.dmp;*.meta");
             AddFolders("BrowserLogs", browser.Item2 + " usage metrics", CleanupKind.Temp, 14, userData, ["BrowserMetrics"], [browser.Item3], "*.pma");
@@ -189,6 +200,8 @@ internal sealed class CleanupEngine
         foreach (var profile in Folders(Path.Combine(roaming, "Mozilla", "Firefox", "Profiles")))
             if (Directory.Exists(profile))
                 list.Add(new(profile, "Firefox cookies", CleanupKind.Junk, TimeSpan.Zero, "cookies.sqlite;cookies.sqlite-wal;cookies.sqlite-shm", ["firefox"], false, "BrowserCookies"));
+        // Firefox crash reports (the dump and its description) in the roaming profile, only while Firefox is closed.
+        AddFolders("BrowserLogs", "Firefox crash reports", CleanupKind.Temp, 14, Path.Combine(roaming, "Mozilla", "Firefox"), ["Crash Reports"], ["firefox"], "*.dmp;*.extra;*.txt");
         // NVIDIA app: driver installers it downloaded (the installed driver is not affected).
         AddFolders("NvidiaApp", "NVIDIA installer downloads", CleanupKind.Cache, 30, Path.Combine(common, "NVIDIA Corporation"), ["Downloader"], deletableOnly: true);
         AddFolders("NvidiaApp", "NVIDIA driver logs", CleanupKind.Temp, 14, Path.Combine(common, "NVIDIA Corporation"), ["umdlogs"], pattern: "*.log;*.txt", deletableOnly: true, recursive: false);
@@ -203,11 +216,18 @@ internal sealed class CleanupEngine
         AddFolders("Cache", "Steam web cache", CleanupKind.Cache, 7, Path.Combine(local, "Steam"), ["htmlcache"], ["steam", "steamwebhelper"]);
         foreach (var web in Folders(Path.Combine(local, "EpicGamesLauncher", "Saved"), "webcache*"))
             list.Add(new(web, "Epic Games Launcher web cache", CleanupKind.Cache, Days(7), null, ["EpicGamesLauncher", "EpicWebHelper"], true, "Cache"));
+        // Logs and caches of other common programs (all rebuilt or rewritten by the program itself).
+        AddFolders("Cache", "Zoom logs", CleanupKind.Temp, 14, Path.Combine(roaming, "Zoom"), ["logs"], ["zoom"], "*.log;*.txt");
+        AddFolders("Cache", "Epic Games Launcher logs", CleanupKind.Temp, 14, Path.Combine(local, "EpicGamesLauncher", "Saved"), ["Logs"], ["EpicGamesLauncher"], "*.log");
+        AddFolders("Cache", "Windows Package Manager logs", CleanupKind.Temp, 14, Path.Combine(local, "Packages", "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe", "LocalState"), ["DiagOutputDir"], pattern: "*.log");
+        AddFolders("Cache", "Java download cache", CleanupKind.Cache, 30, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Sun", "Java", "Deployment"), ["cache"], ["java", "javaw"]);
         // Developer and creator caches: rebuildable, but re-downloading or re-indexing costs time, so they are Review (opt-in).
         AddFolders("DevCache", "NuGet cache", CleanupKind.Cache, 14, Path.Combine(local, "NuGet"), ["v3-cache", "plugins-cache", "Cache"]);
         AddFolders("DevCache", "npm cache", CleanupKind.Cache, 14, local, ["npm-cache"]);
         AddFolders("DevCache", "pip cache", CleanupKind.Cache, 14, Path.Combine(local, "pip"), ["Cache"]);
         AddFolders("DevCache", "Yarn cache", CleanupKind.Cache, 14, Path.Combine(local, "Yarn"), ["Cache"]);
+        AddFolders("DevCache", "Composer cache", CleanupKind.Cache, 14, Path.Combine(local, "Composer"), ["cache"]);
+        AddFolders("DevCache", "Poetry cache", CleanupKind.Cache, 14, Path.Combine(local, "pypoetry"), ["Cache"]);
         AddFolders("DevCache", "Go build cache", CleanupKind.Cache, 14, local, ["go-build"]);
         foreach (var ide in Folders(Path.Combine(local, "JetBrains")))
             AddFolders("DevCache", "JetBrains caches", CleanupKind.Cache, 14, ide, ["caches"]);

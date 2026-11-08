@@ -771,7 +771,8 @@ public partial class MainWindow : Window
             : ["#11151B", "#1B212B", "#252C38", "#2C3442", "#C6CFDC", "#9BA8BA", "#8794A8", "#D8DFE9"];
         for (int i = 0; i < keys.Length; i++) Set(keys[i], colors[i]);
         Set("ModalShadeBrush", light ? "#65E4EAF0" : "#750C1016");
-        Set("SafetyGreenBrush", SafetyPalette.Text(SafetyLevel.Safe, light));
+        Set("SafetyGreenBrush", SafetyPalette.Accent(light));
+        Set("GoodBrush", SafetyPalette.Good(light));
         Set("CleanTextBrush", SafetyPalette.Danger(light));
         Set("CleanFillBrush", "#08FF795C");
         foreach (var category in Categories) category.SetTheme(light);
@@ -845,11 +846,11 @@ public partial class MainWindow : Window
     }
 
     // A new version is announced in the main accent color (and semibold) so it cannot be missed; every other message is plain text.
-    private void SetUpdateStatus(string text, bool notice = false)
+    private void SetUpdateStatus(string text, bool notice = false, bool good = false)
     {
         UpdateStatus.Text = text;
-        UpdateStatus.SetResourceReference(TextBlock.ForegroundProperty, notice ? "TealTextBrush" : "TextBrush");
-        UpdateStatus.FontWeight = notice ? FontWeights.SemiBold : FontWeights.Medium;
+        UpdateStatus.SetResourceReference(TextBlock.ForegroundProperty, good ? "GoodBrush" : notice ? "TealTextBrush" : "TextBrush");
+        UpdateStatus.FontWeight = notice || good ? FontWeights.SemiBold : FontWeights.Medium;
     }
 
     private bool IsCurrentAbout(int session) => session == aboutSession && AboutOverlay.Visibility == Visibility.Visible;
@@ -920,7 +921,7 @@ public partial class MainWindow : Window
                 }
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 availableRelease = release;
-                if (release == null) SetUpdateStatus($"You're up to date. Installed version {UpdateService.DisplayVersion}.");
+                if (release == null) SetUpdateStatus($"You're up to date. Installed version {UpdateService.DisplayVersion}.", good: true);
                 else
                 {
                     SetUpdateStatus($"Version {UpdateService.Display(release.Version)} is available.", notice: true);

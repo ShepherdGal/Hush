@@ -13,7 +13,7 @@ To inspect the controlled failure manually after a build:
 # Expected: detailed FAIL output and exit code 1, with no crash dialog.
 ```
 
-`Hush.Tests.exe` is a developer test runner. The user application is `artifacts/Hush/Hush.exe`; the portable ZIP contains only the app and its README.
+`Hush.Tests.exe` is a developer test runner. The user application is `artifacts/Hush-Portable.exe`; the portable ZIP contains the app, the terms and the license.
 
 `Hush.Tests.exe --benchmark` is a synthetic-only performance run (20,000 files, 420 directories, a unique `.fixtures-*` folder that is removed afterwards). It prints scan time (best of 3), allocations, clean time and memory. Use it to compare engine changes before and after; it is not part of `scripts/Verify.ps1` because timings vary by machine.
 

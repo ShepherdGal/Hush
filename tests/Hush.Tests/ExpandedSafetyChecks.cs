@@ -56,7 +56,7 @@ internal static class ExpandedSafetyChecks
             var result = linkEngine.Clean([item], null, CancellationToken.None);
             check(result.Skipped == 1 && File.Exists(shortcutPath), "Changed shortcut contents are rejected even if length and timestamps match");
         }
-        string json = JsonSerializer.Serialize(new { draft = false, prerelease = false, tag_name = "v9.0.0", body = "Synthetic patch notes", assets = new[] { new { name = "Hush.exe", size = 10, digest = "sha256:" + new string('0', 64), url = $"https://api.github.com/repos/{UpdateService.Repository}/releases/assets/1" } } });
+        string json = JsonSerializer.Serialize(new { draft = false, prerelease = false, tag_name = "v9.0.0", body = "Synthetic patch notes", assets = new[] { new { name = UpdateService.AssetName, size = 10, digest = "sha256:" + new string('0', 64), url = $"https://api.github.com/repos/{UpdateService.Repository}/releases/assets/1" } } });
         using var document = JsonDocument.Parse(json);
         var release = UpdateService.ParseRelease(document.RootElement, new Version(1, 0, 0))!;
         check(release.Version == new Version(9, 0, 0) && release.Notes == "Synthetic patch notes", "Updater parses patch notes and newer release metadata");

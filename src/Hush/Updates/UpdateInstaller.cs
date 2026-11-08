@@ -13,24 +13,33 @@ internal static class UpdateInstaller
     internal static string StagingRoot => UpdateRoot;
     // The one rollback copy kept next to Hush.exe. Each update replaces it, so old versions never pile up (they used to be one 25 MB file per update).
     internal const string RollbackName = "Hush.previous.exe";
+    // The installed copy is Hush.exe; the downloaded portable app is Hush-Portable.exe. The updated file keeps whichever name it has.
+    internal static bool IsUpdatableName(string name) => name.Equals("Hush.exe", StringComparison.OrdinalIgnoreCase) || name.Equals(UpdateService.PackagedExecutable, StringComparison.OrdinalIgnoreCase);
+    // Only the published single-file exe may replace itself. A development build (apphost + Hush.dll beside it, or a test host) must not.
+    // In a single-file app the managed code lives inside the exe, so Hush.dll is not next to it. (Assembly.Location is the wrong tool here:
+    // it returns "" for bundled assemblies and the compiler rightly warns about it, IL3000.)
+    internal static bool IsPublishedSingleFile => !File.Exists(Path.Combine(AppContext.BaseDirectory, "Hush.dll"));
     internal static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
     internal static void Start(string staged, AppRelease release)
     {
         if (release.Version <= UpdateService.CurrentVersion) throw new IOException("The update must be newer than the installed version.");
         string current = Environment.ProcessPath ?? throw new IOException("Application path is unavailable.");
         string parent = Path.GetDirectoryName(current)!;
-        if (!Path.GetFileName(current).Equals("Hush.exe", StringComparison.OrdinalIgnoreCase)
-            || !CleanupEngine.SafePath(current, parent) || typeof(App).Assembly.Location.Length != 0)
-            throw new IOException("Updates install from the published portable app. Open its Hush.exe in a writable folder.");
+        if (!IsUpdatableName(Path.GetFileName(current))
+            || !CleanupEngine.SafePath(current, parent) || !IsPublishedSingleFile)
+            throw new IOException("Updates install from the published portable app. Open Hush-Portable.exe (or the installed Hush.exe) from a writable folder.");
         string directory = Path.GetDirectoryName(staged)!;
         if (!directory.StartsWith(UpdateRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !CleanupEngine.SafePath(staged, directory))
             throw new IOException("Invalid update staging location.");
         UpdateService.VerifyExecutable(staged, release.Version);
-        if (!Hash(staged).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase)) throw new IOException("The staged update changed.");
+        // The download was verified against the release's package hash; the extracted app's own hash was recorded beside it.
+        string stagedHash = Hash(staged);
+        string recorded = Path.Combine(directory, UpdateService.StagedHashName);
+        if (!File.Exists(recorded) || !File.ReadAllText(recorded).Trim().Equals(stagedHash, StringComparison.OrdinalIgnoreCase)) throw new IOException("The staged update changed.");
         string probe = Path.Combine(parent, ".hush-write-" + Guid.NewGuid().ToString("N"));
         using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
         using var process = Process.GetCurrentProcess();
-        var plan = new UpdatePlan(current, staged, release.Sha256, Hash(current), release.Version.ToString(), process.Id, process.StartTime.ToUniversalTime().Ticks);
+        var plan = new UpdatePlan(current, staged, stagedHash, Hash(current), release.Version.ToString(), process.Id, process.StartTime.ToUniversalTime().Ticks);
         string planPath = Path.Combine(directory, "install.json");
         File.WriteAllText(planPath, JsonSerializer.Serialize(plan));
         string helper = Path.Combine(directory, "Hush.Updater.exe");
@@ -49,7 +58,7 @@ internal static class UpdateInstaller
             var plan = JsonSerializer.Deserialize<UpdatePlan>(await File.ReadAllTextAsync(planPath)) ?? throw new IOException("Invalid update plan.");
             string parent = Path.GetDirectoryName(plan.Target)!;
             if (plan.Staged != Path.Combine(directory, "Hush.exe") || !CleanupEngine.SafePath(plan.Staged, directory)
-                || !Path.GetFileName(plan.Target).Equals("Hush.exe", StringComparison.OrdinalIgnoreCase)
+                || !IsUpdatableName(Path.GetFileName(plan.Target))
                 || !CleanupEngine.SafePath(plan.Target, parent)) throw new IOException("Unsafe update paths.");
             var nextVersion = Version.Parse(plan.Version);
             if (nextVersion <= UpdateService.CurrentVersion) throw new IOException("Refusing an older or identical update.");

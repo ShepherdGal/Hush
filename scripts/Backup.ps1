@@ -11,7 +11,7 @@ foreach ($targetPath in @($sourcePath,$portablePath,$inventoryPath)) {
     if (-not ([System.IO.Path]::GetFullPath($targetPath)).StartsWith($backupDirectory + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Backup path escaped its directory.' }
     if (Test-Path -LiteralPath $targetPath) { throw "Refusing to overwrite an existing snapshot: $targetPath" }
 }
-$portable = Join-Path $workspace 'artifacts\Hush-windows-x64.zip'
+$portable = Join-Path $workspace 'artifacts\Hush-Portable.zip'
 if (-not (Test-Path -LiteralPath $portable)) { throw 'Build the portable app before taking a final snapshot.' }
 # Source only: the repository's own folders, never build output (bin/obj), backups, artifacts or caches.
 $buildFolders = '\bin\', '\obj\'

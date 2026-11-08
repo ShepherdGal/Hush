@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -19,6 +20,11 @@ internal interface IUpdateClient : IDisposable
 internal sealed class UpdateService : IUpdateClient
 {
     internal const string Repository = "ShepherdGal/Hush";
+    // GitHub does not accept .exe uploads, so releases carry zips. Updates read the portable zip, which holds Hush-Portable.exe.
+    internal const string AssetName = "Hush-Portable.zip";
+    internal const string PackagedExecutable = "Hush-Portable.exe";
+    internal const string StagedHashName = "Hush.exe.sha256";
+    private const long MaxBytes = 268435456;
     internal static Version CurrentVersion => typeof(UpdateService).Assembly.GetName().Version is { } version ? new(version.Major, version.Minor, version.Build) : new(0, 7, 0);
     /// <summary>Short user-facing form: 0.7 rather than 0.7.0.</summary>
     internal static string Display(Version version) => version.Build > 0 ? version.ToString(3) : version.ToString(2);
@@ -58,11 +64,11 @@ internal sealed class UpdateService : IUpdateClient
         string tag = data.GetProperty("tag_name").GetString() ?? "";
         if (!Version.TryParse(tag.TrimStart('v', 'V'), out var version)) throw new InvalidDataException("Release version is invalid.");
         if (version <= current) return null;
-        var asset = data.GetProperty("assets").EnumerateArray().SingleOrDefault(item => item.GetProperty("name").GetString() == "Hush.exe");
-        if (asset.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("This release has no Windows portable application.");
+        var asset = data.GetProperty("assets").EnumerateArray().SingleOrDefault(item => item.GetProperty("name").GetString() == AssetName);
+        if (asset.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("This release has no Windows portable package.");
         long size = asset.GetProperty("size").GetInt64();
         string digest = asset.GetProperty("digest").GetString() ?? "";
-        if (size is <= 0 or > 268435456 || !digest.StartsWith("sha256:", StringComparison.Ordinal) || digest.Length != 71
+        if (size is <= 0 or > MaxBytes || !digest.StartsWith("sha256:", StringComparison.Ordinal) || digest.Length != 71
             || !digest[7..].All(Uri.IsHexDigit)) throw new InvalidDataException("Release integrity information is missing or invalid.");
         var uri = new Uri(asset.GetProperty("url").GetString() ?? "");
         ValidateSource(uri);
@@ -72,17 +78,18 @@ internal sealed class UpdateService : IUpdateClient
     public async Task<string> DownloadAsync(AppRelease release, IProgress<double>? progress, CancellationToken cancellation, string? stagingRoot = null)
     {
         ValidateSource(release.AssetUri);
-        if (release.Bytes is <= 0 or > 268435456 || release.Sha256.Length != 64 || !release.Sha256.All(Uri.IsHexDigit))
+        if (release.Bytes is <= 0 or > MaxBytes || release.Sha256.Length != 64 || !release.Sha256.All(Uri.IsHexDigit))
             throw new InvalidDataException("Release integrity information is missing or invalid.");
         string directory = Path.Combine(stagingRoot ?? Path.Combine(CleanupEngine.DataDirectory, "Updates"), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         if (!CleanupEngine.SafePath(directory, directory)) throw new IOException("Update staging location is unsafe.");
         string staged = Path.Combine(directory, "Hush.exe");
+        string package = Path.Combine(directory, AssetName);
         try
         {
             using var response = await SendAsync(release.AssetUri, true, cancellation);
             response.EnsureSuccessStatusCode();
-            using (var output = new FileStream(staged, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var output = new FileStream(package, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             using (var input = await response.Content.ReadAsStreamAsync(cancellation))
             using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
@@ -98,15 +105,39 @@ internal sealed class UpdateService : IUpdateClient
                     throw new InvalidDataException("Download verification failed; the current app was left unchanged.");
                 output.Flush(true);
             }
+            // The package hash is verified; now take out exactly one file, by its exact name, with a size cap, never extracting paths.
+            using (var archive = ZipFile.OpenRead(package))
+            {
+                var entry = archive.Entries.SingleOrDefault(item => item.FullName == PackagedExecutable)
+                    ?? throw new InvalidDataException("The update package does not contain Hush.");
+                if (entry.Length is <= 0 or > MaxBytes) throw new InvalidDataException("The update package has an unexpected size.");
+                using var from = entry.Open();
+                using var to = new FileStream(staged, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                byte[] buffer = new byte[65536]; long written = 0; int count;
+                while ((count = await from.ReadAsync(buffer, cancellation)) > 0)
+                {
+                    written += count;
+                    if (written > entry.Length) throw new InvalidDataException("The update package is inconsistent.");
+                    await to.WriteAsync(buffer.AsMemory(0, count), cancellation);
+                }
+                if (written != entry.Length) throw new InvalidDataException("The update package is inconsistent.");
+                to.Flush(true);
+            }
             VerifyExecutable(staged, release.Version);
+            // Remember the verified hash of the extracted app so the installer can confirm nothing changed it before the swap.
+            File.WriteAllText(Path.Combine(directory, StagedHashName), UpdateInstaller.Hash(staged));
+            File.Delete(package);
             return staged;
         }
         catch
         {
-            // Only this request's freshly created staging file can be removed.
-            try { if (CleanupEngine.SafePath(staged, directory)) File.Delete(staged); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            // Only this request's freshly created staging files can be removed.
+            foreach (string leftover in new[] { staged, package })
+            {
+                try { if (CleanupEngine.SafePath(leftover, directory)) File.Delete(leftover); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
             throw;
         }
     }

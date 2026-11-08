@@ -4,7 +4,7 @@ Updated November 7, 2026 (Asia/Jerusalem).
 
 ## Version 0.8.1 (November 8, 2026)
 
-Simpler Info card, Boost animation, single-bar update search, version 0.8.1, LICENSE and icon as release files. README untouched on purpose. `scripts/Verify.ps1` passes. The owner publishes (commit, push, tag v0.8.1, release with the files in `artifacts\`).
+Simpler Info card, Boost animation, single-bar update search, version 0.8.1, LICENSE and icon as release files. Since then (still 0.8.1): calm green for Safe/good (`SafetyPalette.Good`, `GoodBrush`) and a golden Light amber; zip-only release assets because GitHub refuses .exe uploads (`Hush-Portable.zip` and `Hush-Setup.zip`; the updater unpacks `Hush-Portable.exe` from the zip); zero build warnings (IL3000 fixed at the root); more safe cleanup locations; fifteen new Windows privacy choices (Office telemetry, Windows telemetry, advertising ID, Delivery Optimization, background apps and more, see docs/WINDOWS-SETTINGS.md). `scripts/Verify.ps1` passes. The remote README was rewritten by the owner on GitHub and is kept, with the Download table, terms and license lines restored (tests require them). Versions up to 0.8.1-before-zips look for a `Hush.exe` release asset, so 0.8 installs update with one manual download.
 
 ## MIT license and popup button order (November 8, 2026)
 

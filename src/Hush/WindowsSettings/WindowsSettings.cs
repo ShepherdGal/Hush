@@ -55,7 +55,58 @@ internal sealed class WindowsSettingsService
             @"Software\Policies\Microsoft\Windows\LocationAndSensors", "DisableLocation", 1, Advanced: true),
         new WindowsAdjustment("widgets", "Turn off Windows Widgets",
             "Disables the Widgets board and its taskbar content for every user. Does not uninstall Widgets. Requires running Hush as administrator.",
-            @"SOFTWARE\Policies\Microsoft\Dsh", "AllowNewsAndInterests", 0, Advanced: true, Machine: true)
+            @"SOFTWARE\Policies\Microsoft\Dsh", "AllowNewsAndInterests", 0, Advanced: true, Machine: true),
+
+        // ----- Microsoft Office (this user). Office reads these policy values for Office 2016, 2019, 2021 and Microsoft 365 apps. -----
+        new WindowsAdjustment("office-telemetry", "Stop Office from sending diagnostic data",
+            "Sets Office's diagnostic data level to \"Neither\", so Word, Excel, Outlook and the other Office apps send no client diagnostic data. Office keeps working; Microsoft sees less when something breaks.",
+            @"Software\Policies\Microsoft\office\common\clienttelemetry", "sendtelemetry", 3),
+        new WindowsAdjustment("office-personal", "Stop Office from sending personal information",
+            "Turns off Office's \"Send personal information\" policy, so Office does not send your name, user names or file names to Microsoft with feedback and diagnostics.",
+            @"Software\Policies\Microsoft\office\16.0\common", "sendcustomerdata", 0),
+        new WindowsAdjustment("office-ceip", "Opt out of the Office Customer Experience Improvement Program",
+            "Turns off Office's Customer Experience Improvement Program, which reports how you use Office features. Nothing else in Office changes.",
+            @"Software\Policies\Microsoft\office\16.0\common", "qmenable", 0),
+
+        // ----- Windows privacy and telemetry (this user) -----
+        new WindowsAdjustment("search-web", "Keep web suggestions out of Start search",
+            "Searching in Start stays on this PC: no Bing web suggestions or web results are mixed in. Local apps, files and settings are still found.",
+            @"Software\Policies\Microsoft\Windows\Explorer", "DisableSearchBoxSuggestions", 1),
+        new WindowsAdjustment("typing", "Stop collecting typing and inking samples",
+            "Stops Windows learning from what you type to build a personal dictionary and suggestions. Spell-check and text suggestions keep working with the standard dictionary.",
+            @"Software\Policies\Microsoft\InputPersonalization", "RestrictImplicitTextCollection", 1),
+
+        // ----- Windows privacy and telemetry (every user; run Hush as administrator) -----
+        new WindowsAdjustment("telemetry", "Limit Windows telemetry to required data",
+            "Sets Windows telemetry (the Connected User Experiences and Telemetry service, DiagTrack) to the Required level for every user. Required data still goes to Microsoft; the service stays installed, and Windows Update keeps working. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 1, Machine: true),
+        new WindowsAdjustment("feedback", "Stop Windows feedback prompts",
+            "Windows no longer asks you to rate features or give feedback. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "DoNotShowFeedbackNotifications", 1, Machine: true),
+        new WindowsAdjustment("advertising-id", "Turn off the advertising ID",
+            "Apps can no longer use a per-user advertising ID to show interest-based ads. You still see ads, just less targeted. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo", "DisabledByGroupPolicy", 1, Machine: true),
+        new WindowsAdjustment("windows-ceip", "Opt out of the Windows Customer Experience Improvement Program",
+            "Stops Windows reporting how its features are used (the Windows CEIP). Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\SQMClient\Windows", "CEIPEnable", 0, Machine: true),
+        new WindowsAdjustment("inventory", "Stop the application inventory collector",
+            "Windows no longer scans which programs and drivers are installed to send compatibility data to Microsoft. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\AppCompat", "DisableInventory", 1, Machine: true),
+        new WindowsAdjustment("activity", "Turn off activity history",
+            "Windows stops recording the apps, files and sites you used in order to sync a timeline across your devices. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\System", "EnableActivityFeed", 0, Machine: true),
+        new WindowsAdjustment("delivery", "Stop sharing Windows updates with other PCs",
+            "Delivery Optimization downloads updates only from Microsoft, and your PC never uploads them to other PCs, saving upload bandwidth. Updates still install normally. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization", "DODownloadMode", 0, Machine: true),
+        new WindowsAdjustment("maps", "Stop automatic offline-maps downloads",
+            "Windows no longer downloads or updates offline map data in the background. Maps you chose to download stay, but will not be refreshed. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\Maps", "AutoDownloadAndUpdateMapData", 0, Machine: true),
+        new WindowsAdjustment("error-reporting", "Turn off Windows Error Reporting",
+            "Windows no longer packages and sends crash reports to Microsoft. Programs still crash and recover the same way; you just lose the \"look for a solution\" step. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting", "Disabled", 1, Advanced: true, Machine: true),
+        new WindowsAdjustment("background-apps", "Stop Store apps running in the background",
+            "Microsoft Store apps no longer refresh, sync or fetch data while you are not using them, which saves bandwidth and battery. Mail, calendar and chat apps may stop notifying you until you open them. Desktop programs are not affected. Requires running Hush as administrator.",
+            @"SOFTWARE\Policies\Microsoft\Windows\AppPrivacy", "LetAppsRunInBackground", 2, Advanced: true, Machine: true)
     });
 
     internal const string NotConfigured = "Not configured by Hush";

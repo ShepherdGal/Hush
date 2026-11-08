@@ -115,12 +115,14 @@ public static class SafetyPalette
     // The literals below and in App.xaml are the only red-family colors allowed in the source; a test scans for any other.
     public static string Danger(bool light) => light ? "#B54428" : "#FF795C";
     // Review is orange and Advanced is the Clean button's red, so the three risk levels read apart at a glance.
-    public static string Color(SafetyLevel level) => level switch { SafetyLevel.Safe => Accent(false), SafetyLevel.Review => "#FFA24D", _ => Danger(false) };
-    // Safe uses the theme's primary accent; Review and Advanced darken in Light.
+    public static string Color(SafetyLevel level) => level switch { SafetyLevel.Safe => Good(false), SafetyLevel.Review => "#FFA24D", _ => Danger(false) };
+    // The calm green: Safe items on the Review page and positive status ("You're up to date"). Green, amber, red read as one traffic-light set.
+    public static string Good(bool light) => light ? "#2E8B57" : "#5CC98F";
+    // Safe is the calm green, Review is amber (a golden amber in Light so it stays clearly apart from the red), Advanced is the Clean red.
     public static string Text(SafetyLevel level, bool light) => level switch
     {
-        SafetyLevel.Safe => Accent(light),
-        SafetyLevel.Review => light ? "#B35F0C" : "#FFA24D",
+        SafetyLevel.Safe => Good(light),
+        SafetyLevel.Review => light ? "#E8A02E" : "#FFA24D",
         _ => Danger(light)
     };
     public static string Label(SafetyLevel level) => level switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review recommended", _ => "Advanced · explicit consent" };
