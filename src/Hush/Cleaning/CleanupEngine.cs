@@ -323,6 +323,7 @@ internal sealed class CleanupEngine
             double end = (double)(targetIndex + 1) / stages;
             progress?.Report(new(target.Group, examined, found.Count, bytes, start));
             var run = new TargetRun();
+            var locationClock = Stopwatch.StartNew();
             int baseExamined = examined, baseFound = found.Count;
             long baseBytes = bytes;
             var skipSet = skipRoots[targetIndex];
@@ -358,6 +359,9 @@ internal sealed class CleanupEngine
                 if (run.Busy) busy++;
             }
             if (!token.IsCancellationRequested) progress?.Report(new(target.Group, examined, found.Count, bytes, end));
+            // A location that finished but took long is noted, so "why did it sit at one percentage?" can be answered from the log.
+            if (!skipped && locationClock.ElapsedMilliseconds >= options.SlowNoteMilliseconds)
+                LogScanIssue($"Slow location: {target.Group} ({target.Root}) took {locationClock.Elapsed.TotalSeconds:0.#} s and looked at {run.Examined:N0} entries ({run.Files:N0} listed)");
         }
         int nextStage = active.Count;
         // The three extra steps ask Windows itself (registry, shell, Disk Cleanup). Each is guarded so a stuck answer cannot hold the scan forever.

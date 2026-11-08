@@ -124,10 +124,12 @@ internal static class ButtonVisualChecks
                 var clean = buttons[1, 1]; var halo = (DropShadowEffect)((Border)clean.Template.FindName("GlowHalo", clean)).Effect;
                 Wait(420);
                 double hoverGlow = halo.Opacity;
-                Require(Fill(clean).Color.A <= 16 && halo.ShadowDepth == 0 && halo.BlurRadius == 18
-                    && clean.BorderThickness.Left == 1, "Clean preserves its thin outline and outer-only light without washing the interior, and hover widens that light");
+                Require(Fill(clean).Color.A >= 0x48 && halo.ShadowDepth == 0 && halo.BlurRadius == 26 && hoverGlow > 0.4
+                    && clean.BorderThickness.Left == 1, "Clean keeps its thin outline; on hover its own-color fill fills in strongly and the outer light widens and intensifies");
                 Hover(clean, false); Wait(420);
-                Require(halo.BlurRadius == 12 && halo.Opacity < hoverGlow - 0.05, "Clean's own-color glow visibly lifts on hover and settles back when the pointer leaves");
+                Require(halo.BlurRadius == 12 && halo.Opacity < hoverGlow - 0.2 && Fill(clean).Color.A <= 16, "Clean's fill and glow lift strongly on hover and settle back when the pointer leaves");
+                clean.Focus(); Wait(420);
+                if (clean.IsKeyboardFocusWithin) Require(Fill(clean).Color.A <= 16 && halo.BlurRadius == 12 && halo.Opacity < hoverGlow - 0.2, "Keyboard focus alone (the app focuses Clean after a scan) does not look like a mouse hover");
                 Hover(clean, true); Wait(420);
                 Require(buttons[3, 0].Opacity < 0.5 && Fill(buttons[3, 0]).Color == ((SolidColorBrush)Application.Current.Resources["RaisedBrush"]).Color,
                     "Disabled actions settle quietly without active fill feedback");

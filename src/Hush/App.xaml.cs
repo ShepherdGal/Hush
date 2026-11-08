@@ -49,6 +49,9 @@ public partial class App : Application
         var window = new MainWindow();
         if (e.Args.Length == 2 && e.Args[0] == "--update-complete")
             window.Loaded += (_, _) => { try { UpdateInstaller.ConfirmStartup(e.Args[1]); } catch { } };
+        // Hush restarts itself as administrator for device-wide Windows choices; it then reopens the same review (the person confirms again).
+        if (e.Args.Length >= 1 && e.Args[0] is "--windows-review" or "--windows-undo")
+            window.Loaded += (_, _) => window.ResumeWindowsReview(e.Args);
         MainWindow = window;
         window.Show();
     }

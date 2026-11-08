@@ -22,14 +22,29 @@ internal static class WindowsSettingsChecks
         Require(environment.Build > 0 && environment.Edition.Length > 0 && environment.Owner != "unknown", "Native Windows environment can be read safely");
         foreach (var setting in WindowsSettingsService.Catalog) { _ = native.Read(setting); _ = native.Read(setting, machineOverride: true); }
         Console.WriteLine("PASS: Native Windows build/edition/management/account and policy probes are read-only");
+        // The built-in enrollment entries every Windows 11 PC has (and a plain "not joined" answer) must never count as management.
+        Require(!RegistryPolicyStore.IsRealEnrollment(1, "Local Authority", null) && !RegistryPolicyStore.IsRealEnrollment(1, "Cloud Authority", "")
+            && !RegistryPolicyStore.IsRealEnrollment(1, "Deploy Authority", "") && !RegistryPolicyStore.IsRealEnrollment(1, "", null)
+            && !RegistryPolicyStore.IsRealEnrollment(null, "MS DM Server", "person@example.com") && !RegistryPolicyStore.IsRealEnrollment(0, "MS DM Server", "person@example.com")
+            && RegistryPolicyStore.IsRealEnrollment(1, "MS DM Server", "person@example.com") && RegistryPolicyStore.IsRealEnrollment(1, "AirWatch", null),
+            "Only a real device-management enrollment counts as managed; Windows' built-in local/cloud/deploy authorities do not");
         // The catalog is the only source of registry destinations: ids are unique, every key is a Microsoft policy key, and the scope is deliberate.
         var catalog = WindowsSettingsService.Catalog;
         Require(catalog.Select(item => item.Id).Distinct().Count() == catalog.Count && catalog.All(item => item.Key.Contains(@"Policies\Microsoft", StringComparison.OrdinalIgnoreCase) && item.ValueName.Length > 0),
             "Every Windows setting has a unique id and sits under a Microsoft policy key");
-        string[] perUser = ["diagnostics", "tailored", "suggestions", "location", "office-telemetry", "office-personal", "office-ceip", "search-web", "typing"];
-        string[] perDevice = ["widgets", "telemetry", "feedback", "advertising-id", "windows-ceip", "inventory", "activity", "delivery", "maps", "error-reporting", "background-apps"];
-        Require(perUser.All(id => !Definition(id).Machine) && perDevice.All(id => Definition(id).Machine) && perUser.Length + perDevice.Length == catalog.Count,
-            "Office and per-user choices write only the current user; device-wide choices are marked administrator-only");
+        string[] perUser = ["diagnostics", "tailored", "suggestions", "location", "office-telemetry", "office-personal", "office-ceip", "search-web", "typing",
+            "spotlight", "third-party-suggestions", "recall", "copilot"];
+        var perDevice = catalog.Select(item => item.Id).Except(perUser).ToArray();
+        Require(perUser.All(id => !Definition(id).Machine) && perDevice.All(id => Definition(id).Machine) && perUser.Length + perDevice.Length == catalog.Count && perDevice.Length >= 11,
+            "Office and per-user choices write only the current user; every other choice is device-wide and marked administrator-only");
+        // ShutUp10++-style levels: only recommended and somewhat recommended exist. Nothing that would be "not recommended" is offered.
+        string[] never = ["camera", "microphone", "location-access", "defender", "smartscreen", "windows-update", "store", "onedrive", "biometrics", "firewall", "uac"];
+        Require(never.All(word => !catalog.Any(item => item.Id.Contains(word, StringComparison.OrdinalIgnoreCase) || item.Key.Contains(word, StringComparison.OrdinalIgnoreCase)
+                && !item.Key.Contains("WindowsUpdate\\AU", StringComparison.OrdinalIgnoreCase))),
+            "No camera, microphone, Defender, SmartScreen, Update, Store, OneDrive, sign-in or security choice is offered");
+        Require(catalog.Count >= 60 && catalog.Select(item => (item.Key.ToLowerInvariant(), item.ValueName.ToLowerInvariant(), item.Machine)).Distinct().Count() == catalog.Count
+            && catalog.All(item => item.Topic.Length > 0 && item.Title.Length > 0 && item.Description.Length > 20),
+            "Every choice has a topic, a plain description and its own registry value");
         Require(Definition("office-telemetry").Value == 3 && Definition("office-personal").Value == 0 && Definition("office-ceip").Value == 0
             && Definition("advertising-id").ValueName == "DisabledByGroupPolicy" && Definition("delivery").Value == 0,
             "The Office, advertising ID and Delivery Optimization policies use the documented values");
@@ -56,7 +71,9 @@ internal static class WindowsSettingsChecks
         var service = new WindowsSettingsService(store, directory);
         var first = service.Read();
         Require(store.Writes == 0 && first.Settings.All(row => !row.Enabled) && !first.CanUndo, "Reading/previewing never changes registry values");
-        Require(!first.Settings.Single(row => row.Definition.Id == "suggestions").CanEdit, "Enterprise-only suggestions are unavailable on Pro");
+        var suggestions = first.Settings.Single(row => row.Definition.Id == "suggestions");
+        Require(suggestions.CanEdit && suggestions.Status.Contains("Enterprise"), "Enterprise-only suggestions stay usable on Pro, with a note that they only take effect on Enterprise");
+        Require(first.Settings.All(row => row.CanEdit) && !first.Summary.Contains("read-only"), "No setting is locked as read-only on an ordinary PC");
         var two = new Dictionary<string, bool> { ["diagnostics"] = true, ["tailored"] = true };
         var plan = service.Prepare(first.Settings, two);
         Require(plan.Changes.Count == 2 && store.Writes == 0, "Preparing a batch never applies it");
@@ -77,13 +94,24 @@ internal static class WindowsSettingsChecks
 
         store.Seed("diagnostics", new(true, 0));
         var strict = service.Read().Settings.Single(row => row.Definition.Id == "diagnostics");
-        Require(strict.Enabled && !strict.CanEdit, "Externally configured stricter diagnostics are never weakened");
+        Require(strict.Enabled && strict.CanEdit && strict.Status.Contains("set outside Hush"), "An externally set value is shown as on, editable and explained");
+        // Turning it off removes the outside value, and Undo puts that very value back (the original is whatever Hush first found).
+        service.Execute(service.Prepare(service.Read().Settings, new Dictionary<string, bool> { ["diagnostics"] = false }));
+        Require(!store.Read(Definition("diagnostics")).Exists && service.Read().CanUndo, "An outside value can be changed after confirmation, and the change is tracked");
+        service.Execute(service.PrepareUndo());
+        Require(store.Read(Definition("diagnostics")) == new PolicyValue(true, 0) && !service.Read().CanUndo, "Undo restores the outside value Hush found, then stops tracking it");
+        store.Seed("diagnostics", new(true, 3));
+        service.Execute(service.Prepare(service.Read().Settings, new Dictionary<string, bool> { ["diagnostics"] = true }));
+        Require(store.Read(Definition("diagnostics")).Is(1), "A different outside value is replaced after confirmation");
+        service.Execute(service.PrepareUndo());
+        Require(store.Read(Definition("diagnostics")) == new PolicyValue(true, 3), "Undo restores a non-default original value exactly");
         store.Seed("diagnostics", PolicyValue.Missing);
         store.Seed("tailored", new(true, IsDword: false));
-        Require(!service.Read().Settings.Single(row => row.Definition.Id == "tailored").CanEdit, "Unknown registry types are read-only");
+        Require(!service.Read().Settings.Single(row => row.Definition.Id == "tailored").CanEdit, "A value of an unusual registry type is left alone because it could not be restored exactly");
         store.Seed("tailored", PolicyValue.Missing);
         store.Seed("diagnostics", new(true, 3), machine: true);
-        Require(!service.Read().Settings.Single(row => row.Definition.Id == "diagnostics").CanEdit, "Existing machine policies block per-user overrides");
+        var overridden = service.Read().Settings.Single(row => row.Definition.Id == "diagnostics");
+        Require(overridden.CanEdit && overridden.Status.Contains("device-wide policy"), "An existing device-wide policy is explained, not locked");
         store.Seed("diagnostics", PolicyValue.Missing, machine: true);
 
         var stale = service.Prepare(service.Read().Settings, two);
@@ -112,15 +140,27 @@ internal static class WindowsSettingsChecks
         var widgetPlan = service.Prepare(service.Read().Settings, new Dictionary<string, bool> { ["widgets"] = true });
         store.Configuration = store.Configuration with { Administrator = false };
         writes = store.Writes; Reject(() => service.Execute(widgetPlan));
-        Require(store.Writes == writes && !service.Read().Settings.Single(row => row.Definition.Id == "widgets").CanEdit, "Administrator access is rechecked after confirmation");
+        var widgetsRow = service.Read().Settings.Single(row => row.Definition.Id == "widgets");
+        Require(store.Writes == writes && widgetsRow.CanEdit && widgetsRow.NeedsAdministrator && service.NeedsAdministrator(widgetPlan), "Administrator access is rechecked after confirmation, and the device-wide choice stays usable (it asks for administrator rights)");
         store.Configuration = store.Configuration with { Administrator = true, Managed = true };
-        Require(service.Read().Settings.All(row => !row.CanEdit), "Managed devices cannot apply policy changes");
+        Require(service.Read().Settings.All(row => row.CanEdit) && service.Read().Summary.Contains("managed"), "A managed PC gets a warning, not a lock");
+        service.Execute(service.Prepare(service.Read().Settings, new Dictionary<string, bool> { ["tailored"] = true }));
+        Require(store.Read(Definition("tailored")).Is(1), "Changes can be applied on a managed PC after confirmation");
+        service.Execute(service.PrepareUndo());
         store.Configuration = store.Configuration with { Managed = false, Edition = "Core" };
-        Require(service.Read().Settings.All(row => !row.CanEdit), "Home is read-only rather than claiming unsupported policies work");
+        Require(service.Read().Settings.All(row => row.CanEdit) && service.Read().Summary.Contains("Home"), "Windows Home gets a warning that some policies are ignored, not a lock");
         store.Configuration = store.Configuration with { Edition = "Professional", Build = 28000 };
-        Require(service.Read().Settings.All(row => !row.CanEdit), "Unverified future builds are read-only");
+        Require(service.Read().Settings.All(row => row.CanEdit), "Newer Windows builds are not locked");
         store.Configuration = store.Configuration with { Edition = "Enterprise", Build = 26200 };
-        Require(service.Read().Settings.Single(row => row.Definition.Id == "suggestions").CanEdit, "Documented Enterprise-only customization is edition-gated");
+        Require(!service.Read().Settings.Single(row => row.Definition.Id == "suggestions").Status.Contains("Enterprise"), "The Enterprise note disappears on Enterprise");
+        // History written before originals could be non-empty (no Applied field) still loads and undoes.
+        var legacy = Path.Combine(fixture, "legacy-windows-history"); Directory.CreateDirectory(legacy);
+        File.WriteAllText(Path.Combine(legacy, "windows-settings.json"), "{\"Schema\":1,\"Owner\":\"synthetic-test-account\",\"Pending\":false,\"Values\":[{\"Id\":\"diagnostics\",\"Original\":{\"Exists\":false,\"Number\":0,\"IsDword\":true}}]}");
+        store.Seed("diagnostics", new(true, 1));
+        var old = new WindowsSettingsService(store, legacy);
+        Require(old.Read().CanUndo && old.Read().Settings.Single(row => row.Definition.Id == "diagnostics").Status.Contains("Applied by Hush"), "An older history file still loads");
+        old.Execute(old.PrepareUndo());
+        Require(!store.Read(Definition("diagnostics")).Exists && !old.Read().CanUndo, "An older history file still undoes");
         store.Configuration = store.Configuration with { Edition = "Professional" };
         service.Execute(service.Prepare(service.Read().Settings, new Dictionary<string, bool> { ["widgets"] = true }));
         Require(store.Read(Definition("widgets")).Is(0), "Device-wide Widgets writes only its simulated machine-policy fixture");
@@ -157,6 +197,16 @@ internal static class WindowsSettingsChecks
             var apply = (Button)window.FindName("ApplyWindowsSettingsButton");
             void Click(string name) => ((Button)window.FindName(name)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             void Layout(Size size) { window.Width = size.Width; window.Height = size.Height; root.Measure(size); root.Arrange(new Rect(size)); root.UpdateLayout(); }
+            // After a confirmed change the popup stays up with the result and restart advice; Close dismisses it.
+            void ConfirmAndClose(string expectAdvice, string? picture = null)
+            {
+                Click("ConfirmWindowsSettingsButton");
+                Until(() => ((Button)window.FindName("CancelWindowsSettingsButton")).Content?.ToString() == "Close");
+                Require(((TextBlock)window.FindName("WindowsConfirmNote")).Text.Contains(expectAdvice) && ((UIElement)window.FindName("ConfirmWindowsSettingsButton")).Visibility == Visibility.Collapsed,
+                    $"After applying, the popup tells the person what to do next ({expectAdvice})");
+                if (picture != null) { Wait(380); Capture(root, picture); }
+                Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            }
             void Toggle(string id, bool value)
             {
                 var box = Descendants<CheckBox>((ItemsControl)window.FindName(id is "location" or "widgets" ? "AdvancedAdjustments" : "PrivacyAdjustments"))
@@ -168,8 +218,8 @@ internal static class WindowsSettingsChecks
             var sections = new[] { "SettingsBoostSection", "SettingsPrivacySection", "SettingsImpactSection" }.Select(name => (Expander)window.FindName(name)).ToArray();
             Require(sections.All(section => !section.IsExpanded)
                 && ((TextBlock)window.FindName("BoostSummary")).Text == "Manual only"
-                && ((TextBlock)window.FindName("PrivacySummary")).Text == "0 of 16 turned on"
-                && ((TextBlock)window.FindName("ImpactSummary")).Text.StartsWith("0 of 4 turned on"),
+                && ((TextBlock)window.FindName("PrivacySummary")).Text == $"0 of {WindowsSettingsService.Catalog.Count(item => !item.Advanced)} turned on"
+                && ((TextBlock)window.FindName("ImpactSummary")).Text.StartsWith($"0 of {WindowsSettingsService.Catalog.Count(item => item.Advanced)} turned on"),
                 "Settings opens as three collapsed summary cards that state each section's current state");
             Capture(root, "settings-summary-dark");
             foreach (var section in sections) section.IsExpanded = true;
@@ -177,7 +227,7 @@ internal static class WindowsSettingsChecks
             int before = store.Writes;
             Toggle("diagnostics", true); Toggle("tailored", true);
             Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 changes", "Actual checkbox bindings stage choices without writing");
-            Require(((TextBlock)window.FindName("PrivacySummary")).Text == "2 of 16 turned on · 2 waiting for review", "A section summary shows staged choices before anything is applied");
+            Require(((TextBlock)window.FindName("PrivacySummary")).Text == $"2 of {WindowsSettingsService.Catalog.Count(item => !item.Advanced)} turned on · 2 waiting for review", "A section summary shows staged choices before anything is applied");
             Click("ApplyWindowsSettingsButton"); Wait(350);
             Require(overlay.Visibility == Visibility.Visible && !((UIElement)window.FindName("AppSurface")).IsEnabled
                 && ((BlurEffect)((UIElement)window.FindName("AppSurface")).Effect).Radius == 7 && store.Writes == before
@@ -186,18 +236,21 @@ internal static class WindowsSettingsChecks
             Capture(root, "windows-confirm-dark");
             Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
             Require(store.Writes == before, "Cancel preserves all Windows values");
-            Click("ApplyWindowsSettingsButton"); Click("ConfirmWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            Click("ApplyWindowsSettingsButton");
+            Require(((TextBlock)window.FindName("WindowsConfirmNote")).Text.Contains("sign out", StringComparison.OrdinalIgnoreCase)
+                && ((Button)window.FindName("ConfirmWindowsSettingsButton")).Content.ToString() == "Apply changes", "The confirmation states up front that signing out or restarting is needed");
+            ConfirmAndClose("sign out", "windows-result-dark");
             Require(store.Read(Definition("diagnostics")).Is(1) && store.Read(Definition("tailored")).Is(1)
                 && ((Button)window.FindName("UndoWindowsSettingsButton")).IsEnabled, "Explicit confirmation applies and verifies only the fixture-backed choices");
             Toggle("tailored", false); before = store.Writes;
             Click("ApplyWindowsSettingsButton");
             Require(store.Writes == before, "Unchecking an applied choice also waits for confirmation");
-            Click("ConfirmWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            ConfirmAndClose("sign out");
             Require(!store.Read(Definition("tailored")).Exists && store.Read(Definition("diagnostics")).Is(1), "A confirmed uncheck restores only that choice's original value");
             Click("UndoWindowsSettingsButton"); Wait(340); Capture(root, "windows-undo-dark");
             before = store.Writes; Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
             Require(store.Writes == before && store.Read(Definition("diagnostics")).Is(1), "Undo also requires confirmation and supports cancellation");
-            Click("UndoWindowsSettingsButton"); Click("ConfirmWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            Click("UndoWindowsSettingsButton"); ConfirmAndClose("sign out");
             Require(!store.Read(Definition("diagnostics")).Exists && !store.Read(Definition("tailored")).Exists, "Confirmed UI Undo restores the original absence");
 
             Toggle("diagnostics", true); Click("ApplyWindowsSettingsButton");
@@ -223,8 +276,9 @@ internal static class WindowsSettingsChecks
                 }
                 scroll.ScrollToBottom(); Layout(new Size(800, 740));
                 Capture(root, $"windows-advanced-{(light ? "light" : "dark")}");
-                Require(window.AdjustmentChoices.Single(choice => choice.Id == "location").CanEdit
-                    && !window.AdjustmentChoices.Single(choice => choice.Id == "widgets").CanEdit, "Location and device-wide Widgets are separated, with administrator gating");
+                Require(window.AdjustmentChoices.Single(choice => choice.Id == "location").CanEdit && !window.AdjustmentChoices.Single(choice => choice.Id == "location").NeedsAdministrator
+                    && window.AdjustmentChoices.Single(choice => choice.Id == "widgets").CanEdit && window.AdjustmentChoices.Single(choice => choice.Id == "widgets").NeedsAdministrator,
+                    "Location and device-wide Widgets are separated: Widgets stays usable and is marked as needing administrator rights");
                 Toggle("location", true); Click("ApplyWindowsSettingsButton"); Wait(340); Layout(new Size(800, 740));
                 var card = (FrameworkElement)window.FindName("WindowsSettingsCard");
                 Require(card.ActualHeight <= 650 && new Rect(root.RenderSize).Contains(card.TransformToAncestor(root).TransformBounds(new Rect(card.RenderSize))), "Windows confirmation fits minimum layout in both themes");
@@ -232,9 +286,46 @@ internal static class WindowsSettingsChecks
                 Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
                 Click("RefreshWindowsSettingsButton");
             }
+            // A device-wide choice without administrator rights: the popup says so, nothing is written, and the restart is only a launcher call (faked here).
+            var launched = new List<string>(); bool exited = false, grant = true;
+            var oldLauncher = MainWindow.ElevatedLauncher; var oldExit = MainWindow.ExitForRestart;
+            MainWindow.ElevatedLauncher = arguments => { launched.Add(arguments); return grant; };
+            MainWindow.ExitForRestart = () => exited = true;
+            try
+            {
+                Layout(new Size(800, 740)); Toggle("widgets", true); before = store.Writes;
+                Click("ApplyWindowsSettingsButton"); Wait(340);
+                var confirm = (Button)window.FindName("ConfirmWindowsSettingsButton");
+                Require(overlay.Visibility == Visibility.Visible && confirm.Content.ToString() == "Restart as administrator"
+                    && ((TextBlock)window.FindName("WindowsConfirmNote")).Text.Contains("administrator rights"), "A device-wide choice explains that administrator rights are needed before anything happens");
+                Capture(root, "windows-admin-dark");
+                grant = false; Click("ConfirmWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+                Require(launched.SequenceEqual(new[] { "--windows-review +widgets" }) && !exited && store.Writes == before
+                    && ((TextBlock)window.FindName("WindowsSettingsStatus")).Text.Contains("declined"), "A declined permission prompt changes nothing and keeps Hush open");
+                Click("ApplyWindowsSettingsButton"); grant = true; launched.Clear();
+                Click("ConfirmWindowsSettingsButton"); Until(() => exited);
+                Require(launched.SequenceEqual(new[] { "--windows-review +widgets" }) && store.Writes == before, "Confirming restarts Hush as administrator with the staged choice and writes nothing itself");
+                Click("RefreshWindowsSettingsButton");
+                // The administrator copy stages the same choice and asks again.
+                window.ResumeWindowsReview(["--windows-review", "+widgets,-nothing,+tailored"]); Wait(340);
+                Require(overlay.Visibility == Visibility.Visible && ((TextBlock)window.FindName("WindowsConfirmSummary")).Text.Contains("Widgets")
+                    && !((TextBlock)window.FindName("WindowsConfirmSummary")).Text.Contains("nothing"), "The restarted copy re-opens the review with only catalog choices staged");
+                Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+                Click("RefreshWindowsSettingsButton");
+            }
+            finally { MainWindow.ElevatedLauncher = oldLauncher; MainWindow.ExitForRestart = oldExit; }
+            store.Configuration = store.Configuration with { Administrator = true };
+            Click("RefreshWindowsSettingsButton");
+            Layout(new Size(800, 740)); Toggle("widgets", true); Click("ApplyWindowsSettingsButton");
+            Require(((Button)window.FindName("ConfirmWindowsSettingsButton")).Content.ToString() == "Apply changes"
+                && ((TextBlock)window.FindName("WindowsConfirmNote")).Text.Contains("Restart your PC"), "Device-wide changes tell the person to restart the PC");
+            ConfirmAndClose("Restart your PC");
+            Require(store.Read(Definition("widgets")).Is(0), "An administrator copy applies the device-wide fixture value after confirmation");
+            Click("UndoWindowsSettingsButton"); ConfirmAndClose("Restart your PC");
+            store.Configuration = store.Configuration with { Administrator = false };
             store.Configuration = store.Configuration with { Managed = true }; Click("RefreshWindowsSettingsButton");
-            Require(window.AdjustmentChoices.All(choice => !choice.CanEdit) && ((Button)window.FindName("ThemeButton")).IsEnabled,
-                "Managed Windows policies are read-only while app appearance remains usable");
+            Require(window.AdjustmentChoices.All(choice => choice.CanEdit) && ((TextBlock)window.FindName("WindowsSettingsSummary")).Text.Contains("managed") && ((Button)window.FindName("ThemeButton")).IsEnabled,
+                "A managed PC shows a warning instead of locking Windows choices");
             store.Configuration = store.Configuration with { Managed = false };
             Click("SettingsBackButton"); Wait(340);
             Require(((FrameworkElement)window.FindName("ScanPage")).Visibility == Visibility.Visible, "Settings returns to the originating page");

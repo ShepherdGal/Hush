@@ -80,8 +80,9 @@ internal static class CleanSelectionChecks
             {
                 if (window.IsLightTheme != light) window.ToggleTheme();
                 SetChecked(global, false);
-                Require(primary.Content.ToString() == "Scan again" && homeClean.Visibility != Visibility.Visible,
-                    "Zero selection has one neutral rescan action");
+                Require(primary.Content.ToString() == "Clean selected" && !primary.IsEnabled && homeClean.Visibility == Visibility.Visible && !homeClean.IsEnabled
+                    && ((Button)window.FindName("RescanButton")).Visibility == Visibility.Visible,
+                    "With results but nothing selected, Clean stays on screen dimmed (never disappears) and Scan again sits beside it");
                 SetChecked(FileBox(first), true); ExpectClean(1);
                 Click((Button)window.FindName("SettingsButton"));
                 Click((Button)window.FindName("SettingsBackButton")); Until(() => !window.IsPageTransitioning);

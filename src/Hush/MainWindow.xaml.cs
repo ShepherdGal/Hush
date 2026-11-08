@@ -343,7 +343,6 @@ public partial class MainWindow : Window
         scanSkippedLocations = false;
         LoadReviewItems([]);
         LiveFileCounter.Reset();
-        ReviewHint.Text = "Selected files only. Confirmation required.";
         ShowReviewPage(false);
         SetBusy(true, "scan");
         ResetGauge();
@@ -359,9 +358,14 @@ public partial class MainWindow : Window
             LiveFileCounter.SetCount(p.FilesFound);
             LiveFileCounter.ToolTip = p.Location == "Complete" ? null : p.Location;
             // Remember where the scan is. Scans move through most locations in a blink, so the name is only shown (below) when one takes a while.
-            if (p.Location is not ("Complete" or "Preparing scan")) scanLocation = p.Location.Replace("Discovering ", "");
-            scanProgressTick = Environment.TickCount64;
-            if (stillLookingShown) { stillLookingShown = false; StatusTitle.Text = "Searching files…"; }
+            // The clock restarts only when the scan moves to a different location: a huge folder keeps reporting new files, but the person still
+            // deserves to see which place is taking the time (the gauge share of one location is small).
+            if (p.Location is not ("Complete" or "Preparing scan") && !string.Equals(scanLocation, p.Location.Replace("Discovering ", ""), StringComparison.OrdinalIgnoreCase))
+            {
+                scanLocation = p.Location.Replace("Discovering ", "");
+                scanProgressTick = Environment.TickCount64;
+                if (stillLookingShown) { stillLookingShown = false; StatusTitle.Text = "Searching files…"; }
+            }
         });
         scanLocation = ""; scanProgressTick = Environment.TickCount64; stillLookingShown = false;
         var stillLooking = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
@@ -393,7 +397,6 @@ public partial class MainWindow : Window
             scanSkippedLocations = result.BusyCaches > 0 || result.Inaccessible > 0 || result.Stalled > 0;
             GaugeLabel.Text = "Click to scan again";
             StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan complete. Take a look.";
-            ReviewHint.Text = stopped ? "Partial scan. Scan again before cleaning." : "Selected files only. Confirmation required.";
             var notes = new List<string>();
             if (result.BusyCaches > 0) notes.Add("open browser caches skipped");
             if (result.Inaccessible > 0) notes.Add($"{result.Inaccessible:N0} inaccessible paths skipped");
@@ -409,7 +412,6 @@ public partial class MainWindow : Window
             FreezeIncompleteScanGauge();
             StatusTitle.Text = "Scan stopped. Review partial results.";
             StatusDetail.Text = FoundSummary();
-            ReviewHint.Text = "Partial scan. Scan again before cleaning.";
             GaugeLabel.Text = "Click to scan again";
         }
         catch (Exception ex)
@@ -454,6 +456,7 @@ public partial class MainWindow : Window
         if (confirmedItems.Length == 0) return;
         ConfirmSummary.Text = $"Clean {confirmedItems.Length:N0} selected items and free {Sizes.Format(confirmedItems.Sum(x => x.Bytes))}?";
         ConfirmDetail.Text = ConfirmationText(confirmedItems);
+        BuildConfirmGroups(confirmedItems);
         // Advanced (red) items are irreversible or recovery-related: the clean button stays off until the person ticks the consent box.
         bool advanced = confirmedItems.Any(x => x.Safety == SafetyLevel.Advanced);
         AdvancedConsentBox.IsChecked = false;
@@ -469,25 +472,63 @@ public partial class MainWindow : Window
         KeyboardNavigation.SetTabNavigation(ModalOverlay, KeyboardNavigationMode.Cycle);
     }
 
-    // What exactly will happen, written from the selected items: nothing is described that is not selected.
+    // The popup lists what will be cleaned as three tiny colored groups (green Safe, amber Review, red Advanced): one summary line per group,
+    // then one line per category. Text is deliberately small; the window is not.
+    private void BuildConfirmGroups(IReadOnlyCollection<CleanupItem> selected)
+    {
+        ConfirmGroups.Children.Clear();
+        foreach (var level in new[] { SafetyLevel.Safe, SafetyLevel.Review, SafetyLevel.Advanced })
+        {
+            var inLevel = selected.Where(item => item.Safety == level).ToList();
+            if (inLevel.Count == 0) continue;
+            string brush = level switch { SafetyLevel.Safe => "GoodBrush", SafetyLevel.Review => "MeterWarnBrush", _ => "CleanTextBrush" };
+            string name = level switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review", _ => "Advanced" };
+            TextBlock Line(string text, bool strong, bool right, string foreground)
+            {
+                var block = new TextBlock { Text = text, FontSize = (double)FindResource("CompactFontSize"), FontWeight = strong ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left };
+                block.SetResourceReference(TextBlock.ForegroundProperty, foreground);
+                return block;
+            }
+            Grid Row(string left, string rightText, bool strong, string foreground, Thickness margin)
+            {
+                var row = new Grid { Margin = margin };
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var l = Line(left, strong, false, foreground); var r = Line(rightText, strong, true, foreground);
+                r.Margin = new Thickness(14, 0, 0, 0);
+                Grid.SetColumn(r, 1); row.Children.Add(l); row.Children.Add(r);
+                return row;
+            }
+            string Amount(IEnumerable<CleanupItem> group) { var list = group.ToList(); return $"{list.Count:N0} {(list.Count == 1 ? "item" : "items")} · {Sizes.Format(list.Sum(x => x.Bytes))}"; }
+            var header = Row(name, Amount(inLevel), true, brush, new Thickness(0, ConfirmGroups.Children.Count == 0 ? 0 : 10, 0, 2));
+            ConfirmGroups.Children.Add(header);
+            foreach (var group in inLevel.GroupBy(item => ReviewCategory.CategoryFor(item)).OrderByDescending(g => g.Sum(x => x.Bytes)))
+            {
+                string title = ReviewCategory.Definitions.FirstOrDefault(d => d.Id == group.Key)?.Title ?? group.Key;
+                ConfirmGroups.Children.Add(Row(title, Amount(group), false, "MutedBrush", new Thickness(14, 0, 0, 0)));
+            }
+        }
+    }
+
+    // What exactly will happen, written from the selected items in short lines: nothing is described that is not selected.
     internal static string ConfirmationText(IReadOnlyCollection<CleanupItem> selected)
     {
         bool Has(string category) => selected.Any(x => ReviewCategory.CategoryFor(x) == category);
         int registry = selected.Count(x => x.Kind == CleanupKind.Registry);
-        var text = new StringBuilder("Selected files will be permanently deleted, bypassing the Recycle Bin. Locked or changed files will be skipped.");
-        void Add(string line) => text.Append("\n\n").Append(line);
-        if (registry > 0) Add($"{registry} app registry entries are included. Each is backed up to a .reg file before removal.");
-        if (Has("RecycleBin")) Add("The Recycle Bin is included. Emptying it permanently removes everything in it on every drive and cannot be undone.");
-        if (Has("WindowsOld")) Add("Previous Windows installation is included. Windows' own Disk Cleanup removes it after an administrator prompt. This cannot be undone: you can no longer go back to the previous Windows version.");
-        if (Has("ComponentStore")) Add("Windows component cleanup is included. Windows (DISM) decides which superseded component versions to remove after an administrator prompt. Installed updates can then no longer be uninstalled.");
-        if (Has("BrowserCookies")) Add("Browser cookies are included. You will be signed out of websites. Passwords, bookmarks and saved sessions are not touched.");
-        if (Has("BrowserHistory")) Add("Browser history is included. Bookmarks, passwords and logins are not touched.");
-        if (Has("Clipboard")) Add("Windows clipboard history is included. Pinned clips are kept.");
-        if (Has("Update") || Has("Delivery") || Has("Setup")) Add("Windows Update, Delivery Optimization or setup files are included. Windows can download or recreate them, but updates may need to download again.");
+        var lines = new List<string> { "Files are permanently deleted, bypassing the Recycle Bin. Locked or changed files are skipped." };
+        if (registry > 0) lines.Add($"{registry} app registry entries are backed up to .reg files first.");
+        if (Has("RecycleBin")) lines.Add("Recycle Bin: everything in it is removed on every drive, for good.");
+        if (Has("WindowsOld")) lines.Add("Previous Windows installation: removed by Windows' Disk Cleanup (administrator prompt); you can't go back to the old Windows.");
+        if (Has("ComponentStore")) lines.Add("Component cleanup: Windows (DISM) removes old versions (administrator prompt); installed updates can't be uninstalled afterwards.");
+        if (Has("BrowserCookies")) lines.Add("Cookies: you will be signed out of websites. Passwords and bookmarks stay.");
+        if (Has("BrowserHistory")) lines.Add("Browser history is cleared. Bookmarks, passwords and logins stay.");
+        if (Has("Clipboard")) lines.Add("Clipboard history is cleared. Pinned clips stay.");
+        if (Has("Update") || Has("Delivery") || Has("Setup")) lines.Add("Update, delivery and setup files can be downloaded again; updates may download twice.");
         if (Has("BrowserEdge") || Has("BrowserChrome") || Has("BrowserFirefox") || Has("BrowserOther") || Has("DirectX") || Has("NvidiaShader") || Has("GpuShader"))
-            Add("Browser and shader caches are rebuilt automatically; the next launch of those programs may be a little slower.");
-        Add("Defender protection history and quarantine, certificates, security logs, restore points and recovery data stay untouched.");
-        return text.ToString();
+            lines.Add("Browser and shader caches rebuild themselves; the next launch may be a little slower.");
+        lines.Add("Defender history, certificates, security logs, restore points and recovery data are never touched.");
+        return string.Join("\n", lines);
     }
 
     private void AdvancedConsent_Click(object sender, RoutedEventArgs e) => ConfirmDeleteButton.IsEnabled = AdvancedConsentBox.IsChecked == true;
@@ -551,7 +592,6 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ReviewHint.Text = StatusTitle.Text;
             StatusTitle.Text = "Review remaining files.";
             RebuildCategories(); SetBusy(false); RefreshSelection(); ShowReviewPage(true); PrimaryButton.Focus();
         }
@@ -633,10 +673,13 @@ public partial class MainWindow : Window
         }
         else if (!ready) CompletionLinkButton.Visibility = Visibility.Collapsed;
         StatusTitle.Visibility = ready || (busy && currentOperation != "scan") ? Visibility.Collapsed : Visibility.Visible;
+        // Once a scan has completed with results the Clean button stays on screen: dimmed while nothing is selected, so it never "disappears".
         bool showClean = CanClean && SelectedCount > 0;
-        bool revealClean = showClean && HomeCleanButton.Visibility != Visibility.Visible;
+        bool offerClean = CanClean && items.Count > 0;
+        bool revealClean = offerClean && HomeCleanButton.Visibility != Visibility.Visible;
         HomeCleanButton.IsEnabled = showClean;
-        HomeCleanButton.Visibility = showClean ? Visibility.Visible : Visibility.Hidden;
+        HomeCleanButton.Visibility = offerClean ? Visibility.Visible : Visibility.Hidden;
+        HomeCleanButton.ToolTip = offerClean && !showClean ? "Select something to clean first" : null;
         if (revealClean) HomeCleanButton.BeginAnimation(OpacityProperty, Motion.Tween(0, HomeCleanButton.IsEnabled ? 1 : 0.45, 500));
     }
 
@@ -712,12 +755,16 @@ public partial class MainWindow : Window
         int selected = SelectedCount;
         SelectionSummary.Text = CanSelectCandidates
             ? $"{selected:N0} selected · {Sizes.Format(SelectedBytes)}"
-            : "Read-only results";
+            : "Partial results";
         ResultCount.Text = FoundSummary();
-        bool destructive = CanClean && selected > 0;
+        // With results on screen the red Clean button is always there (dimmed until something is selected); the count and size sit in
+        // ordinary text just below it (SelectionSummary). Without results the one button is a neutral Start scan / Scan again.
+        bool destructive = CanClean && items.Count > 0;
         PrimaryButton.Content = destructive ? "Clean selected" : CurrentScanState == ScanState.Ready ? "Start scan" : "Scan again";
+        PrimaryButton.IsEnabled = !destructive || selected > 0;
+        PrimaryButton.ToolTip = destructive && selected == 0 ? "Select something to clean first" : null;
         ApplyPrimaryAppearance(destructive);
-        // Keep the rescan companion only while the primary action is Clean.
+        // Scan again sits at the left while the primary action is Clean.
         RescanButton.Visibility = destructive ? Visibility.Visible : Visibility.Collapsed;
         SelectAllBox.IsEnabled = CanSelectCandidates && items.Count > 0;
         SelectAllBox.Visibility = CanSelectCandidates ? Visibility.Visible : Visibility.Hidden;
@@ -814,7 +861,7 @@ public partial class MainWindow : Window
         Set("AccentHoverBrush", light ? "#3A66AE" : "#7FE3DD");
         Set("MeterWarnBrush", SafetyPalette.Text(SafetyLevel.Review, light));
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
-        if (!busy) ApplyPrimaryAppearance(CanClean && SelectedCount > 0);
+        if (!busy) ApplyPrimaryAppearance(CanClean && items.Count > 0);
     }
 
     private void About_Click(object sender, RoutedEventArgs e)

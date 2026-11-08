@@ -102,7 +102,7 @@ internal sealed record ScanResult(List<CleanupItem> Items, int Inaccessible, int
 // StallMilliseconds: a location that produces nothing for this long is skipped (0 turns the watchdog off); StepTimeoutMilliseconds limits the registry and
 // Recycle Bin steps (Disk Cleanup gets three times as long). OnTargetStart is a test hook that runs when a location begins.
 internal sealed record ScanOptions(Func<CleanupTarget, bool>? Include = null, bool CountOnly = false, int ReportIntervalMs = 40, bool Background = false,
-    int StallMilliseconds = 30000, int StepTimeoutMilliseconds = 30000, Action<CleanupTarget>? OnTargetStart = null);
+    int StallMilliseconds = 30000, int StepTimeoutMilliseconds = 30000, Action<CleanupTarget>? OnTargetStart = null, int SlowNoteMilliseconds = 3000);
 // FreeSpaceBefore/After are the free bytes Windows reports for the drives that held the selected items, measured around the clean.
 internal sealed record CleanupResult(int Deleted, int Skipped, long Bytes, bool Stopped, string LogPath, long FreeSpaceBefore = 0, long FreeSpaceAfter = 0,
     IReadOnlyDictionary<string, int>? SkipReasons = null)

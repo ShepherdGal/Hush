@@ -193,7 +193,8 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
     private static readonly Dictionary<string, SafetyLevel> safetyById = Definitions.ToDictionary(d => d.Id, d => d.Safety);
     internal static ObservableCollection<ReviewCategory> Create()
     {
-        return new ObservableCollection<ReviewCategory>(Definitions.Select(d => new ReviewCategory(d.Id, d.Title, d.Safety, d.Description, d.Summary)));
+        // Review page order: Safe (green) first, then Review (orange), then Advanced (red); catalog order is kept inside each level (OrderBy is stable).
+        return new ObservableCollection<ReviewCategory>(Definitions.OrderBy(d => d.Safety).Select(d => new ReviewCategory(d.Id, d.Title, d.Safety, d.Description, d.Summary)));
     }
     internal static SafetyLevel SafetyOf(string id) => safetyById.TryGetValue(id, out var safety) ? safety : SafetyLevel.Safe;
     internal static string CategoryFor(CleanupItem file) => CategoryFor(file.Kind, file.Group, file.CategoryId);

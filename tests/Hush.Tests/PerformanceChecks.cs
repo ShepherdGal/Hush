@@ -7,6 +7,22 @@ using Hush;
 internal static class PerformanceChecks
 {
     // Read-only: scans this PC with the default targets and prints what each category would offer. Never calls Clean.
+    // Read-only: shows how the Windows settings page sees this PC (edition, admin, managed) and each switch's state. Writes nothing to the registry.
+    internal static int WindowsReport()
+    {
+        var environment = new RegistryPolicyStore().Environment;
+        Console.WriteLine($"Windows build {environment.Build}, edition {environment.Edition}, administrator {environment.Administrator}, managed {environment.Managed}, home {environment.Home}");
+        var folder = Path.Combine(Path.GetTempPath(), "Hush.WindowsReport." + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var state = new WindowsSettingsService(new RegistryPolicyStore(), folder).Read();
+            Console.WriteLine(state.Summary);
+            foreach (var row in state.Settings) Console.WriteLine($"  {row.Definition.Id,-18} on={row.Enabled,-5} editable={row.CanEdit,-5} {row.Status}");
+        }
+        finally { try { Directory.Delete(folder, true); } catch { } }
+        return 0;
+    }
+
     internal static int ScanReport()
     {
         var engine = new CleanupEngine();

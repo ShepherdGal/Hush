@@ -2,6 +2,16 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## 0.8.2 (November 8, 2026)
+
+Clean stays on screen (dimmed) once a scan has results; the Clean popup shows green/amber/red compact groups; the Windows choices grew to about 80, rated Recommended / Somewhat recommended (no "not recommended" ones), grouped by topic, with the earlier fixes below (false "managed PC" detection, administrator restart flow, restart advice popup, strong Clean hover, Safe-first Review order). Verify.ps1 passes. See CHANGELOG 0.8.2.
+
+## Review order, bottom bar and hover (November 8, 2026)
+
+Review categories are ordered Safe, Review, Advanced. The bottom bar has Scan again at the left and the red Clean selected button in the middle with the count and size in plain text under it (no hint text). Clean buttons (`Motion.OuterGlow`) now show a strong hover: own-red fill plus a wider, brighter glow. ScanRipples again ignores Windows' animation switch. Verify.ps1 passes; see CHANGELOG for what was and was not checked.
+
+Windows settings are no longer read-only: the "managed device" test was wrong on almost every PC and has been fixed, and the remaining cases (Home, outside values, device-wide choices without administrator rights) became notes plus a confirmation. Device-wide choices restart Hush as administrator (`--windows-review`, `--windows-undo`) and a result popup gives restart advice. See docs/WINDOWS-SETTINGS.md and the CHANGELOG. `Hush.Tests.exe --windows-report` prints how this PC looks to the page (read-only).
+
 ## Version 0.8.1, final (November 8, 2026)
 
 Released as v0.8.1 ("Hush 0.8.1"), built from the final commit; assets are `Hush-Portable.zip`, `Hush-Setup.zip`, `LICENSE` and `Hush-icon.png` (GitHub refuses .exe uploads; the updater unpacks `Hush-Portable.exe` from the zip). The version number never changed from 0.8.1, so the tag was re-created after the owner cleaned GitHub. Contents: simpler Info card and Boost animation; calm green for Safe/good (`SafetyPalette.Good`, `GoodBrush`) and a golden Light amber; zero build warnings; more safe cleanup locations; fifteen new Windows privacy choices (docs/WINDOWS-SETTINGS.md); a scan watchdog (per-location workers, 30 s stall limit, `Logs\scan-issues.log`, "Still looking in ..." status) for a scan that stuck at 2% on another PC; an interface size setting (Smart/75/100/120, `UiScale`) for a window too big for a small screen; and soft ripples around the gauge while scanning (`ScanRipples`). `scripts/Verify.ps1` passes (239 checks plus the UI suites); the real single-file exe was started once as a smoke test. The exact cause of the 2% stall is unknown: if it recurs, ask for `Logs\scan-issues.log`. Versions up to 0.8 look for a release asset named `Hush.exe`, which no longer exists, so they update with one manual download. The README was rewritten by the owner on GitHub and is kept, with the Download table, terms and license lines restored (tests require them). Old tags v0.7 and v0.8 still exist on GitHub with their releases.

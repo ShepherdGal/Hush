@@ -23,10 +23,38 @@ public partial class MainWindow
         RefreshUiSizeChoices();
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public int Flags; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+
+    // The work area (in DIPs) of the monitor this window is on, so a small second screen is sized for itself; the primary screen's is the fallback.
+    private Rect CurrentWorkArea()
+    {
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                var info = new MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<MonitorInfo>() };
+                if (GetMonitorInfo(MonitorFromWindow(handle, 2 /* nearest */), ref info))
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    return new Rect(info.Work.Left / dpi.DpiScaleX, info.Work.Top / dpi.DpiScaleY,
+                        (info.Work.Right - info.Work.Left) / dpi.DpiScaleX, (info.Work.Bottom - info.Work.Top) / dpi.DpiScaleY);
+                }
+            }
+        }
+        catch { /* fall back to the primary screen */ }
+        return SystemParameters.WorkArea;
+    }
+
     // Applies the saved choice. Layout is built at 100%; this multiplies the content, sets the smallest allowed window size and (when asked) the window size.
     internal void ApplyUiScale(bool resizeWindow)
     {
-        var work = SystemParameters.WorkArea;
+        var work = CurrentWorkArea();
         double scale = UiScale.Resolve(prefs.UiSize, work);
         double previous = uiScale;
         uiScale = scale;
@@ -63,7 +91,7 @@ public partial class MainWindow
     private void RefreshUiSizeChoices()
     {
         if (UiSizeSummary == null) return;
-        var work = SystemParameters.WorkArea;
+        var work = CurrentWorkArea();
         double resolved = UiScale.Resolve(prefs.UiSize, work);
         double requested = UiScale.Requested(prefs.UiSize, work);
         uiSizeLoading = true;

@@ -215,7 +215,7 @@ public static class Motion
             // Clip after the child effects: only the light outside the original outline survives.
             // The filled silhouettes produce a smooth falloff without painting the button interior.
             outerGlow.Clip = new CombinedGeometry(GeometryCombineMode.Exclude,
-                new RectangleGeometry(new Rect(-16, -16, button.ActualWidth + 32, button.ActualHeight + 32)),
+                new RectangleGeometry(new Rect(-30, -30, button.ActualWidth + 60, button.ActualHeight + 60)),
                 new RectangleGeometry(new Rect(0, 0, button.ActualWidth, button.ActualHeight), 13, 13));
         }
         private void BackgroundChanged(object? sender, EventArgs e)
@@ -223,6 +223,8 @@ public static class Motion
             UpdateSurface(paletteChange: true);
         }
         private bool Highlighted => button.IsEnabled && (hovered || button.IsKeyboardFocusWithin);
+        // The strong Clean hover follows the mouse only: Hush focuses the Clean button after a scan, and focus alone must not look like a hover.
+        private bool MouseHighlighted => button.IsEnabled && hovered;
         private void ForegroundChanged(object? sender, EventArgs e) { UpdateInk(paletteChange: true); UpdateSurface(paletteChange: true); }
         private void UpdateSurface(bool paletteChange = false)
         {
@@ -230,8 +232,14 @@ public static class Motion
             if (button.Template.FindName("GlowUnderlay", button) is Border underlay)
                 underlay.Opacity = source.Color.A == 0 || GetGlow(button) <= 0 ? 0 : 0.12;
             Color target = ThemePalette.Destination(source);
-            // Refine the existing surface itself; transparent navigation and Clean never gain a wash.
-            if (Highlighted && source.Color.A == 255 && button.Foreground is SolidColorBrush accent)
+            // Outline-glow buttons (Clean, Clean selected) have a nearly transparent fill, so on hover the fill itself fills in with their own
+            // color: a strong, obvious response (still the one Hush red, only more opaque) that deepens when pressed.
+            if (GetOuterGlow(button) && source.Color.A < 255)
+            {
+                if (MouseHighlighted) target = Color.FromArgb((byte)(pressed ? 0x74 : 0x52), target.R, target.G, target.B);
+            }
+            // Refine the existing surface itself; transparent navigation never gains a wash.
+            else if (Highlighted && source.Color.A == 255 && button.Foreground is SolidColorBrush accent)
             {
                 double amount = pressed ? 0.02 : 0.035;
                 byte Blend(byte a, byte b) => (byte)Math.Round(a + (b - a) * amount);
@@ -292,7 +300,7 @@ public static class Motion
         {
             bool hover = Highlighted;
             // Outline-glow buttons (Clean, Clean selected) get a clearly visible hover lift in their own color; quiet buttons keep the faint one.
-            double lift = GetOuterGlow(button) ? (pressed ? 0.05 : 0.11) : (pressed ? 0.02 : 0.035);
+            double lift = GetOuterGlow(button) ? (pressed ? 0.22 : MouseHighlighted ? 0.42 : 0.04) : (pressed ? 0.02 : 0.035);
             double strength = button.IsEnabled && GetGlow(button) > 0 ? GetGlow(button) + (hover ? lift : 0) : 0;
             UpdateSurface();
             UpdateInk();
@@ -303,7 +311,7 @@ public static class Motion
                 light.BeginAnimation(DropShadowEffect.ColorProperty, new ColorAnimation(light.Color, GetAccent(button), TimeSpan.FromMilliseconds(InteractionMilliseconds)));
             edge.BeginAnimation(DropShadowEffect.OpacityProperty, Tween(edge.Opacity, GetOuterGlow(button) ? strength * 1.7 : 0));
             halo.BeginAnimation(DropShadowEffect.OpacityProperty, Tween(halo.Opacity, GetOuterGlow(button) ? strength : 0));
-            halo.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Tween(halo.BlurRadius, hover && GetOuterGlow(button) ? 18 : 12));
+            halo.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Tween(halo.BlurRadius, MouseHighlighted && GetOuterGlow(button) ? 26 : 12));
             button.BeginAnimation(UIElement.OpacityProperty, Tween(button.Opacity, button.IsEnabled ? 1 : 0.45));
         }
         internal void Detach()

@@ -247,7 +247,7 @@ internal static class UiLayoutChecks
                         Require(text.Name == "Tick" || text.FontSize >= 14, "Supporting file text uses the shared readable size");
                         Require(Bounds(text, row).Right <= row.ActualWidth + 1, "Filename, folder and size columns do not clip");
                     }
-                    foreach (string name in new[] { "PrimaryButton", "ReviewHint", "SelectionSummary", "ResultCount", "BackButton", "CollapseAllButton" })
+                    foreach (string name in new[] { "PrimaryButton", "SelectionSummary", "ResultCount", "BackButton", "CollapseAllButton" })
                     {
                         var control = (FrameworkElement)window.FindName(name);
                         var bound = Bounds(control, root);
@@ -425,12 +425,21 @@ internal static class UiLayoutChecks
                         && Descendants<CheckBox>(root).Where(box => box.DataContext is CleanupItem or ReviewCategory).All(box => !box.IsEnabled),
                         "Incomplete results are read-only in their actual controls and never claim selected files");
                 }
-                Require(homeClean.Visibility != Visibility.Visible && !homeClean.IsEnabled
-                    && primary.Content.ToString() == "Scan again" && primary.BorderThickness.Left == 0
-                    && rescan.Visibility == Visibility.Collapsed, "Incomplete/empty results expose one neutral rescan and no cleaning actions");
-                Require(primary.MinWidth == 0 && primary.Padding == rescan.Padding
-                    && primary.Height == rescan.Height && primary.FontSize == rescan.FontSize,
-                    "Scan again keeps identical natural sizing and typography in every state");
+                if (window.CurrentScanState == MainWindow.ScanState.Completed && window.ReviewItems.Count > 0)
+                {
+                    Require(homeClean.Visibility == Visibility.Visible && !homeClean.IsEnabled
+                        && primary.Content.ToString() == "Clean selected" && !primary.IsEnabled && rescan.Visibility == Visibility.Visible,
+                        "Completed results with nothing selected keep Clean on screen, dimmed, with Scan again beside it");
+                }
+                else
+                {
+                    Require(homeClean.Visibility != Visibility.Visible && !homeClean.IsEnabled
+                        && primary.Content.ToString() == "Scan again" && primary.BorderThickness.Left == 0
+                        && rescan.Visibility == Visibility.Collapsed, "Incomplete/empty results expose one neutral rescan and no cleaning actions");
+                    Require(primary.MinWidth == 0 && primary.Padding == rescan.Padding
+                        && primary.Height == rescan.Height && primary.FontSize == rescan.FontSize,
+                        "Scan again keeps identical natural sizing and typography in every state");
+                }
                 homeClean.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Require(modal.Visibility == Visibility.Collapsed, "Cleanup is guarded even if a hidden action receives a stale event");
             }
@@ -643,9 +652,9 @@ internal static class UiLayoutChecks
             var previousSelection = window.ReviewItems.Select(item => item.Selected).ToArray();
             foreach (var item in window.ReviewItems) item.Selected = false;
             Wait(300); Layout(root, new Size(800, 740));
-            Require(((Button)window.FindName("PrimaryButton")).Content.ToString() == "Scan again"
-                && ((Button)window.FindName("RescanButton")).Visibility == Visibility.Collapsed,
-                "Deselecting every result leaves exactly one Scan again action in both themes");
+            Require(((Button)window.FindName("PrimaryButton")).Content.ToString() == "Clean selected" && !((Button)window.FindName("PrimaryButton")).IsEnabled
+                && ((Button)window.FindName("RescanButton")).Visibility == Visibility.Visible,
+                "Deselecting every result leaves a dimmed Clean button with Scan again beside it, in both themes");
             Save(root, new Size(800, 740), Path.Combine(directory, $"review-no-selection-{(light ? "light" : "dark")}.png"));
             for (int index = 0; index < previousSelection.Length; index++) window.ReviewItems[index].Selected = previousSelection[index];
             window.Categories[0].Expanded = true; Layout(root, new Size(920, 820)); ((ScrollViewer)window.FindName("ReviewScroll")).ScrollToTop(); root.UpdateLayout(); Wait(360);
