@@ -8,6 +8,12 @@ internal static class TestRunner
         Hush.MainWindow.RestorePoints = new FakeRestorePoints();
         // Likewise no test window may read the real service list (a background sc.exe still running at exit crashed the runtime once).
         Hush.MainWindow.ServiceSystemFactory = () => new ServiceChecks.FakeServices();
+        // And no test window may read or change the real scheduled tasks.
+        Hush.MainWindow.TaskSystemFactory = () => new TaskChecks.FakeTasks();
+        // ... and its history and log go to a throw-away folder, never into the person's real Hush data folder.
+        string taskHistory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Hush.Tests.Tasks." + Guid.NewGuid().ToString("N"), "Windows settings");
+        Hush.MainWindow.TaskHistoryDirectory = taskHistory;
+        Hush.MainWindow.CloseActionsOnDeactivate = false;
         try
         {
             if (args.Length == 0) checks();
@@ -29,6 +35,7 @@ internal static class TestRunner
             else if (args is ["--process-report"]) return PerformanceChecks.ProcessReport();
             else if (args is ["--meter-report"]) return PerformanceChecks.MeterReport();
             else if (args is ["--service-report"]) return PerformanceChecks.ServiceReport();
+            else if (args is ["--task-report"]) return PerformanceChecks.TaskReport();
             else if (args is ["--ui-perf"]) return UiPerf.Run();
             else if (args is ["--preview-cleaning", var folder]) return UiPerf.PreviewCleaning(folder);
             else if (args is ["--preview-more", var moreFolder]) return UiPerf.PreviewMore(moreFolder);
@@ -41,6 +48,10 @@ internal static class TestRunner
             Console.Error.WriteLine("FAIL: Hush verification did not pass.");
             Console.Error.WriteLine(error);
             return 1;
+        }
+        finally
+        {
+            try { string? top = System.IO.Path.GetDirectoryName(taskHistory); if (top != null && System.IO.Directory.Exists(top)) System.IO.Directory.Delete(top, recursive: true); } catch (System.IO.IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
 }

@@ -7,21 +7,34 @@ namespace Hush;
 // One line of the Services card: a switch, the service's plain name with a "?" explanation, what it uses right now, and its level.
 // The switch shows the service's state the way Windows has it: ON = the service is enabled (as it is now); the person switches it OFF to disable it. A switch
 // that is OFF is a change waiting for "Review changes": nothing is written until that is confirmed. Selected means "will be disabled" (= switch OFF).
-internal sealed class ServiceChoice(ServiceCandidate candidate) : INotifyPropertyChanged
+internal sealed class ServiceChoice(ServiceCandidate candidate) : OffSwitchChoice
 {
     internal ServiceCandidate Candidate { get; } = candidate;
     public string Name => Candidate.Name;
-    public string Title => Candidate.Title;
-    public string HelpText => Candidate.Why + " Switch it off to disable it: Windows no longer starts it. Nothing changes until you review and confirm, and Undo puts it back.";
-    // What the service is doing now, or what is about to happen to it.
-    public string Status => selected ? "Will be turned off after you review · " + Candidate.Status : Candidate.Status;
-    public string LevelLabel => Candidate.Level switch { ServiceLevel.Recommended => "Rarely needed", ServiceLevel.Somewhat => "Read first", _ => "Left behind" };
-    public bool Amber => Candidate.Level != ServiceLevel.Recommended;
+    public override string Title => Candidate.Title;
+    public override string HelpText => Candidate.Why + " Switch it off to disable it: Windows no longer starts it. Nothing changes until you review and confirm, and Undo puts it back.";
+    protected override string CurrentStatus => Candidate.Status;
+    public override string LevelLabel => Candidate.Level switch { ServiceLevel.Recommended => "Rarely needed", ServiceLevel.Somewhat => "Read first", _ => "Left behind" };
+    public override bool Amber => Candidate.Level != ServiceLevel.Recommended;
+}
+
+// The shared line behind the Services and Scheduled tasks cards (one row template, ServiceTemplate): ON = enabled as Windows has it now; switching it OFF
+// stages a change ("Will be turned off after you review"). Selected means "will be turned off" (= switch OFF).
+internal abstract class OffSwitchChoice : INotifyPropertyChanged
+{
+    public abstract string Title { get; }
+    public abstract string HelpText { get; }
+    public abstract string LevelLabel { get; }
+    public abstract bool Amber { get; }
+    protected abstract string CurrentStatus { get; }
+    public string HelpName => "More about " + Title;
+    // What the item is doing now, or what is about to happen to it.
+    public string Status => selected ? "Will be turned off after you review · " + CurrentStatus : CurrentStatus;
     // The sub-category heading this line sits under; empty while the whole list is short enough to stay flat (see ListGrouping).
     public string Topic { get; internal set; } = "";
     private bool selected;
     public bool Selected { get => selected; set { if (selected == value) return; selected = value; PropertyChanged?.Invoke(this, new(nameof(Selected))); PropertyChanged?.Invoke(this, new(nameof(On))); PropertyChanged?.Invoke(this, new(nameof(Status))); } }
-    // The switch itself: ON while the service stays enabled.
+    // The switch itself: ON while the item stays enabled.
     public bool On { get => !selected; set => Selected = !value; }
     public event PropertyChangedEventHandler? PropertyChanged;
 }

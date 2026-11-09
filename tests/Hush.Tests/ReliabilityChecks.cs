@@ -19,6 +19,16 @@ internal static class ReliabilityChecks
         try { CrashLog.Write("test", new Exception("x"), "Z:\\no\\such?drive|folder"); } catch { threw = true; }
         check(!threw, "Writing the crash note can never throw (a missing or invalid folder is ignored)");
 
+        // The harmless C++ module unload error at process exit is not noted as a crash (the real exe logged it on every normal close).
+        Exception? shutdownNoise = null;
+        try { ModuleUninitializer.Unload(); } catch (DllNotFoundException ex) { shutdownNoise = ex; }
+        string noiseData = Path.Combine(fixture, "crash-noise");
+        CrashLog.Write("unhandled", shutdownNoise, noiseData);
+        CrashLog.Write("unhandled", new DllNotFoundException("a real missing library"), noiseData);
+        string noiseLog = File.Exists(Path.Combine(noiseData, "Logs", "crash.log")) ? File.ReadAllText(Path.Combine(noiseData, "Logs", "crash.log")) : "";
+        check(CrashLog.IsShutdownNoise(shutdownNoise) && noiseLog.Contains("a real missing library") && !noiseLog.Contains("ModuleUninitializer"),
+            "The harmless error at process exit is not noted as a crash, while a real missing-library error still is");
+
         // ---- long-form roots (T9) ----
         check(CleanupEngine.LongPath(@"C:\Windows\Temp\") == @"C:\Windows\Temp\" && CleanupEngine.LongPath(@"C:\NOPE~1\missing") == @"C:\NOPE~1\missing", "A path without short names, or one that does not exist, is left as it is");
         string longFolder = Path.Combine(fixture, "A Rather Long Folder Name For Short Names");
@@ -59,4 +69,10 @@ internal static class ReliabilityChecks
         WindowsSystemTools.DirectorySize(tree, cancelled.Token, int.MaxValue, out bool cancelledComplete);
         check(!cancelledComplete, "A cancelled measurement says it is incomplete");
     }
+}
+
+// Stands in for the runtime's C++ support type: only its name matters, because CrashLog recognizes the shutdown error by it in the stack trace.
+internal static class ModuleUninitializer
+{
+    internal static void Unload() => throw new DllNotFoundException("Dll was not found.");
 }

@@ -103,6 +103,8 @@ public partial class App : Application
             window.Loaded += (_, _) => window.ResumeWindowsReview(e.Args);
         if (e.Args is ["--services"] or ["--services-undo"])
             window.Loaded += (_, _) => window.ResumeServices(e.Args[0] == "--services-undo");
+        if (e.Args is ["--tasks"] or ["--tasks-undo"])
+            window.Loaded += (_, _) => window.ResumeTasks(e.Args[0] == "--tasks-undo");
         if (e.Args is ["--windows-update-off"] or ["--windows-update-on"])
             window.Loaded += (_, _) => window.ResumeWindowsUpdate(e.Args[0] == "--windows-update-off");
         MainWindow = window;

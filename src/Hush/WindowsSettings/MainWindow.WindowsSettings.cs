@@ -147,6 +147,10 @@ public partial class MainWindow
     // losing focus, Escape or choosing an action closes it (the chevron follows IsOpen both ways).
     private void Actions_Click(object sender, RoutedEventArgs e) => ActionsPopup.IsOpen = !ActionsPopup.IsOpen;
 
+    // The menu closes when Hush loses focus. Test windows switch this off: they are never activated on purpose, and a person using another program while the
+    // suite runs would otherwise close the menu under the test (one full run failed that way, three isolated runs passed).
+    internal static bool CloseActionsOnDeactivate = true;
+
     private void CloseActionsOnOutsidePress(object sender, MouseButtonEventArgs e)
     {
         if (!ActionsPopup.IsOpen) return;

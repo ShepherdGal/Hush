@@ -67,12 +67,16 @@ public partial class MainWindow : Window
 
     internal MainWindow(CleanupEngine engine, Func<IProgress<ScanProgress>?, CancellationToken, ScanResult>? scan = null, string? preferencesPath = null,
         Func<IUpdateClient>? updateFactory = null, Action<string, AppRelease>? installUpdate = null,
-        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null, IProcessManager? processManager = null, WindowsUpdateSwitch? windowsUpdate = null, IServiceSystem? serviceSystem = null)
+        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null, IProcessManager? processManager = null, WindowsUpdateSwitch? windowsUpdate = null, IServiceSystem? serviceSystem = null, ITaskSystem? taskSystem = null)
     {
-        serviceTuning = new ServiceTuning(serviceSystem ?? ServiceSystemFactory(), Path.Combine(CleanupEngine.DataDirectory, "Windows settings"));
+        // Histories and logs of system changes live beside the settings file: the real app uses %LOCALAPPDATA%\Hush, and a window given its own settings path
+        // (every test window) keeps them in that folder, so a test can never write a record of a service change into the person's real data (it did: 43 fake log lines).
+        string dataFolder = preferencesPath != null ? Path.GetDirectoryName(Path.GetFullPath(preferencesPath))! : CleanupEngine.DataDirectory;
+        serviceTuning = new ServiceTuning(serviceSystem ?? ServiceSystemFactory(), Path.Combine(dataFolder, "Windows settings"));
+        taskTuning = new TaskTuning(taskSystem ?? TaskSystemFactory(), TaskHistoryDirectory ?? Path.Combine(dataFolder, "Windows settings"));
         this.memoryBooster = memoryBooster ?? new WindowsMemoryBooster();
         this.processManager = processManager ?? new WindowsProcessManager();
-        updateSwitch = windowsUpdate ?? new WindowsUpdateSwitch(new RealWindowsUpdateSystem(), Path.Combine(CleanupEngine.DataDirectory, "Windows settings"));
+        updateSwitch = windowsUpdate ?? new WindowsUpdateSwitch(new RealWindowsUpdateSystem(), Path.Combine(dataFolder, "Windows settings"));
         this.engine = engine;
         this.scan = scan == null ? engine.Scan : (progress, token, _) => scan(progress, token);
         this.updateFactory = updateFactory ?? (() => new UpdateService());
@@ -117,7 +121,7 @@ public partial class MainWindow : Window
             { e.Handled = true; ActionsPopup.IsOpen = false; }
         };
         PreviewMouseDown += CloseActionsOnOutsidePress;
-        Deactivated += (_, _) => ActionsPopup.IsOpen = false;
+        Deactivated += (_, _) => { if (CloseActionsOnDeactivate) ActionsPopup.IsOpen = false; };
         ActionsButton.IsVisibleChanged += (_, e) => { if (e.NewValue is false) ActionsPopup.IsOpen = false; }; // leaving Settings closes the menu
     }
 
@@ -307,6 +311,7 @@ public partial class MainWindow : Window
         RefreshProcesses(rebuildList: SettingsProcessSection.IsExpanded);
         // The Services list is read when its card is opened (or refreshed), not every time Settings opens: reading it walks every Windows service and starts sc.exe.
         if (SettingsServicesSection.IsExpanded) _ = RefreshServicesAsync();
+        if (SettingsTasksSection.IsExpanded) _ = RefreshTasksAsync(); // likewise the scheduled tasks (a walk of every task file)
     }
 
     // The Settings sections sit in two columns side by side; in a narrow window they stack into one.
@@ -671,6 +676,7 @@ public partial class MainWindow : Window
         if (registry > 0) lines.Add($"{registry} app registry entries are backed up to .reg files first.");
         if (Has("RecycleBin")) lines.Add("Recycle Bin: everything in it is removed on every drive, for good.");
         if (Has("WindowsOld")) lines.Add("Previous Windows installation: Hush deletes Windows.old itself, including the old Users folder (administrator mode); you can't go back to the old Windows.");
+        if (Has("AppDownloads")) lines.Add("Large app downloads and installed app files: those apps download or reinstall them before they work again (Fusion 360, CapCut, Codex, Zed, GitHub Desktop), and Unity Asset Store packages come back only from your account. Nothing of yours is in them.");
         if (Has("BrowserCookies")) lines.Add("Cookies: you will be signed out of websites. Passwords and bookmarks stay.");
         if (Has("BrowserHistory")) lines.Add("Browser history is cleared. Bookmarks, passwords and logins stay.");
         if (Has("Clipboard")) lines.Add("Clipboard history is cleared. Pinned clips stay.");

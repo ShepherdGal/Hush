@@ -256,6 +256,27 @@ internal sealed class CleanupEngine
         AddFolders("DevCache", "NuGet cache", CleanupKind.Cache, 14, Path.Combine(local, "NuGet"), ["v3-cache", "plugins-cache", "Cache"]);
         // The restored packages themselves (0.9): re-downloaded on the next build, so an offline build fails until then. Its own Review row.
         AddFolders("NuGetPackages", "NuGet packages", CleanupKind.Cache, 0, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget"), ["packages"]);
+        // Download caches of programming tools in the home folder (their own category, because they are outside AppData). Each is fetched again by its tool; only these
+        // cache folders, never a tool's installed toolchains, projects, settings or the local Maven repository (which can hold the only copy of a locally built library).
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        AddFolders("DevHomeCaches", "Gradle cache", CleanupKind.Cache, 14, Path.Combine(home, ".gradle"), ["caches"], ["java", "gradle", "studio64"]);
+        AddFolders("DevHomeCaches", "Cargo crate downloads", CleanupKind.Cache, 14, Path.Combine(home, ".cargo", "registry"), ["cache"], ["cargo", "rustc"]);
+        AddFolders("DevHomeCaches", "Bun install cache", CleanupKind.Cache, 14, Path.Combine(home, ".bun", "install"), ["cache"], ["bun"]);
+        // Caches of apps found on a real PC: Stremio's streaming cache (chunks of what was streamed, fetched again when watched), Dart's pub cache and the TypeScript
+        // server's acquired type definitions (VS Code and Visual Studio fetch them again).
+        AddFolders("Cache", "Stremio streaming cache", CleanupKind.Cache, 3, Path.Combine(roaming, "stremio", "stremio-server"), ["stremio-cache"], ["stremio", "stremio-runtime"]);
+        AddFolders("DevCache", "Dart pub cache", CleanupKind.Cache, 14, Path.Combine(local, "Pub"), ["Cache"], ["dart", "flutter"]);
+        foreach (var version in Folders(Path.Combine(local, "Microsoft", "TypeScript")))
+            AddFolders("DevCache", "TypeScript type cache", CleanupKind.Cache, 14, version, ["node_modules"], ["Code", "devenv"]);
+        // Large downloads and installed-app files (Advanced, red, opt-in: owner request). Each folder is re-downloaded or reinstalled by its own app, but that can take a
+        // long time, the app may not start until then, and (Unity Asset Store) the packages must be fetched again from the person's account. Only these exact folders,
+        // only while the app is closed, never any project, document, setting or sign-in of the app.
+        AddFolders("AppDownloads", "Unity Asset Store downloads", CleanupKind.Cache, 0, Path.Combine(roaming, "Unity"), ["Asset Store-5.x"], ["Unity", "Unity Hub"]);
+        AddFolders("AppDownloads", "Fusion 360 app files (webdeploy)", CleanupKind.Cache, 0, Path.Combine(local, "Autodesk"), ["webdeploy"], ["Fusion360", "FusionLauncher"]);
+        AddFolders("AppDownloads", "CapCut app files", CleanupKind.Cache, 0, Path.Combine(local, "CapCut"), ["Apps"], ["CapCut"]);
+        AddFolders("AppDownloads", "Codex runtimes", CleanupKind.Cache, 0, Path.Combine(home, ".cache"), ["codex-runtimes"], ["codex", "Codex"]);
+        AddFolders("AppDownloads", "Zed downloaded tools", CleanupKind.Cache, 0, Path.Combine(local, "Zed"), ["copilot", "node"], ["Zed", "zed"]);
+        AddFolders("AppDownloads", "GitHub Desktop update packages", CleanupKind.Cache, 0, Path.Combine(local, "GitHubDesktop"), ["packages"], ["GitHubDesktop"]);
         AddFolders("DevCache", "npm cache", CleanupKind.Cache, 14, local, ["npm-cache"]);
         AddFolders("DevCache", "pip cache", CleanupKind.Cache, 14, Path.Combine(local, "pip"), ["Cache"]);
         AddFolders("DevCache", "Yarn cache", CleanupKind.Cache, 14, Path.Combine(local, "Yarn"), ["Cache"]);

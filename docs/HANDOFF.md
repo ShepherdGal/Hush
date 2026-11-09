@@ -2,6 +2,10 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## Scheduled tasks card (November 9, 2026)
+
+New Settings card **Scheduled tasks** (owner: "also clean unneeded tasks"), built as the sibling of Services: `WindowsSettings/TaskTuning.cs` (catalog of 33, leftovers, never-touch list, save-first history `tasks-changed.json`, Undo, allow-listed history) and `WindowsSettings/MainWindow.Tasks.cs`; full width under the two balanced columns, before Privacy & telemetry. Details: CHANGELOG "Scheduled tasks card". Nothing committed. **Could not verify:** real `schtasks.exe` changes and read-back on real tasks, the real administrator restart with `--tasks`; without administrator rights the top task folder (where Google/Edge/Dropbox updaters live) cannot be listed, so those only show as administrator (the card says "more may show as administrator"). Topic names were made unique ("App updater tasks", "Tasks left behind by removed programs") because Settings remembers open headings by name and Services already uses "App updaters" / "Left behind by removed programs". Firefox's updater is matched in `\Mozilla\` (where Firefox actually puts it), not in the top folder. Observation for later: the Services UI test writes its history and log into the real `%LOCALAPPDATA%\Hush` folder (fake services only, Undo removes the history); the tasks tests use a throw-away folder instead.
+
 ## P2 stabilization done (November 9, 2026)
 
 Services `Read` is cheap (one registry key + `sc queryex <name>`), `Stop`/`Start` fail fast on a non-zero `sc.exe` code, `schtasks` output is read asynchronously, a partly removed Windows.old is reported as "only partly removed (N items)" and `RemoveTree` accepts only a folder named `Windows.old`, `Preferences.Save` notes failures in the crash log, WMI COM objects are released, three doc drifts fixed. Details and tests: CHANGELOG "P2 stabilization". Nothing committed. **Could not verify:** anything against real services, real `schtasks.exe`, real WMI or a real Windows.old (fakes and fixtures only).

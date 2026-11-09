@@ -283,7 +283,8 @@
                 </Style>
               </GroupStyle.ContainerStyle>
             </GroupStyle>
-            <!-- One service Hush offers: switch, plain name with a "?" explanation, what it uses right now, and its level (green: rarely needed, amber: read first or left behind). -->
+            <!-- One service or scheduled task Hush offers (OffSwitchChoice): switch, plain name with a "?" explanation, what it does right now, and its level
+                 (green: rarely needed, amber: read first or left behind). Shared by the Services and Scheduled tasks cards. -->
             <DataTemplate x:Key="ServiceTemplate">
               <StackPanel>
                 <Border x:Name="RowDivider" Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
@@ -291,8 +292,8 @@
                   <Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <CheckBox Style="{StaticResource SwitchCheckBox}" IsChecked="{Binding On, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" AutomationProperties.Name="{Binding Title}"/>
                   <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                    <TextBlock FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" TextWrapping="Wrap"><Run Text="{Binding Title, Mode=OneWay}"/><InlineUIContainer BaselineAlignment="Center"><local:HelpMark Style="{StaticResource HelpMark}" HelpText="{Binding HelpText}" AutomationProperties.Name="More about this service"/></InlineUIContainer></TextBlock>
-                    <TextBlock Text="{Binding Status}" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" TextWrapping="Wrap"><Run Text="{Binding Title, Mode=OneWay}"/><InlineUIContainer BaselineAlignment="Center"><local:HelpMark Style="{StaticResource HelpMark}" HelpText="{Binding HelpText}" AutomationProperties.Name="{Binding HelpName}"/></InlineUIContainer></TextBlock>
+                    <TextBlock Text="{Binding Status}" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}"/>
                   </StackPanel>
                   <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse x:Name="LevelDot" Width="10" Height="10" Fill="{DynamicResource GoodBrush}" VerticalAlignment="Center"/>
@@ -610,6 +611,27 @@
             </Expander>
               </StackPanel>
             </Grid>
+            <!-- Scheduled tasks (0.9): the sibling of Services, full width under the two balanced columns. Tasks most home PCs do not need (telemetry, app updaters)
+                 and ones left behind by removed programs. Read when the card is opened; turning one off disables it (never deletes it), with the original saved first and Undo. -->
+            <Expander x:Name="SettingsTasksSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Scheduled tasks" Expanded="Tasks_Expanded" Collapsed="TopicCard_Collapsed">
+              <Expander.Header>
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal"><TextBlock Text="Scheduled tasks" Style="{StaticResource CardTitle}"/><local:HelpMark Style="{StaticResource HelpMark}" HelpText="Scheduled tasks are jobs Windows runs by itself at set times, at start-up or when you sign in. Some only collect usage data for Microsoft or check for app updates in the background, and some are left behind by programs you removed. Hush lists the ones it knows most home PCs do not need and turns off the ones you switch off: the task stays on the PC, it just no longer runs. A switch that is ON means the task is enabled, as Windows has it now; OFF means Hush will turn it off after you review and confirm. It never touches Windows Update, security, backup, restore or other system tasks. Hush does not promise a speed-up. Every original setting is saved first and Undo turns the tasks back on. Changing needs administrator mode." AutomationProperties.Name="More about Scheduled tasks"/></StackPanel>
+                  <TextBlock x:Name="TasksSummary" Text="Open to see what you can turn off" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel Margin="0,6,0,8">
+                <TextBlock x:Name="TasksHint" Text="Switch a task off to disable it. Nothing changes until you press “Review changes”." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8"/>
+                <ItemsControl x:Name="TasksList" AlternationCount="200" ItemTemplate="{StaticResource ServiceTemplate}"><ItemsControl.GroupStyle><StaticResource ResourceKey="AdjustmentGroups"/></ItemsControl.GroupStyle></ItemsControl>
+                <TextBlock x:Name="TasksEmpty" Text="No scheduled task on this PC needs a second look." Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,0"/>
+                <TextBlock x:Name="TasksStatus" Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
+                <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <Button x:Name="RefreshTasksButton" Content="Refresh" Click="RefreshTasks_Click" Style="{StaticResource TextButton}" local:Motion.MouseOnly="True" Margin="-14,0,0,0" AutomationProperties.Name="Read the scheduled tasks again"/>
+                  <Button x:Name="TasksUndoButton" Grid.Column="1" Content="Undo changes" Click="TasksUndo_Click" Style="{StaticResource TextButton}" Visibility="Collapsed" AutomationProperties.Name="Turn the changed scheduled tasks back on"/>
+                  <Button x:Name="TasksReviewButton" Grid.Column="3" Content="Review changes…" Click="TasksReview_Click" IsEnabled="False" Padding="18,8" AutomationProperties.Name="Review scheduled task changes"/>
+                </Grid>
+              </StackPanel>
+            </Expander>
             <Expander x:Name="SettingsPrivacySection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Privacy and telemetry" Collapsed="TopicCard_Collapsed">
               <Expander.Header>
                 <StackPanel>

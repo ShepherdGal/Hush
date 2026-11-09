@@ -363,6 +363,7 @@ internal static class UiLayoutChecks
                 ReviewGroupChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 WindowsUpdateChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 ServiceChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                TaskChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 SmoothScrollChecks.Run((ok, message) => Require(ok, message));
                 Console.WriteLine("PASS: Interface size (Smart, 75%, 100%, 120%) rescales the real window, is remembered, and always fits the screen");
                 Console.WriteLine("PASS: Empty gauge, real live odometer count, safety selection, shared motion, About/update popup, blurred confirmation and responsive layout verified");
@@ -763,9 +764,10 @@ internal static class UiLayoutChecks
                 "The header logo and the Scan button react to the mouse only, so the logo looks the same whether the window is active or not");
             // The main Scan button gets the same gentle glow-intensify hover as the other glowing buttons (0.9); it never scales.
             var scanButton = (Button)window.FindName("ScanCircleButton");
-            double restingGlow = ((System.Windows.Media.Effects.DropShadowEffect)scanButton.Effect).Opacity; double restingWidth = scanButton.ActualWidth;
+            // The glow's shadow is attached only while it is visible (Motion.Light), so at rest there may be no effect at all.
+            double restingGlow = (scanButton.Effect as System.Windows.Media.Effects.DropShadowEffect)?.Opacity ?? 0; double restingWidth = scanButton.ActualWidth;
             Motion.PreviewInteraction(scanButton, true, false); Wait(400);
-            Require(((System.Windows.Media.Effects.DropShadowEffect)scanButton.Effect).Opacity > restingGlow + 0.25 && scanButton.ActualWidth == restingWidth && scanButton.RenderTransform == Transform.Identity || scanButton.RenderTransform == null || scanButton.RenderTransform.Value.IsIdentity,
+            Require(((scanButton.Effect as System.Windows.Media.Effects.DropShadowEffect)?.Opacity ?? 0) > restingGlow + 0.25 && scanButton.ActualWidth == restingWidth && scanButton.RenderTransform == Transform.Identity || scanButton.RenderTransform == null || scanButton.RenderTransform.Value.IsIdentity,
                 $"Hovering the main Scan button strengthens its glow and does not resize it (light={light})");
             Save(root, new Size(920, 820), Path.Combine(directory, $"scan-hover-{(light ? "light" : "dark")}.png"));
             Motion.PreviewInteraction(scanButton, false, false); Wait(350);

@@ -28,7 +28,7 @@ request and change the rule (this file, CLAUDE.md/AGENTS.md and the test that lo
    A bar or number that moves by less than a visible amount is not redrawn (`ShowMeter(minChange)`): every redraw costs real CPU on a weak PC.
 6. **Nothing animates inside a page while the page fades in**; live readings start after the fade (`BeginSettingsLiveData`).
 7. **Build lazily.** Never construct a popup, effect, list or heavy object per row or at page open: a Settings page has well over a hundred help marks and each
-   used to build a popup with a shadow (`HelpMark.EnsurePopup`) *(test)*. A card's data is read when the card is opened (Services), not when Settings opens.
+   used to build a popup with a shadow (`HelpMark.EnsurePopup`) *(test)*. A card's data is read when the card is opened (Services, Scheduled tasks), not when Settings opens.
    Nothing at start-up or at page open may start `sc.exe`, a WMI query, a registry walk or a process list that the person did not ask for.
 8. **Never block the UI thread:** no `Thread.Sleep`, `.Wait()`, `.Result` or `.GetAwaiter().GetResult()` in window code *(test)*; slow work goes to
    `Task.Run`, with cancellation, a time limit (scan watchdog, `Guarded`, the close grace) and progress. Background work runs at background priority when
@@ -69,7 +69,7 @@ request and change the rule (this file, CLAUDE.md/AGENTS.md and the test that lo
   "service enabled". Say which in the card's first line, and keep the "?" for the long explanation. Footer buttons name what they act on ("Review Windows changes").
 - **A card opens with everything inside it closed**, always. Closing a card forgets which sub-categories were open (`TopicCard_Collapsed`); a search opens all
   while it is typed. Never auto-open a topic, even one that "has something running".
-- **Order everything.** Topics in a fixed logical order (Services: `ServiceTuning.TopicRank`, left-behind last); inside a topic safest/most common first, then
+- **Order everything.** Topics in a fixed logical order (Services: `ServiceTuning.TopicRank`, Scheduled tasks: `TaskTuning.TopicRank`, left-behind last); inside a topic safest/most common first, then
   by name. Long lists split themselves (`ListGrouping`, 12 per group). Never show a flat wall of rows.
 - **Popups:** the action is on the LEFT, the exit on the RIGHT (*test*); Escape closes; a button that opens a menu toggles it (Actions: `StaysOpen=true`, closed by
   a second click, a press elsewhere, Escape, losing focus or choosing an entry); one popup at a time; popups sit on the shared scrim; the first focus is the safe button.

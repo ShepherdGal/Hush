@@ -48,6 +48,18 @@ internal static class PerformanceChecks
         return 0;
     }
 
+    // Read-only: what the Scheduled tasks card would offer on this PC. Changes nothing (Scan only reads the task definition files).
+    internal static int TaskReport()
+    {
+        var clock = Stopwatch.StartNew();
+        var system = new RealTaskSystem();
+        var tuning = new TaskTuning(system, Path.Combine(Path.GetTempPath(), "Hush.TaskReport." + Guid.NewGuid().ToString("N")));
+        var offered = tuning.Scan();
+        Console.WriteLine($"{offered.Count} scheduled tasks offered on this PC, from a list of {TaskTuning.Catalog.Length} (read in {clock.ElapsedMilliseconds} ms{(system.IsAdministrator ? "" : "; not administrator, so tasks in the top folder are hidden")}).");
+        foreach (var c in offered) Console.WriteLine($"  {c.Level,-11} {c.Title,-40} {c.Status}");
+        return 0;
+    }
+
     // Read-only: the apps the Process card would list on this PC (never ends anything).
     internal static int ProcessReport()
     {

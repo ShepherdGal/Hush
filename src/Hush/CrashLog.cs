@@ -10,8 +10,14 @@ internal static class CrashLog
     private const long MaxBytes = 256 * 1024;
     private const int MaxText = 8000;
 
+    // A known harmless error at process exit: the .NET runtime unloads its C++ support module while the process ends and one of its native libraries is already
+    // gone ("DllNotFoundException ... CrtImplementationDetails.ModuleUninitializer"). The app has already closed normally, so it is not a crash and is not noted.
+    internal static bool IsShutdownNoise(Exception? exception) =>
+        exception is DllNotFoundException && (exception.StackTrace ?? "").Contains("ModuleUninitializer", StringComparison.Ordinal);
+
     internal static void Write(string source, Exception? exception, string? dataDirectory = null)
     {
+        if (IsShutdownNoise(exception)) return;
         try
         {
             string directory = Path.Combine(dataDirectory ?? CleanupEngine.DataDirectory, "Logs");

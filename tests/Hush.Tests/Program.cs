@@ -139,6 +139,7 @@ static void RunChecks()
         StagingTrustChecks.Run(fixture, Check);
         ReliabilityChecks.Run(fixture, Check);
         ServiceChecks.RunEngine(fixture, Check);
+        TaskChecks.RunEngine(fixture, Check);
         SilentToolChecks.Run(fixture, Check);
         WindowsUpdateChecks.RunEngine(fixture, Check);
         ScaleChecks.Run(fixture, Check);

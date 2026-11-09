@@ -228,7 +228,7 @@ internal sealed class ServiceTuning(IServiceSystem system, string directory)
         return path.Length > 3 && Regex.IsMatch(path, @"^[A-Za-z]:\\") && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? path : null;
     }
 
-    private static bool IsOutsideWindows(string file)
+    internal static bool IsOutsideWindows(string file)
     {
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         return !file.StartsWith(windows.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
@@ -497,11 +497,12 @@ internal sealed class RealServiceSystem : IServiceSystem
         return line.Length is > 0 and < 160 ? line : fallback;
     }
 
-    private static (int Code, string Output) Run(string file, params string[] arguments)
+    // Also used by RealTaskSystem for schtasks.exe: arguments through ArgumentList, output read asynchronously, a 30 s limit and a kill on timeout.
+    internal static (int Code, string Output) Run(string file, params string[] arguments)
     {
         var start = new ProcessStartInfo(file) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
-        using var process = Process.Start(start) ?? throw new IOException("Windows did not start the service tool.");
+        using var process = Process.Start(start) ?? throw new IOException("Windows did not start " + file + ".");
         var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
         if (!process.WaitForExit(30000)) { try { process.Kill(); } catch { } throw new IOException(file + " did not answer."); }
         return (process.ExitCode, output.GetAwaiter().GetResult() + errors.GetAwaiter().GetResult());
