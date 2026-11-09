@@ -7,7 +7,7 @@ namespace Hush;
 
 // The calm "something is happening" cue while a scan runs: soft rings of light drift outward from the gauge like sonar and fade away.
 // Each ring is drawn once (a hairline wrapped in layered translucent strokes, which reads as a soft glow without any blur effect) and WPF
-// animates its scale and opacity on the render thread with a frame-rate cap, so nothing repaints from a timer. The rings are staggered so one
+// animates its scale and opacity on the render thread at the display's own refresh rate (never a frame-rate cap), so nothing repaints from a timer. The rings are staggered so one
 // is always travelling. It fades in when a scan starts, fades out when it ends, and is switched off completely while hidden or not scanning.
 // Only the accent brush is used.
 public sealed class ScanRipples : Grid
@@ -44,27 +44,24 @@ public sealed class ScanRipples : Grid
     private void Update()
     {
         // Deliberately does not follow Windows' "animation effects" switch: many PCs run with it off for speed (this one does), and like every
-        // other motion in Hush this cue is the person's own choice of look. It is calm, capped in frame rate, and runs only while scanning.
+        // other motion in Hush this cue is the person's own choice of look. It is calm, runs at the display's refresh rate, and runs only while scanning.
         if (IsRunning && IsVisible)
         {
             if (!rippling)
             {
                 rippling = true;
-                double fps = Math.Clamp(1000.0 / Math.Max(16, ScanActivity.FrameInterval.TotalMilliseconds), 5, 60);
                 for (int i = 0; i < RingCount; i++)
                 {
                     // A negative start time begins the ring part-way through its journey, so rings are already out there the moment a scan starts.
                     var begin = TimeSpan.FromTicks(-Cycle.Ticks * i / RingCount);
-                    var grow = new DoubleAnimation(1.0, Reach, Cycle) { RepeatBehavior = RepeatBehavior.Forever, BeginTime = begin, EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut } };
-                    Timeline.SetDesiredFrameRate(grow, (int)Math.Round(fps));
+                    var grow = new DoubleAnimation(1.0, Reach, Cycle) { RepeatBehavior = RepeatBehavior.Forever, BeginTime = begin, EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut } };
                     rings[i].Scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
                     rings[i].Scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
                     // Rise gently, then dissolve over most of the journey.
                     var glow = new DoubleAnimationUsingKeyFrames { Duration = Cycle, RepeatBehavior = RepeatBehavior.Forever, BeginTime = begin };
                     glow.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(0)));
                     glow.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromPercent(0.12), new SineEase { EasingMode = EasingMode.EaseOut }));
-                    glow.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(1), new SineEase { EasingMode = EasingMode.EaseOut }));
-                    Timeline.SetDesiredFrameRate(glow, (int)Math.Round(fps));
+                    glow.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(1), new SineEase { EasingMode = EasingMode.EaseOut }));
                     rings[i].BeginAnimation(OpacityProperty, glow);
                 }
             }

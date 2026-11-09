@@ -4,6 +4,12 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges>
     <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
   </requestedPrivileges></security></trustInfo>
+  <!-- High DPI (0.9): drawn at the real pixel size of whichever monitor the window is on (also when it is moved between monitors with different scaling),
+       never stretched by Windows, so text and edges stay crisp. -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3"><windowsSettings>
+    <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+    <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
+  </windowsSettings></application>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1"><application>
     <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
   </application></compatibility>

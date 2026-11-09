@@ -1,6 +1,36 @@
-# Hush handoff — 0.7
+# Hush handoff — 0.9
 
 Updated November 7, 2026 (Asia/Jerusalem).
+
+## P2 stabilization done (November 9, 2026)
+
+Services `Read` is cheap (one registry key + `sc queryex <name>`), `Stop`/`Start` fail fast on a non-zero `sc.exe` code, `schtasks` output is read asynchronously, a partly removed Windows.old is reported as "only partly removed (N items)" and `RemoveTree` accepts only a folder named `Windows.old`, `Preferences.Save` notes failures in the crash log, WMI COM objects are released, three doc drifts fixed. Details and tests: CHANGELOG "P2 stabilization". Nothing committed. **Could not verify:** anything against real services, real `schtasks.exe`, real WMI or a real Windows.old (fakes and fixtures only).
+
+## Back to Glass, Mica parked, 60 fps cleaning cue (November 9, 2026)
+
+Mica is removed from the app and locked in `docs/locked/mica-look` (do not touch unless the owner says so; `LockedArchiveChecks` enforces it). The cleaning cue in the gauge is now a radar sweep with no frame-rate cap (the stutter was a 30 fps cap plus a blur effect on the whole gauge button), and "60 fps native always" is a locked rule with tests and a `Perf.ps1` budget. Glass is the default window on Windows 11. Verify passes (393 checks). **Still unverified:** Glass with a real mouse (drag, resize, snap, Alt+Tab), Windows 10, how the new cue feels on a real weak PC. The P2 tasks and the commit are next.
+
+## (earlier today) Glass default and Mica prototype (November 9, 2026)
+
+Glass is now the default window on Windows 11 (`--layered` goes back); `--mica` is a prototype; smooth scrolling stays (owner decision). See CHANGELOG "Glass window by default". Verify.ps1 passes, exes rebuilt, nothing committed. **Open:** mouse-level checks of Glass (drag, resize, snap, Alt+Tab), Windows 10, other DPIs; Mica is refined (neutral palette, translucent cards, opaque popups) and photographed in both themes: say if it should become an option in Settings or the default on Windows 11; ReadyToRun (needs approval); the P2 tasks; the commit.
+
+## Smoothness round and rulebook (November 9, 2026)
+
+Owner asked for a smoother app on an Intel i3 / 8 GB. Done (CHANGELOG "Smoothness for weak PCs..."): popup blur off, smooth scrolling rewritten, lazy help marks, Services read on card open, restore-point probe removed from the Settings click, Services card clarity and order, no auto-opened sub-categories (a closed card forgets its open topics), reliable Actions toggle, clearer footer labels. New: `docs/RULES.md` (binding), `PerformanceRuleChecks.cs`, `scripts/Perf.ps1`, `--glass` experiment. Verify.ps1 passes (386 checks), exes rebuilt, nothing committed. **Open / needs the owner:** (1) the layered window is still the main cost of every animation on weak graphics: `Hush-Portable.exe --glass` now matches the layered look pixel for pixel on this Windows 11 display and cuts CPU a lot (CHANGELOG), but drag, resize, snap and Alt+Tab with a real mouse and Windows 10 are unverified: try it for a minute, then say "make glass the default" (keep `--layered` as the way back); (2) ReadyToRun for the release build would cut first-open JIT time on a slow CPU but needs the crossgen package (approval to download); (3) nothing was measured on a real i3. The P2 audit tasks and the commit are still waiting.
+
+## Audit P1 repairs (November 9, 2026)
+
+Done after the P0 round (CHANGELOG "Pre-release audit, P1 repairs"): update receipt before an administrator hand-over (M4), bounded close (M5), `CrashLog` + global handlers, Boost/scan/clean mutual exclusion, long-form (8.3) roots, bounded and cached Windows.old measuring. **Owner decision:** temporary files keep "any age, delete completely when the person chooses" (no floor for Automatic Boost or Windows temp). `Verify.ps1` passes (373 checks), exes rebuilt, nothing committed. **Not verified:** a real update with administrator mode on; 8.3 paths (off on this volume); a real Windows.old (none here). **Still open:** a watchdog inside `Clean` for one blocked file (closing now works regardless), Services performance (`Read` re-lists everything; `Stop` waits 15 s) and whether Manual/not-running services should be offered, `.gitattributes` + baseline commit, the low-severity list from the audit.
+
+## Pre-release audit and P0 repairs (November 9, 2026)
+
+An engineering audit of 0.9 was made (report in the chat; nothing in the tree changed for the investigation), then the four P0 repairs were done: root guard for cleanup locations (TEMP pointed at personal folders), administrator-only staging for the elevated update/uninstall helpers and the task XML (`Admin/AdminOnlyDirectory.cs`), an allow-list for the Services history, and the cleanup result no longer overwritten on the status line. Details and what was not verified: CHANGELOG "Pre-release audit, P0 repairs". `Verify.ps1` passes (365 checks), exes rebuilt, nothing committed. **Still open from the audit (decisions/tasks):** zero-age Temp for Windows\Temp and unattended Automatic Boost (needs the owner's decision), the update receipt when administrator mode is on but the updated copy starts without elevation, close-while-busy with no timeout and no watchdog in Clean, global exception handling, Boost/scan overlap, 8.3 short temp paths, Windows.old probe cost, Services performance and whether Manual/not-running services should be offered, line endings (`.gitattributes`; the working tree is LF, `HEAD` is CRLF) and a baseline commit, and low-severity items. The HANDOFF title below still says 0.7 (stale).
+
+## 0.9 follow-up before release (November 9, 2026)
+
+The user's pre-release list is done in the working tree (nothing committed or pushed; the 0.9 commit `1adaafe` is local only, which is why GitHub has no 0.9 yet): CPU/RAM/smoothness work measured with the new `Hush.Tests.exe --ui-perf` (permanent window blur removed, shadow effects attached only while visible, cached fades, deferred live readings, `TieredPGO=false`, memory trim when out of focus), the Services card, the cleaning animation inside the gauge, the Review select-all + chevron Back, the compact update popup, the upright never-dimmed logo, the cleaning status row, the Interface size chip clip, and balanced Settings columns. Details and measured numbers: CHANGELOG "0.9 follow-up". **`scripts/Verify.ps1` passes** (342 checks plus all UI suites; the first run failed one Smart Boost check because live readings now start after the page fade, and the test was updated to wait for them).
+
+**Not verified (needs the owner):** how smooth it feels on the owner's own PC (all numbers are from this 32-thread PC's test host, not the built exe); Services on a real PC (fake-tested only: no real service was changed); the memory trim in the real exe; the cleaning "cut off" text (could not be reproduced, the row now grows with its text). **Open ideas:** a header shield icon for Administrator; `PublishReadyToRun` for the release build (needs the crossgen pack download, not tried); the first expand of a very long list still has one slow frame.
 
 ## 0.9 is built and versioned, not released (November 9, 2026)
 

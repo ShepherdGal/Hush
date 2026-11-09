@@ -71,8 +71,8 @@ internal static class CategoryChecks
         }
         check(ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Safe).Select(d => d.Id).Order().SequenceEqual(["Temp", "Thumbnails"]),
             "Only verified disposable temp files and thumbnail caches are Safe; browser caches, shader caches, logs and traces are Review");
-        check(new[] { "WindowsOld", "ComponentStore", "ComponentReset", "RecycleBin", "Registry", "BrowserCookies" }.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
-            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 6,
+        check(new[] { "WindowsOld", "RecycleBin", "Registry", "BrowserCookies" }.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
+            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 4,
             "Irreversible or recovery-related categories are Advanced (red) and nothing else is");
         check(ReviewCategory.Definitions.Select(d => d.Id).Distinct().Count() == ReviewCategory.Definitions.Length
             && ReviewCategory.Definitions.All(d => ReviewCategory.GroupDefinitions.Any(g => g.Id == d.GroupId)),
@@ -186,6 +186,34 @@ internal static class CategoryChecks
             .All(t => t.Pattern == "MEMORY.DMP" && !t.Recursive && t.DeletableOnly), "The Windows folder itself is only ever used for the single memory dump file");
         check(defaults.Where(t => t.Pattern == null).All(t => t.Kind is CleanupKind.Temp or CleanupKind.Cache), "Only temp and cache locations may clean every file type");
         check(defaults.GroupBy(t => (Path.GetFullPath(t.Root).ToLowerInvariant(), t.Kind, t.Group)).All(group => group.Count() == 1), "Default locations contain no duplicate entries");
+
+        // Unsafe roots (0.9 audit): the temp location follows the TEMP/TMP variables, so a variable pointed at a personal or protected folder must never
+        // turn that folder into a cleanup location. Only the process environment is changed (and restored); nothing on disk is read or touched.
+        string? savedTmp = Environment.GetEnvironmentVariable("TMP"), savedTemp = Environment.GetEnvironmentVariable("TEMP");
+        string systemRoot = Path.GetPathRoot(windowsRoot)!;
+        string[] hostile = [Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Scratch"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), systemRoot];
+        var rejectedNotes = new List<string>();
+        bool hostileRejected = true;
+        try
+        {
+            foreach (string candidate in hostile)
+            {
+                Environment.SetEnvironmentVariable("TMP", candidate); Environment.SetEnvironmentVariable("TEMP", candidate);
+                var targets = CleanupEngine.DefaultTargets(rejectedNotes.Add);
+                string wanted = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+                if (targets.Any(t => string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(t.Root)), wanted, StringComparison.OrdinalIgnoreCase) && t.Group == "User temp")) hostileRejected = false;
+            }
+        }
+        finally { Environment.SetEnvironmentVariable("TMP", savedTmp); Environment.SetEnvironmentVariable("TEMP", savedTemp); }
+        check(hostileRejected && rejectedNotes.Count >= hostile.Length, "A temp folder pointed at Documents, the Desktop, Downloads, the profile, AppData or a drive root is refused and noted, never cleaned");
+        check(CleanupEngine.DefaultTargets().Any(t => t.Group == "User temp"), "The ordinary temp folder is still a cleanup location");
+        var fakeRules = new CleanupEngine.RootRules([@"X:\Users\Pat\Documents"], [@"X:\Users\Pat", @"X:\Users", @"X:\Windows"]);
+        bool Accepts(string root, string? pattern = null, bool recursive = true) => CleanupEngine.IsAcceptableRoot(new CleanupTarget(root, "t", CleanupKind.Temp, TimeSpan.Zero, pattern, null, recursive, "Temp"), fakeRules, out _);
+        check(Accepts(@"X:\Users\Pat\AppData\Local\Temp") && !Accepts(@"X:\Users\Pat") && !Accepts(@"X:\Users\Pat\Documents\Temp") && !Accepts(@"X:\Users\Pat\Documents")
+            && !Accepts(@"X:\Users") && !Accepts(@"X:\") && !Accepts(@"X:\Windows"), "Root rules: a temp-style location inside AppData passes; profile, personal, parent and drive roots do not");
+        check(Accepts(@"X:\Windows", "MEMORY.DMP", false) && Accepts(@"X:\Users\Pat\Documents", "*.lnk", false) && !Accepts(@"X:\", "*.lnk", false), "Root rules: a single-pattern, non-recursive location (Desktop shortcuts, the memory dump) is allowed but never a drive root");
         check(defaults.Where(t => t.Category is "RecentAccess" or "RecentDocs").All(t => t.Pattern == "*.lnk" && !t.Recursive), "Recent-access traces only ever remove recent-file shortcuts, never the files they point to");
         check(defaults.Where(t => t.Category is "SystemLogs" or "Installer" or "Update" or "Delivery" or "Setup" or "EventTrace" && !(t.Category == "EventTrace" && !t.Root.StartsWith(windowsRoot + "\\", StringComparison.OrdinalIgnoreCase) && !t.Root.Contains("ProgramData", StringComparison.OrdinalIgnoreCase))).All(t => t.DeletableOnly), "Every system-wide category uses the deletable-only probe");
         string[] userData = new[] { Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData }.Select(Environment.GetFolderPath).Select(Path.GetFullPath).ToArray();

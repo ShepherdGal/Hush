@@ -166,6 +166,7 @@ internal static class SmartBoostChecks
                 "Smart Boost starts fully off with no background timer");
 
             Click(settingsButton); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning);
+            UiLayoutChecks.PumpUntil(() => window.IsResourceTimerRunning && ((TextBlock)window.FindName("DiskText")).Text.EndsWith("%")); // live readings start just after the page has faded in
             UiLayoutChecks.Require(window.IsResourceTimerRunning && ((TextBlock)window.FindName("MemoryText")).Text != "…" && ((TextBlock)window.FindName("DiskText")).Text.EndsWith("%"),
                 "Resource indicators fill in and sample only while Settings is open");
             // The live figures are in their own Info card, separate from the Smart Boost card; every Settings title is weight 500.
@@ -192,10 +193,10 @@ internal static class SmartBoostChecks
             double reviewTop = reviewTitle.TransformToAncestor(root).Transform(new Point(0, 0)).Y;
             Click(settingsButton); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning); UiLayoutChecks.Layout(root, new Size(920, 820));
             UiLayoutChecks.Require(Math.Abs(settingsTop - reviewTop) < 0.5 && reviewTop > 0, $"Review files and Settings titles sit at the same position ({reviewTop:0.#} and {settingsTop:0.#})");
-            // Italic audit of everything that exists in the window: only the logo and the home heading may be italic.
+            // Italic audit of everything that exists in the window: only the home heading may be italic (the logo is upright since 0.9).
             var italics = Descendants<TextBlock>(root).Where(block => block.FontStyle == FontStyles.Italic).Select(block => block.Text).Distinct().ToList();
-            UiLayoutChecks.Require(italics.All(text => text is "Hush" or "Make more room to breathe.") && italics.Contains("Hush") && italics.Contains("Make more room to breathe."),
-                "In the running window only the Hush logo and the home heading are italic" + (italics.All(text => text is "Hush" or "Make more room to breathe.") ? "" : ": " + string.Join(" | ", italics)));
+            UiLayoutChecks.Require(italics.All(text => text is "Make more room to breathe.") && italics.Contains("Make more room to breathe."),
+                "In the running window only the home heading is italic" + (italics.All(text => text is "Make more room to breathe.") ? "" : ": " + string.Join(" | ", italics)));
             UiLayoutChecks.Require(((ItemsControl)window.FindName("CategoriesList")).Items.Groups == null && Descendants<TextBlock>(root).All(block => block.Text != "Appearance"),
                 "Review Files is a flat list again and Settings has no Appearance section");            UiLayoutChecks.Require(window.StartupChoices.Count == 1 && window.StartupChoices[0].Enabled, "The startup list shows this account's startup apps");
             ((Expander)window.FindName("SettingsBoostSection")).IsExpanded = true;
@@ -265,7 +266,7 @@ internal static class SmartBoostChecks
             Toggle(lowBox);
             UiLayoutChecks.Require(!LowResourceMode.IsActive, "Low-resource mode switches off and restores Hush");
 
-            UiLayoutChecks.Require(((Button)window.FindName("AboutButton")).FontWeight == FontWeights.Medium && ((Button)window.FindName("AboutButton")).FontStyle == FontStyles.Italic, "The Hush logo is weight 500 italic");
+            UiLayoutChecks.Require(((Button)window.FindName("AboutButton")).FontWeight == FontWeights.Medium && ((Button)window.FindName("AboutButton")).FontStyle == FontStyles.Normal, "The Hush logo is weight 500 and upright");
             UiLayoutChecks.Require(((TextBlock)window.FindName("Headline")).FontStyle == FontStyles.Italic && ((TextBlock)window.FindName("StatusTitle")).FontStyle == FontStyles.Normal
                 && ((Button)window.FindName("CompletionLinkButton")).BorderThickness.Left == 1 && ((Button)window.FindName("CompletionLinkButton")).Width == ((Button)window.FindName("HomeCleanButton")).Width
                 && ((Button)window.FindName("CompletionLinkButton")).FontSize == ((Button)window.FindName("HomeCleanButton")).FontSize,
@@ -301,8 +302,8 @@ internal static class SmartBoostChecks
             var tempText = (TextBlock)window.FindName("TempText");
             UiLayoutChecks.PumpUntil(() => tempText.Text != "…");
             double BarX(string name) => ((FrameworkElement)window.FindName(name)).TransformToAncestor(root).Transform(new Point(0, 0)).X;
-            UiLayoutChecks.Require(BarX("CpuFill") < BarX("MemoryFill") && BarX("MemoryFill") < BarX("TempFill") && BarX("TempFill") < BarX("DiskFill"),
-                "The Info bars run left to right: Processor, then Memory, then Temporary files and System drive");
+            UiLayoutChecks.Require(BarX("CpuFill") < BarX("MemoryFill") && BarX("MemoryFill") < BarX("DiskFill") && BarX("DiskFill") < BarX("TempFill"),
+                "The Info bars run left to right: Processor, Memory, System drive used, then Temporary files (0.9, user direction)");
             Rect BoundsOf(FrameworkElement element) => element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize));
             var infoTexts = Descendants<TextBlock>(infoCard).Where(block => block.Text.Length > 0).ToList();
             var boostCardButton = (Button)window.FindName("BoostButton");
@@ -331,6 +332,10 @@ internal static class SmartBoostChecks
             Click((Button)window.FindName("ConsentConfirmButton"));
             UiLayoutChecks.PumpUntil(() => boostButton.Content.ToString() == "Cleaning…");
             UiLayoutChecks.Require(window.IsBoosting && boostSweep.IsRunning && !boostButton.IsEnabled && booster.Calls == 0, "While Boost cleans, the sweep runs, the button reads Cleaning… and memory has not been touched yet");
+            // 0.9 audit: a scan started while Boost is cleaning would race it over the same folders, so it waits.
+            var scanDuringBoost = window.ActivateGaugeAsync(); UiLayoutChecks.PumpUntil(() => scanDuringBoost.IsCompleted);
+            UiLayoutChecks.Require(window.IsBoosting && ((TextBlock)window.FindName("StatusTitle")).Text != "Searching files…" && window.CurrentScanState != MainWindow.ScanState.Scanning,
+                "While Boost works, a scan cannot be started over it");
             if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string boostShots) UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(boostShots, "boost-running-dark.png"));
             UiLayoutChecks.PumpUntil(() => boostButton.Content.ToString() == "Freeing memory…");
             UiLayoutChecks.Require(!File.Exists(safeFile) && boostSweep.IsRunning && File.Exists(reviewFile), "The temporary files are gone before the memory stage starts and the sweep keeps running");

@@ -162,7 +162,13 @@ internal static class UiLayoutChecks
                 // 0.9 order: the version first, the update status and its action directly under it, then what is new (about five one-line bullets).
                 double Top(string name) { var element = (FrameworkElement)window.FindName(name); return element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize)).Top; }
                 var notesText = ((TextBlock)window.FindName("PatchNotes")).Text;
-                Require(Top("AboutVersion") < Top("UpdateStatus") && Top("UpdateStatus") < Top("PatchNotesHeading") && Top("CheckUpdateButton") < Top("PatchNotesHeading")
+                // Compact: the version and the Check for updates action share one row (text centers within a few DIP), the bar sits below both, then the notes.
+                double MidY(string name) { var element = (FrameworkElement)window.FindName(name); var box = element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize)); return (box.Top + box.Bottom) / 2; }
+                double BottomOf(string name) { var element = (FrameworkElement)window.FindName(name); return element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize)).Bottom; }
+                // The Check for updates action is level with the Hush logo (same row); the version sits right under the logo (small gap); the bar is below both.
+                Require(Math.Abs(MidY("AboutTitle") - MidY("CheckUpdateButton")) < 4 && Top("AboutVersion") - BottomOf("AboutTitle") is >= -2 and < 10 && Top("UpdateSweep") >= BottomOf("AboutVersion") - 0.5 && BottomOf("CheckUpdateButton") <= Top("AboutVersion") + 4
+                    && Top("UpdateSweep") < Top("PatchNotesHeading") && ((TextBlock)window.FindName("AboutVersion")).FontWeight == FontWeights.Medium
+                    && ((TextBlock)window.FindName("UpdateStatus")).Visibility == Visibility.Collapsed
                     && ((TextBlock)window.FindName("PatchNotesHeading")).Text == "What's new in this version" && notesText.Split('\n').Length <= 5 && notesText.Split('\n').All(line => line.Length <= 70 && line.StartsWith('\u2022'))
                     && ((Button)window.FindName("CheckUpdateButton")).IsEnabled && window.FindName("AboutUpdatesButton") == null && window.FindName("ConnectGitHubButton") == null && window.FindName("UpdateToken") == null
                     && aboutCard.ActualHeight < 600 && new Rect(root.RenderSize).Contains(Bounds(aboutCard, root)),
@@ -172,7 +178,7 @@ internal static class UiLayoutChecks
                 Require(surface.IsEnabled, "About close restores input");
                 ((Button)window.FindName("AboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(350);
                 Layout(root, new Size(800, 740));
-                Require(((TextBlock)window.FindName("UpdateStatus")).Text == "Check for the latest release." && !((UpdateActivity)window.FindName("UpdateSweep")).IsRunning,
+                Require(((TextBlock)window.FindName("UpdateStatus")).Text == "" && !((UpdateActivity)window.FindName("UpdateSweep")).IsRunning,
                     "Reopening About starts from the quiet, unchecked state");
                 ((Button)window.FindName("CloseAboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 PumpUntil(() => about.Visibility == Visibility.Collapsed);
@@ -348,11 +354,16 @@ internal static class UiLayoutChecks
                 NavigationChecks.Run(window, root, fixture);
                 VerifyScanResultStates(engine);
                 VerifyScanRipples(engine);
+                VerifyCloseWhileStuck(engine);
+                VerifyWindowLooks(engine);
+                VerifyCleaningCue(engine);
                 Console.WriteLine("PASS: The scan cue (soft ripples drifting out from the gauge) is off until a scan runs, moves while it runs and fades out afterwards");
                 UiSizeChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 ProcessChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 ReviewGroupChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 WindowsUpdateChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                ServiceChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                SmoothScrollChecks.Run((ok, message) => Require(ok, message));
                 Console.WriteLine("PASS: Interface size (Smart, 75%, 100%, 120%) rescales the real window, is remembered, and always fits the screen");
                 Console.WriteLine("PASS: Empty gauge, real live odometer count, safety selection, shared motion, About/update popup, blurred confirmation and responsive layout verified");
             }
@@ -409,6 +420,73 @@ internal static class UiLayoutChecks
             Require(!orbit.IsRunning, "The ripples fade out and stop when the scan ends");
         }
         finally { MainWindow.StillLookingAfterMs = 2500; release.Set(); window.Close(); }
+    }
+
+    // The cleaning cue in the gauge: one sweep, really turning, with no effect on the gauge button (so nothing inside it re-renders through a blur).
+    private static void VerifyCleaningCue(CleanupEngine engine)
+    {
+        var window = new MainWindow(engine);
+        try
+        {
+            window.Show();
+            var cue = (ScanActivity)window.FindName("FileScanActivity"); var button = (UIElement)window.FindName("ScanCircleButton");
+            Require(!cue.IsPlaying && !cue.IsRunning, "The cleaning cue is off until files are being cleaned");
+            cue.Visibility = Visibility.Visible; cue.IsRunning = true;
+            PumpUntil(() => cue.IsPlaying);
+            Wait(250); double first = cue.SweepAngle; Wait(250); double second = cue.SweepAngle;
+            Require(second != first && button.Effect == null, $"The cleaning sweep really turns ({first:0}° then {second:0}°) and the gauge button carries no effect");
+            cue.IsRunning = false; PumpUntil(() => !cue.IsPlaying);
+            Require(cue.SweepAngle == 0, "The cleaning cue stops and rests when the clean ends");
+        }
+        finally { window.Close(); }
+    }
+
+    // The two window looks build a working window: Layered keeps the transparent window, Glass switches it to the compositor's transparency with no layered window
+    // and keeps Hush's own rounded panel. (What Windows draws is checked by eye with HUSH_PERF_CAPTURE, not here.)
+    private static void VerifyWindowLooks(CleanupEngine engine)
+    {
+        try
+        {
+            foreach (var look in new[] { WindowLook.Layered, WindowLook.Glass })
+            {
+                WindowGlass.Forced = look;
+                var window = new MainWindow(engine);
+                WindowGlass.Forced = null;
+                try
+                {
+                    var surface = (Border)window.FindName("WindowSurface");
+                    bool layered = look == WindowLook.Layered;
+                    Require(window.AllowsTransparency == layered && WindowGlass.Active == look && (System.Windows.Shell.WindowChrome.GetWindowChrome(window) == null) == layered,
+                        $"{look}: transparency comes from {(layered ? "a layered window" : "the compositor")}");
+                    Require(surface.CornerRadius.TopLeft == 24 && surface.Background != Brushes.Transparent, $"{look}: the window surface is Hush's own rounded panel");
+                }
+                finally { window.Close(); }
+            }
+        }
+        finally { WindowGlass.Forced = null; }
+    }
+
+    // 0.9 audit (M5): a scan that ignores Stop (a stuck file or tool) must not make the window impossible to close.
+    private static void VerifyCloseWhileStuck(CleanupEngine engine)
+    {
+        using var forever = new ManualResetEventSlim(false);
+        int oldGrace = MainWindow.CloseGraceMilliseconds;
+        MainWindow.CloseGraceMilliseconds = 700;
+        var window = new MainWindow(engine, (progress, token) => { forever.Wait(30_000); return new(new List<CleanupItem>(), 0, 0, false); }); // ignores the token on purpose
+        bool closed = false; window.Closed += (_, _) => closed = true;
+        try
+        {
+            window.Show();
+            _ = window.ActivateGaugeAsync();
+            var title = (TextBlock)window.FindName("StatusTitle");
+            PumpUntil(() => title.Text == "Searching files…");
+            window.Close();
+            Wait(250);
+            Require(!closed && title.Text.StartsWith("Stopping safely"), "Closing during a scan first asks it to stop and says so");
+            PumpUntil(() => closed);
+            Require(closed, "A scan that never answers Stop no longer keeps the window open: Hush closes after a short wait");
+        }
+        finally { MainWindow.CloseGraceMilliseconds = oldGrace; forever.Set(); if (!closed) window.Close(); }
     }
 
     private static void VerifyScanResultStates(CleanupEngine engine)

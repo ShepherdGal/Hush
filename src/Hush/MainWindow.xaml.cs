@@ -67,8 +67,9 @@ public partial class MainWindow : Window
 
     internal MainWindow(CleanupEngine engine, Func<IProgress<ScanProgress>?, CancellationToken, ScanResult>? scan = null, string? preferencesPath = null,
         Func<IUpdateClient>? updateFactory = null, Action<string, AppRelease>? installUpdate = null,
-        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null, IProcessManager? processManager = null, WindowsUpdateSwitch? windowsUpdate = null)
+        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null, IProcessManager? processManager = null, WindowsUpdateSwitch? windowsUpdate = null, IServiceSystem? serviceSystem = null)
     {
+        serviceTuning = new ServiceTuning(serviceSystem ?? ServiceSystemFactory(), Path.Combine(CleanupEngine.DataDirectory, "Windows settings"));
         this.memoryBooster = memoryBooster ?? new WindowsMemoryBooster();
         this.processManager = processManager ?? new WindowsProcessManager();
         updateSwitch = windowsUpdate ?? new WindowsUpdateSwitch(new RealWindowsUpdateSystem(), Path.Combine(CleanupEngine.DataDirectory, "Windows settings"));
@@ -81,6 +82,9 @@ public partial class MainWindow : Window
         boostController = new SmartBoostController(engine);
         settingsPath = preferencesPath ?? Path.Combine(CleanupEngine.DataDirectory, "settings.json");
         InitializeComponent();
+        // Windows 11: per-pixel transparency from the compositor instead of a layered window (default; --layered goes back). See UI/WindowGlass.cs.
+        WindowGlass.Apply(this, WindowGlass.ChooseForThisProcess());
+        AppSurface.Effect = null; // the popup blur is attached only while a popup is open (see SetBackdropBlur)
         var categoryView = CollectionViewSource.GetDefaultView(Categories);
         categoryView.Filter = value => value is ReviewCategory { HasFiles: true } category && InOpenGroup(category);
         CategoriesList.ItemsSource = categoryView;
@@ -97,6 +101,7 @@ public partial class MainWindow : Window
         ResetGauge();
         RefreshSelection();
         InitializeBoost();
+        InitializeMemoryTrim();
         AboutVersion.Text = $"Version {UpdateService.DisplayVersion}";
         PreviewKeyDown += async (_, e) =>
         {
@@ -108,7 +113,26 @@ public partial class MainWindow : Window
             { e.Handled = true; await HideAbout(); }
             else if (e.Key == Key.Escape && WindowsSettingsOverlay.Visibility == Visibility.Visible && WindowsSettingsOverlay.IsEnabled && !windowsSettingsBusy)
             { e.Handled = true; await HideWindowsSettingsConfirmation(); }
+            else if (e.Key == Key.Escape && ActionsPopup.IsOpen)
+            { e.Handled = true; ActionsPopup.IsOpen = false; }
         };
+        PreviewMouseDown += CloseActionsOnOutsidePress;
+        Deactivated += (_, _) => ActionsPopup.IsOpen = false;
+        ActionsButton.IsVisibleChanged += (_, e) => { if (e.NewValue is false) ActionsPopup.IsOpen = false; }; // leaving Settings closes the menu
+    }
+
+    // The soft blur behind a popup. A window-wide effect makes WPF push every frame of this transparent window through the effect pipeline, even at
+    // radius 0 (measured: a frame went from about 11 ms of CPU to under 0.2 ms without it), so it exists only while a popup is open, switches on
+    // and off at once (no animated radius) and is detached from the tree the rest of the time.
+    // 0.9 audit (performance on weak PCs): the blur is OFF by default. Opening a popup with it cost 80% of a core and frames of up to 150 ms with software
+    // rendering (an Intel i3 class machine); the darker scrim (ModalShadeBrush) separates the popup from the page instead. The radius is still tracked so
+    // the popup code is unchanged, and BackdropBlurEnabled = true brings the soft blur back (measure with --ui-perf before turning it on).
+    internal static bool BackdropBlurEnabled = false;
+    private void SetBackdropBlur(double radius)
+    {
+        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, null);
+        BackgroundBlur.Radius = radius;
+        AppSurface.Effect = BackdropBlurEnabled && radius > 0.01 ? BackgroundBlur : null;
     }
 
     private static void GaugePercentChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
@@ -197,7 +221,7 @@ public partial class MainWindow : Window
         if (Application.Current?.MainWindow == this)
         {
             ShowTermsOnStart();
-            _ = Task.Run(() => UpdateInstaller.PruneStaging(UpdateInstaller.StagingRoot));
+            _ = Task.Run(UpdateInstaller.PruneAll);
             _ = RunQuietUpdateCheck();
         }
     }
@@ -257,18 +281,32 @@ public partial class MainWindow : Window
         settingsReturnToReview = ReviewPage.Visibility == Visibility.Visible;
         LoadWindowsSettings();
         RefreshWindowsUpdateState();
-        ProbeRestorePoints();
+        // (The restore-point probe is not run here any more: it asks Windows Management, which costs about a second of CPU, and the confirmation that needs it
+        // probes by itself when it opens. 0.9 audit.)
         RefreshAdminSwitch();
         LoadStartupApps();
-        StartResourceIndicators();
-        RefreshTempFiles();
-        RefreshProcesses(rebuildList: SettingsProcessSection.IsExpanded);
         Motion.EnterPage(MainContent, () =>
         {
             ScanPage.Visibility = ReviewPage.Visibility = Visibility.Collapsed;
             SettingsPage.Visibility = Visibility.Visible;
         });
         SettingsBackButton.Focus();
+        BeginSettingsLiveData();
+    }
+
+    // The live readings (meter bars, Temporary files, open apps) start once the page has finished fading in. The page fades as one cached picture, and
+    // anything that animates inside it during the fade makes WPF redraw that whole picture on every frame (measured: over a second of CPU on opening).
+    private int settingsVisit;
+    private async void BeginSettingsLiveData()
+    {
+        int visit = ++settingsVisit;
+        await Task.Delay((int)Motion.PageFadeMilliseconds + 60);
+        if (visit != settingsVisit || SettingsPage.Visibility != Visibility.Visible) return;
+        StartResourceIndicators();
+        RefreshTempFiles();
+        RefreshProcesses(rebuildList: SettingsProcessSection.IsExpanded);
+        // The Services list is read when its card is opened (or refreshed), not every time Settings opens: reading it walks every Windows service and starts sc.exe.
+        if (SettingsServicesSection.IsExpanded) _ = RefreshServicesAsync();
     }
 
     // The Settings sections sit in two columns side by side; in a narrow window they stack into one.
@@ -288,6 +326,7 @@ public partial class MainWindow : Window
 
     private void SettingsBack_Click(object sender, RoutedEventArgs e)
     {
+        settingsVisit++; // a reading that was about to start must not start behind the person's back
         StopResourceIndicators();
         ShowReviewPage(settingsReturnToReview);
         SettingsButton.Focus();
@@ -341,6 +380,21 @@ public partial class MainWindow : Window
         bool list = items.Count > 0 && (ReviewShowsAllCategories || openGroup != null);
         CategoryListView.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
         ReviewGroupsView.Visibility = items.Count > 0 && !list ? Visibility.Visible : Visibility.Collapsed;
+        // Inside a group: chevron back, "Select all in <group>" and Expand all. On the overview: "Select all categories" (all three groups) only.
+        bool inGroup = openGroup != null && !ReviewShowsAllCategories;
+        GroupBackButton.Visibility = inGroup ? Visibility.Visible : Visibility.Collapsed;
+        OverviewDivider.Visibility = items.Count > 0 && !list ? Visibility.Visible : Visibility.Collapsed;
+        CollapseAllButton.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+        string label = inGroup ? $"Select all in {openGroup switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review", _ => "Advanced" }}" : "Select all categories";
+        if (!ReferenceEquals(SelectAllBox.Content, label) && !Equals(SelectAllBox.Content, label)) SelectAllBox.Content = label;
+    }
+
+    // The chevron beside Select all: one step up, from an opened group back to the three groups.
+    private void GroupBack_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || openGroup == null) return;
+        OpenReviewGroup(null);
+        Motion.Reveal(ReviewGroupsView);
     }
     private IEnumerable<ReviewCategory> VisibleCategories => Categories.Where(category => category.HasFiles && InOpenGroup(category));
 
@@ -353,8 +407,21 @@ public partial class MainWindow : Window
         RefreshSelection();
     }
 
+    // The checkbox beside a group (overview): ticks or clears every category of that group, leaving the other groups as they are.
+    private void GroupSelect_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: ReviewGroupSummary group } box) return; // the box itself is disabled while results are partial
+        e.Handled = true; // a Click bubbles: without this the row's own button would also open the group
+        bool selected = box.IsChecked == true;
+        batchSelection = true;
+        try { foreach (var category in Categories.Where(category => category.Safety == group.Level && category.HasFiles).ToList()) category.Selected = selected; }
+        finally { batchSelection = false; }
+        RefreshSelection();
+    }
+
     private void ReviewGroup_Click(object sender, RoutedEventArgs e)
     {
+        if (e.OriginalSource is CheckBox) return; // the checkbox only selects; the rest of the row opens the group
         if (sender is Button { Tag: ReviewGroupSummary group } && !busy) { OpenReviewGroup(group.Level); Motion.Reveal(CategoryListView); }
     }
 
@@ -365,6 +432,7 @@ public partial class MainWindow : Window
             foreach (var level in new[] { SafetyLevel.Safe, SafetyLevel.Review, SafetyLevel.Advanced }) reviewGroups.Add(new ReviewGroupSummary(level));
         foreach (var group in reviewGroups) group.Update(Categories.Where(category => category.Safety == group.Level && category.HasFiles).ToList(), light);
         var shown = reviewGroups.Where(group => group.HasItems).ToList();
+        for (int index = 0; index < shown.Count; index++) shown[index].DividerAbove = index > 0;
         if (ReviewGroupsList.ItemsSource is not List<ReviewGroupSummary> current || !current.SequenceEqual(shown)) ReviewGroupsList.ItemsSource = shown;
         // A group that no longer has anything (after cleaning) closes back to the overview.
         if (openGroup != null && !reviewGroups.Any(group => group.Level == openGroup && group.HasItems)) OpenReviewGroup(null);
@@ -401,9 +469,13 @@ public partial class MainWindow : Window
     private long scanProgressTick;
     private bool stillLookingShown;
 
+    // Boost (the Info card's button, or the automatic one) scans and cleans with the same engine on its own: a scan or a clean started meanwhile would
+    // list files that are about to disappear and run two cleans over the same folders, so they wait until it is done (0.9 audit).
+    private bool BoostWorking => boosting || boostRunning;
+
     private async Task StartScan(ScanOptions? options = null)
     {
-        if (busy) return;
+        if (busy || BoostWorking) return;
         // Low-resource mode scans at background CPU and disk priority and reports progress less often.
         options ??= LowResourceMode.IsActive ? new ScanOptions(ReportIntervalMs: LowResourceMode.ReportIntervalMs, Background: true) : null;
         pendingScanOptions = options;
@@ -503,6 +575,7 @@ public partial class MainWindow : Window
             stillLooking.Stop();
             LiveFileCounter.Settle();
             SetBusy(false);
+            ReleaseOldResults();
             if (CurrentScanState != ScanState.Completed)
             {
                 bool previousBatch = batchSelection;
@@ -524,7 +597,7 @@ public partial class MainWindow : Window
 
     private void ShowConfirmation(bool fromHome = false)
     {
-        if (!CanClean) return;
+        if (!CanClean || BoostWorking) return;
         confirmedItems = items.Where(x => x.Selected).ToArray();
         if (confirmedItems.Length == 0) return;
         ConfirmSummary.Text = $"Clean {confirmedItems.Length:N0} selected items and free {Sizes.Format(confirmedItems.Sum(x => x.Bytes))}?";
@@ -542,7 +615,7 @@ public partial class MainWindow : Window
         ConfirmDeleteButton.IsEnabled = !advanced;
         confirmationReturnFocus = Keyboard.FocusedElement;
         AppSurface.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
+        SetBackdropBlur(7);
         ModalOverlay.Visibility = Visibility.Visible;
         Motion.Reveal(ModalOverlay);
         CancelDeleteButton.Focus();
@@ -597,8 +670,7 @@ public partial class MainWindow : Window
         var lines = new List<string> { "Files are permanently deleted, bypassing the Recycle Bin. Locked or changed files are skipped." };
         if (registry > 0) lines.Add($"{registry} app registry entries are backed up to .reg files first.");
         if (Has("RecycleBin")) lines.Add("Recycle Bin: everything in it is removed on every drive, for good.");
-        if (Has("WindowsOld")) lines.Add("Previous Windows installation: removed by Windows' Disk Cleanup (administrator prompt); you can't go back to the old Windows.");
-        if (Has("ComponentStore")) lines.Add("Component cleanup: Windows (DISM) removes old versions (administrator prompt); installed updates can't be uninstalled afterwards.");
+        if (Has("WindowsOld")) lines.Add("Previous Windows installation: Hush deletes Windows.old itself, including the old Users folder (administrator mode); you can't go back to the old Windows.");
         if (Has("BrowserCookies")) lines.Add("Cookies: you will be signed out of websites. Passwords and bookmarks stay.");
         if (Has("BrowserHistory")) lines.Add("Browser history is cleared. Bookmarks, passwords and logins stay.");
         if (Has("Clipboard")) lines.Add("Clipboard history is cleared. Pinned clips stay.");
@@ -615,7 +687,7 @@ public partial class MainWindow : Window
     {
         confirmedItems = [];
         ModalOverlay.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 0, 160));
+        SetBackdropBlur(0);
         await Motion.FadeOut(ModalOverlay);
         ModalOverlay.Visibility = Visibility.Collapsed;
         ModalOverlay.IsEnabled = true;
@@ -633,7 +705,7 @@ public partial class MainWindow : Window
         // Advanced items need the consent box even if the button was enabled some other way.
         if (selected.Any(x => x.Safety == SafetyLevel.Advanced) && AdvancedConsentBox.IsChecked != true) return;
         await HideConfirmation();
-        if (!CanClean || selected.Length == 0) return;
+        if (!CanClean || selected.Length == 0 || BoostWorking) return;
         ShowReviewPage(false);
         SetBusy(true, "clean");
         ResetGauge();
@@ -671,8 +743,10 @@ public partial class MainWindow : Window
         }
         finally
         {
-            StatusTitle.Text = "Review remaining files.";
+            // The status line keeps what the try/catch above set ("Cleanup complete · X freed ..." or "Cleanup couldn't finish."): the result and any
+            // failure must stay readable (0.9 audit). It used to be replaced here at once by "Review remaining files.".
             RebuildCategories(); SetBusy(false); RefreshSelection(); ShowReviewPage(true); PrimaryButton.Focus();
+            ReleaseOldResults();
         }
     }
 
@@ -682,7 +756,8 @@ public partial class MainWindow : Window
         CanSelectCandidates = CanClean;
         if (value) currentOperation = mode;
         if (value) { cancellation?.Dispose(); cancellation = new(); }
-        CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = AboutButton.IsEnabled = SettingsButton.IsEnabled = !value;
+        // The Hush logo (About button) stays enabled and unchanged while Hush works: it looks identical in every state, and About_Click ignores clicks while busy.
+        CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = GroupBackButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = SettingsButton.IsEnabled = !value;
         bool scanning = value && mode == "scan";
         ScanRipplesCue.IsRunning = scanning;
         FileScanActivity.IsRunning = value && !scanning;
@@ -751,7 +826,7 @@ public partial class MainWindow : Window
             CompletionLinkButton.BeginAnimation(OpacityProperty, Motion.Tween(0, 1, 500));
         }
         else if (!ready) CompletionLinkButton.Visibility = Visibility.Collapsed;
-        StatusTitle.Visibility = busy && currentOperation != "scan" ? Visibility.Collapsed : Visibility.Visible; // "Scan Completed" stays as plain text above the details
+        StatusTitle.Visibility = Visibility.Visible; // the status line stays under the gauge in every state (while cleaning the animation lives inside the gauge)
         // Once a scan has completed with results the Clean button stays on screen: dimmed while nothing is selected, so it never "disappears".
         bool showClean = CanClean && SelectedCount > 0;
         bool offerClean = CanClean && items.Count > 0;
@@ -925,7 +1000,7 @@ public partial class MainWindow : Window
             ? ["#EFF1F5", "#F9FAFC", "#E4E8F0", "#DBE1EA", "#48566C", "#627086", "#6C798D", "#344156"]
             : ["#11151B", "#1B212B", "#252C38", "#2C3442", "#C6CFDC", "#9BA8BA", "#8794A8", "#D8DFE9"];
         for (int i = 0; i < keys.Length; i++) Set(keys[i], colors[i]);
-        Set("ModalShadeBrush", light ? "#65E4EAF0" : "#750C1016");
+        Set("ModalShadeBrush", light ? "#65E4EAF0" : "#A00C1016");
         Set("SafetyGreenBrush", SafetyPalette.Accent(light));
         Set("GoodBrush", SafetyPalette.Good(light));
         Set("CleanTextBrush", SafetyPalette.Danger(light));
@@ -956,11 +1031,12 @@ public partial class MainWindow : Window
         AboutTerms.Text = Terms.Notice;
         confirmationReturnFocus = Keyboard.FocusedElement;
         AppSurface.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
+        SetBackdropBlur(7);
         AboutOverlay.Visibility = Visibility.Visible;
         PatchNotesHeading.Text = "What's new in this version";
         PatchNotes.Text = ReleaseNotes.Current;
-        SetUpdateStatus("Check for the latest release.");
+        SetUpdateStatus("");
+        if (knownRelease != null) { availableRelease = knownRelease; ShowAvailable(knownRelease); SetUpdateBusy(false); } // the start-up check already found one: say so at once
         Motion.Reveal(AboutOverlay);
         CloseAboutButton.Focus();
     }
@@ -974,6 +1050,7 @@ public partial class MainWindow : Window
             using var service = updateFactory();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
             var release = await Task.Run(() => service.CheckAsync(timeout.Token), timeout.Token);
+            knownRelease = release;
             if (release == null || closing) return;
             UpdateNoticeButton.Visibility = Visibility.Visible;
             UpdateNoticeButton.BeginAnimation(OpacityProperty, Motion.Tween(0, 1, 320));
@@ -986,7 +1063,7 @@ public partial class MainWindow : Window
     {
         if (busy || AboutOverlay.Visibility == Visibility.Visible) return;
         About_Click(sender, e);
-        if (AboutOverlay.Visibility == Visibility.Visible) CheckUpdate_Click(CheckUpdateButton, e);
+        if (AboutOverlay.Visibility == Visibility.Visible && knownRelease == null) CheckUpdate_Click(CheckUpdateButton, e);
     }
 
     private async void CloseAbout_Click(object sender, RoutedEventArgs e) => await HideAbout();
@@ -1005,8 +1082,24 @@ public partial class MainWindow : Window
     private void SetUpdateStatus(string text, bool notice = false, bool good = false)
     {
         UpdateStatus.Text = text;
+        UpdateStatus.Visibility = text.Length == 0 ? Visibility.Collapsed : Visibility.Visible; // nothing to say yet: the row is just the version and the action
         UpdateStatus.SetResourceReference(TextBlock.ForegroundProperty, good ? "GoodBrush" : notice ? "TealTextBrush" : "TextBrush");
-        UpdateStatus.FontWeight = notice || good ? FontWeights.SemiBold : FontWeights.Medium;
+        UpdateStatus.FontWeight = FontWeights.Medium; // Medium (500) for every state, never bold; the color carries the meaning
+    }
+
+    // The newest release the start-up check (or a manual check) found; the update popup announces it the moment it opens.
+    private AppRelease? knownRelease;
+
+    // A newer version: green text beside the version, what Update now does, and what is new in it.
+    private void ShowAvailable(AppRelease release)
+    {
+        SetUpdateStatus($"Version {UpdateService.Display(release.Version)} is available.", good: true);
+        UpdateHint.Text = "Update now downloads it securely, checks it and restarts Hush to finish. Your current version is kept as a backup.";
+        UpdateHint.Visibility = Visibility.Visible;
+        UpdateHint.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
+        PatchNotesHeading.Text = $"What's new in {UpdateService.Display(release.Version)}";
+        PatchNotes.Text = ReleaseNotes.InBrief(release.Notes);
+        PatchNotesPanel.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
     }
 
     private bool IsCurrentAbout(int session) => session == aboutSession && AboutOverlay.Visibility == Visibility.Visible;
@@ -1026,7 +1119,7 @@ public partial class MainWindow : Window
     {
         ClearUpdateSession();
         AboutOverlay.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 0, 160));
+        SetBackdropBlur(0);
         await Motion.FadeOut(AboutOverlay);
         AboutOverlay.Visibility = Visibility.Collapsed;
         AboutOverlay.IsEnabled = true;
@@ -1077,16 +1170,11 @@ public partial class MainWindow : Window
                 await UpdateSweep.CompleteAsync(); // the answer is really in: the bar arrives at full
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 availableRelease = release;
-                if (release == null) SetUpdateStatus($"You're up to date. Installed version {UpdateService.DisplayVersion}.", good: true);
+                if (release == null) knownRelease = null; // a fresh check says it is up to date
+                if (release == null) SetUpdateStatus("Updated to latest version.", good: true);
                 else
                 {
-                    SetUpdateStatus($"Version {UpdateService.Display(release.Version)} is available.", notice: true);
-                    UpdateHint.Text = "Update now downloads it securely, checks it and restarts Hush to finish. Your current version is kept as a backup.";
-                    UpdateHint.Visibility = Visibility.Visible;
-                    UpdateHint.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
-                    PatchNotesHeading.Text = $"What's new in {UpdateService.Display(release.Version)}";
-                    PatchNotes.Text = ReleaseNotes.InBrief(release.Notes);
-                    PatchNotesPanel.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
+                    ShowAvailable(release);
                 }
             }
             else
@@ -1139,16 +1227,26 @@ public partial class MainWindow : Window
 
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+    // How long a close request waits for a running scan/clean to stop, or for a Windows change to finish, before Hush closes anyway (0.9 audit: it used
+    // to wait without limit, so one stuck file or Windows tool made the window impossible to close). Every clean writes its intent to the audit log in
+    // batches before it acts, and a Windows change saves its originals first, so closing after the wait never loses the way back.
+    internal static int CloseGraceMilliseconds = 8000, WindowsChangeCloseGraceMilliseconds = 30000;
+    private bool closeRequested;
+
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (windowsSettingsBusy) { e.Cancel = true; return; }
         ClearUpdateSession();
         StopBoostWork();
-        if (!busy || closing) return;
+        if (closing || (!busy && !windowsSettingsBusy)) return;
         e.Cancel = true;
+        if (closeRequested) return; // already waiting: a second click on the close button changes nothing
+        closeRequested = true;
+        bool windowsChange = windowsSettingsBusy && !busy;
         cancellation?.Cancel();
-        StatusTitle.Text = "Stopping safely before closing…";
-        while (busy) await Task.Delay(50);
+        StatusTitle.Text = windowsChange ? "Finishing the Windows change before closing…" : "Stopping safely before closing…";
+        var waited = Stopwatch.StartNew();
+        int limit = windowsChange ? WindowsChangeCloseGraceMilliseconds : CloseGraceMilliseconds;
+        while ((busy || windowsSettingsBusy) && waited.ElapsedMilliseconds < limit) await Task.Delay(50);
         closing = true;
         Close();
     }

@@ -60,7 +60,7 @@ public sealed class CleanupItem : INotifyPropertyChanged
     public string Name => Kind is CleanupKind.RecycleBin or CleanupKind.SystemTool ? Path : fileName ?? "";
     public string DirectoryLabel => Detail ?? folder ?? Path;
     public string GroupLabel => Group.Replace("Brave-Browser", "Brave", StringComparison.Ordinal);
-    public string SizeLabel => Kind == CleanupKind.Registry ? "REGISTRY" : Kind == CleanupKind.SystemTool && Bytes == 0 ? "BY WINDOWS" : Sizes.Format(Bytes);
+    public string SizeLabel => Kind == CleanupKind.Registry ? "REGISTRY" : Kind == CleanupKind.SystemTool && Bytes == 0 ? "—" : Sizes.Format(Bytes);
     private bool selected = true;
     public bool Selected
     {

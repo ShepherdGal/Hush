@@ -87,7 +87,24 @@ public partial class MainWindow
         if (toggle.IsChecked == true) openTopics.Add(name); else openTopics.Remove(name);
     }
 
-    private IEnumerable<System.Windows.Controls.Primitives.ToggleButton> TopicToggles()
+    // A card is always opened with every sub-category inside it closed (0.9, user direction): closing a card forgets which of its topics were open, so opening it
+    // again never shows anything pre-opened. (A search still opens everything while it is typed, and is not remembered.)
+    private void TopicCard_Collapsed(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Expander card || !ReferenceEquals(e.OriginalSource, card) || settingsFilter.Length > 0) return;
+        topicsProgrammatic = true;
+        try
+        {
+            foreach (var toggle in TopicToggles(card))
+            {
+                if (toggle.DataContext is System.Windows.Data.CollectionViewGroup group) openTopics.Remove(group.Name?.ToString() ?? "");
+                toggle.IsChecked = false;
+            }
+        }
+        finally { topicsProgrammatic = false; }
+    }
+
+    private IEnumerable<System.Windows.Controls.Primitives.ToggleButton> TopicToggles(DependencyObject? within = null)
     {
         var found = new List<System.Windows.Controls.Primitives.ToggleButton>();
         void Walk(DependencyObject parent)
@@ -99,7 +116,7 @@ public partial class MainWindow
                 Walk(child);
             }
         }
-        Walk(PrivacyAdjustments); Walk(AdvancedAdjustments);
+        if (within != null) Walk(within); else { Walk(PrivacyAdjustments); Walk(AdvancedAdjustments); }
         return found;
     }
 
@@ -124,7 +141,25 @@ public partial class MainWindow
         }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
+    // The Actions button is a plain toggle (0.9 audit). The menu used to close itself (StaysOpen=False) when the mouse went down outside it, which includes the
+    // Actions button, and then guess from timing whether the click that followed was "the same press": with a real mouse that guess failed and a click on the
+    // button never closed the menu. Now the popup stays open until Hush closes it: the button toggles, and a press anywhere else in the window, the window
+    // losing focus, Escape or choosing an action closes it (the chevron follows IsOpen both ways).
     private void Actions_Click(object sender, RoutedEventArgs e) => ActionsPopup.IsOpen = !ActionsPopup.IsOpen;
+
+    private void CloseActionsOnOutsidePress(object sender, MouseButtonEventArgs e)
+    {
+        if (!ActionsPopup.IsOpen) return;
+        if (e.OriginalSource is DependencyObject source && (IsWithin(source, ActionsButton) || (ActionsPopup.Child is { } menu && IsWithin(source, menu)))) return;
+        ActionsPopup.IsOpen = false;
+    }
+
+    private static bool IsWithin(DependencyObject? node, DependencyObject ancestor)
+    {
+        for (; node != null; node = node is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D ? System.Windows.Media.VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+            if (ReferenceEquals(node, ancestor)) return true;
+        return false;
+    }
 
     private enum BulkLevel { Recommended, Somewhat, All }
 
@@ -158,7 +193,7 @@ public partial class MainWindow
     {
         int count = adjustmentChoices.Count(choice => choice.CanEdit && choice.Selected != choice.Baseline.Enabled);
         ApplyWindowsSettingsButton.IsEnabled = count > 0;
-        ApplyWindowsSettingsButton.Content = count == 0 ? "Review changes" : $"Review {count} change{(count == 1 ? "" : "s")}";
+        ApplyWindowsSettingsButton.Content = count == 0 ? "Review Windows changes" : $"Review {count} Windows change{(count == 1 ? "" : "s")}";
         PrivacySummary.Text = Describe(adjustmentChoices.Where(choice => !choice.Advanced));
         ImpactSummary.Text = Describe(adjustmentChoices.Where(choice => choice.Advanced));
     }
@@ -172,7 +207,14 @@ public partial class MainWindow
         if (pending > 0) text += $" · {pending} waiting for review";
         return text;
     }
-    private void RefreshWindowsSettings_Click(object sender, RoutedEventArgs e) => LoadWindowsSettings();
+    // Reads the Windows choices (and the Windows Update state) again and SAYS so: the lists usually look the same, so without a word it seemed to do nothing.
+    private void RefreshWindowsSettings_Click(object sender, RoutedEventArgs e)
+    {
+        LoadWindowsSettings();
+        RefreshWindowsUpdateState();
+        string stamp = $"Refreshed at {DateTime.Now:HH:mm:ss}: {adjustmentChoices.Count} Windows choices read again.";
+        WindowsSettingsStatus.Text = string.IsNullOrWhiteSpace(WindowsSettingsStatus.Text) ? stamp : stamp + " " + WindowsSettingsStatus.Text;
+    }
     private void ApplyWindowsSettings_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -232,7 +274,7 @@ public partial class MainWindow
     {
         confirmationReturnFocus = Keyboard.FocusedElement;
         AppSurface.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
+        SetBackdropBlur(7);
         WindowsSettingsOverlay.Visibility = Visibility.Visible;
         Motion.Reveal(WindowsSettingsOverlay);
         CancelWindowsSettingsButton.Focus();
@@ -277,7 +319,7 @@ public partial class MainWindow
         updateAction = UpdateAction.None; applyAllStaged = false; undoAlsoUpdate = false;
         WindowsOptions.Visibility = Visibility.Collapsed;
         WindowsSettingsOverlay.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 0, 160));
+        SetBackdropBlur(0);
         await Motion.FadeOut(WindowsSettingsOverlay);
         WindowsSettingsOverlay.Visibility = Visibility.Collapsed;
         WindowsSettingsOverlay.IsEnabled = true;

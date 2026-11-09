@@ -21,7 +21,6 @@ internal static class LowResourceMode
     public static void Apply(bool on)
     {
         IsActive = on;
-        ScanActivity.FrameInterval = TimeSpan.FromMilliseconds(on ? 100 : 33);
         try
         {
             using var self = Process.GetCurrentProcess();

@@ -112,6 +112,10 @@ internal static class CleanSelectionChecks
             Until(() => !window.IsPageTransitioning); Layout();
             Require(File.Exists(second) && window.ReviewItems[0].Path == second && !window.ReviewItems[0].Selected,
                 "Confirmed Clean removes only the selected fixture and preserves the unselected fixture");
+            // 0.9 audit (M2): the result of a clean must stay readable; it used to be replaced at once by "Review remaining files."
+            string cleanStatus = ((TextBlock)window.FindName("StatusTitle")).Text;
+            Require(cleanStatus.StartsWith("Cleanup complete") && cleanStatus.Contains("freed") && cleanStatus.Contains("1 cleaned") && window.LastCleanResult is { Deleted: 1 },
+                $"After a clean the status line keeps the result (what was freed and cleaned) instead of being replaced ({cleanStatus})");
             SetChecked(FileBox(second), true); ExpectClean(1);
             Click(homeClean);
             Require(modal.Visibility == Visibility.Visible && ((TextBlock)window.FindName("ConfirmSummary")).Text.Contains("1 selected"),

@@ -19,7 +19,7 @@
     <!-- Hover state of the one primary Cyan: lighter in Dark, deeper in Light. Set per theme in ApplyTheme. -->
     <SolidColorBrush x:Key="AccentHoverBrush" Color="#7FE3DD"/>
     <SolidColorBrush x:Key="ActionFillBrush" Color="#252C38"/>
-    <SolidColorBrush x:Key="ModalShadeBrush" Color="#750C1016"/>
+    <SolidColorBrush x:Key="ModalShadeBrush" Color="#A00C1016"/>
     <SolidColorBrush x:Key="SafetyGreenBrush" Color="#38CFC8"/>
     <!-- The calm green for good news and Safe items (SafetyPalette.Good); themed in MainWindow.ApplyTheme. -->
     <SolidColorBrush x:Key="GoodBrush" Color="#5CC98F"/>
@@ -40,7 +40,7 @@
       <Setter Property="UseLayoutRounding" Value="True"/>
     </Style>
     <!-- Typography rules (locked by TypographyChecks). Page titles (Review files, Settings) are one style: 29, Medium 500, upright.
-         Popup titles are 28 Regular; Settings card titles 18 Medium in the accent. Italic is reserved for the Hush logo and the home heading. -->
+         Popup titles are 28 Regular; Settings card titles 18 Medium in the accent. Italic is reserved for the home heading (the Hush logo is upright since 0.9). -->
     <Style x:Key="PageTitle" TargetType="TextBlock">
       <Setter Property="FontSize" Value="29"/>
       <Setter Property="FontWeight" Value="Medium"/>
@@ -132,6 +132,18 @@
           <TextBlock Style="{StaticResource BackIcon}"/>
           <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
         </StackPanel>
+      </DataTemplate></Setter.Value></Setter>
+    </Style>
+    <!-- Chevron-only Back (0.9): one step up inside a page (for example from an opened Review group to the three groups). Same icon font and ink as BackButton,
+         no label; Content is only the accessible name. -->
+    <Style x:Key="ChevronBackButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
+      <Setter Property="Width" Value="36"/>
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+      <Setter Property="local:Motion.HoverForeground" Value="{DynamicResource HeadingBrush}"/>
+      <Setter Property="ContentTemplate"><Setter.Value><DataTemplate>
+        <TextBlock Text="&#xE76B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" TextOptions.TextFormattingMode="Ideal"/>
       </DataTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="CaptionButton" TargetType="Button" BasedOn="{StaticResource TextButton}">

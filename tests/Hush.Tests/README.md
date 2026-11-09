@@ -9,7 +9,7 @@ Both modes create and delete only synthetic fixtures. The deliberate failure mod
 To inspect the controlled failure manually after a build:
 
 ```powershell
-.\Tests\bin\Verification\net10.0-windows\Hush.Tests.exe --verify-failure-path
+.\tests\Hush.Tests\bin\Verification\net10.0-windows10.0.19041.0\Hush.Tests.exe --verify-failure-path
 # Expected: detailed FAIL output and exit code 1, with no crash dialog.
 ```
 

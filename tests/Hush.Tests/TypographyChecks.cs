@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Hush;
 
 // Locks the typography rules by scanning the XAML/C# source:
-//  * Italic is reserved for the Hush logo (header wordmark, About and Setup wordmark) and the home heading "Make more room to breathe".
+//  * Italic is reserved for the home heading "Make more room to breathe". The Hush logo (header, About, Setup) is upright, Medium 500 (user direction, 0.9).
 //  * Page titles (Review files, Settings) share one style (PageTitle: 29, Medium 500, upright); popup titles share PopupTitle; Settings card titles share CardTitle.
 internal static class TypographyChecks
 {
@@ -18,11 +18,11 @@ internal static class TypographyChecks
             foreach (string line in File.ReadAllLines(file))
             {
                 if (!(line.Contains("FontStyle=\"Italic\"") || line.Contains("Value=\"Italic\"") || line.Contains("FontStyles.Italic"))) continue; // comments may mention the word
-                bool allowed = line.Contains("x:Name=\"AboutButton\"") || line.Contains("x:Name=\"Headline\"") || line.Contains("Text=\"Hush\"");
+                bool allowed = line.Contains("x:Name=\"Headline\"");
                 if (allowed) allowedItalics++; else italicOffenders.Add(Path.GetFileName(file) + ": " + line.Trim()[..Math.Min(70, line.Trim().Length)]);
             }
-        check(italicOffenders.Count == 0, "Italic is used only by the Hush logo and the home heading" + (italicOffenders.Count == 0 ? "" : ": " + string.Join(" | ", italicOffenders)));
-        check(allowedItalics == 4, $"The four allowed italic places exist (header logo, home heading, About logo, Setup logo): {allowedItalics}");
+        check(italicOffenders.Count == 0, "Italic is used only by the home heading" + (italicOffenders.Count == 0 ? "" : ": " + string.Join(" | ", italicOffenders)));
+        check(allowedItalics == 1, $"The one allowed italic place exists (the home heading), and the Hush logo is upright: {allowedItalics}");
         var code = Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories).Where(path => !path.Contains(@"\obj\") && !path.Contains(@"\bin\")).ToList();
         check(!code.Any(path => Regex.IsMatch(File.ReadAllText(path), @"FontStyles\.Italic|FontStyle\.Italic")), "No code sets an italic font");
 

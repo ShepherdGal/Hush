@@ -167,9 +167,15 @@ internal static class HushSetup
 
     // The running Hush.exe cannot delete itself, so a copy in a temp folder waits for it to exit, then removes the install folder.
     // which: "all" (uninstall), "user" (the per-user folder after moving to Program Files) or "admin" (the Program Files folder after moving back).
+    // Where the removal helper may live. A normal Hush uses the person's temp folder; an elevated one runs the helper elevated, so it uses the
+    // administrator-only folder (see AdminOnlyDirectory): a copy in a folder other programs can write to could be swapped before it starts.
+    internal static string? AdminHelperRootOverride; // tests point this at a fixture folder
+    internal static string AdminHelperRoot => AdminHelperRootOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Hush", "Helpers");
+    private static string HelperRoot() => AdminMode.Elevation.IsElevated ? AdminOnlyDirectory.Ensure(AdminHelperRoot) : Path.GetTempPath();
+
     internal static void StartDeferredRemoval(SetupLocations locations, string? runningExe = null, string which = "all")
     {
-        string helperDirectory = Path.Combine(Path.GetTempPath(), "hush-uninstall-" + Guid.NewGuid().ToString("N"));
+        string helperDirectory = Path.Combine(HelperRoot(), "hush-uninstall-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(helperDirectory);
         string helper = Path.Combine(helperDirectory, "Hush.exe");
         File.Copy(runningExe != null && File.Exists(runningExe) ? runningExe : locations.InstalledExe, helper, false);
@@ -186,8 +192,10 @@ internal static class HushSetup
             var locations = SetupLocations.Default;
             string self = Environment.ProcessPath ?? "";
             string helperDirectory = Path.GetDirectoryName(self) ?? "";
+            bool elevated = AdminMode.Elevation.IsElevated;
             if (!int.TryParse(processId, out int id) || !Path.GetFileName(helperDirectory).StartsWith("hush-uninstall-", StringComparison.Ordinal)
-                || !SamePath(Path.GetDirectoryName(helperDirectory)!, Path.GetTempPath())) return 1;
+                || !SamePath(Path.GetDirectoryName(helperDirectory)!, elevated ? AdminHelperRoot : Path.GetTempPath())) return 1;
+            if (elevated) AdminOnlyDirectory.Validate(AdminHelperRoot); // an elevated helper only runs from the administrator-only folder
             try { using var old = Process.GetProcessById(id); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60)); await old.WaitForExitAsync(timeout.Token); }
             catch (ArgumentException) { /* The window already closed. */ }
             if (which is "all" or "user") RemoveInstalledFiles(locations.InstallDirectory);

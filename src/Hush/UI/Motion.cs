@@ -11,6 +11,7 @@ namespace Hush;
 public static class Motion
 {
     internal const double InteractionMilliseconds = 280;
+    internal const double PageFadeMilliseconds = 320;
     public static readonly DependencyProperty HoverForegroundProperty = DependencyProperty.RegisterAttached(
         "HoverForeground", typeof(Brush), typeof(Motion), new PropertyMetadata(null, AppearanceChanged));
     public static Brush? GetHoverForeground(DependencyObject value) => (Brush?)value.GetValue(HoverForegroundProperty);
@@ -136,13 +137,10 @@ public static class Motion
     internal static DoubleAnimation Tween(double from, double to, double milliseconds = InteractionMilliseconds) =>
         new(from, to, TimeSpan.FromMilliseconds(milliseconds)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
 
-    internal static void Reveal(FrameworkElement element)
-    {
-        element.BeginAnimation(UIElement.OpacityProperty, Tween(0, 1, 320));
-        if (element.RenderTransform is not TranslateTransform transform)
-        { transform = new TranslateTransform(); element.RenderTransform = transform; }
-        transform.BeginAnimation(TranslateTransform.YProperty, Tween(6, 0, 320));
-    }
+    // Pages and popups fade in and out by opacity only. (0.9: a cached-picture fade was tried to save CPU; it drew the page at a lower resolution while it
+    // faded and snapped it sharp at the end, so every page change flashed blurry text, and it measured no gain. The real CPU causes were elsewhere.)
+    // Opacity only: a RenderTransform slide of 6 DIP put the text on fractional pixels for the whole fade, which looks blurry until it lands.
+    internal static void Reveal(FrameworkElement element) => element.BeginAnimation(UIElement.OpacityProperty, Tween(0, 1, 320));
 
     internal static Task FadeOut(FrameworkElement element)
     {
@@ -167,7 +165,7 @@ public static class Motion
         surface.BeginAnimation(UIElement.OpacityProperty, null);
         surface.Opacity = 1;
         change(); // Remove the outgoing page before animating the new page; never retain its pixels.
-        var fade = Tween(0, 1, 320);
+        var fade = Tween(0, 1, PageFadeMilliseconds);
         fade.Completed += (_, _) =>
         {
             if ((int)surface.GetValue(TransitionVersionProperty) == version)
@@ -179,13 +177,35 @@ public static class Motion
         surface.BeginAnimation(UIElement.OpacityProperty, fade);
     }
 
+    // One drop-shadow light and the element it lights. The effect is attached while its opacity is above zero (or still fading out) and removed
+    // as soon as it has faded to nothing, so a resting button without a glow carries no effect at all.
+    private sealed class Light(DropShadowEffect effect)
+    {
+        internal UIElement? Host { get; set; }
+        private int version;
+        internal void Show(Color color, double opacity, double? blur)
+        {
+            if (Host == null) return;
+            int mine = ++version;
+            bool visible = opacity > 0.0005;
+            if (!visible && !ReferenceEquals(Host.Effect, effect)) return; // already off: nothing to animate
+            if (visible && !ReferenceEquals(Host.Effect, effect)) Host.Effect = effect;
+            effect.BeginAnimation(DropShadowEffect.ColorProperty, new ColorAnimation(effect.Color, color, TimeSpan.FromMilliseconds(InteractionMilliseconds)));
+            if (blur is double radius) effect.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Tween(effect.BlurRadius, radius));
+            var fade = Tween(effect.Opacity, opacity);
+            if (!visible) fade.Completed += (_, _) => { if (mine == version && ReferenceEquals(Host.Effect, effect)) Host.Effect = null; };
+            effect.BeginAnimation(DropShadowEffect.OpacityProperty, fade);
+        }
+    }
+
     private sealed class ButtonMotion
     {
         private readonly Button button;
-        private readonly DropShadowEffect glow = new() { ShadowDepth = 2, Direction = 270, BlurRadius = 10, Opacity = 0 };
-        // Effects stay on separate outline layers; the surface and label remain sharp.
-        private readonly DropShadowEffect edge = new() { ShadowDepth = 0, BlurRadius = 4, Opacity = 0 };
-        private readonly DropShadowEffect halo = new() { ShadowDepth = 0, BlurRadius = 12, Opacity = 0 };
+        // Effects stay on separate outline layers; the surface and label remain sharp. A light is attached to its layer only while it is visible:
+        // WPF re-renders every attached effect that a redraw touches (even at opacity 0), and 104 idle ones made each redraw of Settings cost 5x the CPU.
+        private readonly Light glow = new(new DropShadowEffect { ShadowDepth = 2, Direction = 270, BlurRadius = 10, Opacity = 0 });
+        private readonly Light edge = new(new DropShadowEffect { ShadowDepth = 0, BlurRadius = 4, Opacity = 0 });
+        private readonly Light halo = new(new DropShadowEffect { ShadowDepth = 0, BlurRadius = 12, Opacity = 0 });
         private readonly Grid? outerGlow;
         private readonly ContentPresenter? content;
         private readonly DependencyPropertyDescriptor background, foreground;
@@ -197,10 +217,9 @@ public static class Motion
         internal ButtonMotion(Button button)
         {
             this.button = button;
-            if (button.Template.FindName("GlowUnderlay", button) is Border underlay) underlay.Effect = glow;
-            else button.Effect = glow;
-            if (button.Template.FindName("GlowEdge", button) is Border edgeLayer) edgeLayer.Effect = edge;
-            if (button.Template.FindName("GlowHalo", button) is Border haloLayer) haloLayer.Effect = halo;
+            glow.Host = button.Template.FindName("GlowUnderlay", button) as UIElement ?? button;
+            edge.Host = button.Template.FindName("GlowEdge", button) as UIElement;
+            halo.Host = button.Template.FindName("GlowHalo", button) as UIElement;
             outerGlow = button.Template.FindName("OuterGlow", button) as Grid;
             content = button.Template.FindName("ButtonContent", button) as ContentPresenter;
             hovered = button.IsMouseOver;
@@ -316,14 +335,9 @@ public static class Motion
             double strength = button.IsEnabled && GetGlow(button) > 0 ? GetGlow(button) + (hover ? lift : 0) : 0;
             UpdateSurface();
             UpdateInk();
-            glow.BeginAnimation(DropShadowEffect.ColorProperty, new ColorAnimation(glow.Color, GetAccent(button), TimeSpan.FromMilliseconds(InteractionMilliseconds)));
-            glow.BeginAnimation(DropShadowEffect.OpacityProperty, Tween(glow.Opacity, GetOuterGlow(button) ? 0 : strength));
-            glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Tween(glow.BlurRadius, hover ? 12 : 10));
-            foreach (var light in new[] { edge, halo })
-                light.BeginAnimation(DropShadowEffect.ColorProperty, new ColorAnimation(light.Color, GetAccent(button), TimeSpan.FromMilliseconds(InteractionMilliseconds)));
-            edge.BeginAnimation(DropShadowEffect.OpacityProperty, Tween(edge.Opacity, GetOuterGlow(button) ? strength * 1.7 : 0));
-            halo.BeginAnimation(DropShadowEffect.OpacityProperty, Tween(halo.Opacity, GetOuterGlow(button) ? strength : 0));
-            halo.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Tween(halo.BlurRadius, MouseHighlighted && GetOuterGlow(button) ? 26 : 12));
+            glow.Show(GetAccent(button), GetOuterGlow(button) ? 0 : strength, hover ? 12 : 10);
+            edge.Show(GetAccent(button), GetOuterGlow(button) ? strength * 1.7 : 0, null);
+            halo.Show(GetAccent(button), GetOuterGlow(button) ? strength : 0, MouseHighlighted && GetOuterGlow(button) ? 26 : 12);
             button.BeginAnimation(UIElement.OpacityProperty, Tween(button.Opacity, button.IsEnabled ? 1 : 0.45));
         }
         internal void Detach()

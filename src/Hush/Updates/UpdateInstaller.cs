@@ -9,8 +9,21 @@ internal sealed record UpdatePlan(string Target, string Staged, string NewHash, 
 
 internal static class UpdateInstaller
 {
-    private static string UpdateRoot => Path.Combine(CleanupEngine.DataDirectory, "Updates");
+    // Where updates are staged. A normal Hush stages in the person's own data folder. An elevated Hush runs the update helper elevated, so everything the
+    // helper trusts (the staged app, its recorded hash, the plan and the helper copy itself) must sit where only administrators can write: any program the
+    // person runs could otherwise swap those files while the helper starts and have its own code copied over Hush and started with administrator rights.
+    private static string UserRoot => Path.Combine(CleanupEngine.DataDirectory, "Updates");
+    internal static string? AdminRootOverride; // tests point this at a fixture folder
+    internal static string AdminRoot => AdminRootOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Hush", "Updates");
+    private static string UpdateRoot => AdminMode.Elevation.IsElevated ? AdminRoot : UserRoot;
     internal static string StagingRoot => UpdateRoot;
+    // Creates (if needed) and validates the staging root. For an elevated Hush that means the administrator-only folder; it throws IOException if that
+    // folder cannot be created or is not administrator-only (for example because another user pre-created it), and then nothing is staged or run.
+    internal static string PrepareStagingRoot()
+    {
+        if (!AdminMode.Elevation.IsElevated) return UserRoot;
+        return AdminOnlyDirectory.Ensure(AdminRoot);
+    }
     // The one rollback copy kept next to Hush.exe. Each update replaces it, so old versions never pile up (they used to be one 25 MB file per update).
     internal const string RollbackName = "Hush.previous.exe";
     // The installed copy is Hush.exe; the downloaded portable app is Hush-Portable.exe. The updated file keeps whichever name it has.
@@ -29,6 +42,7 @@ internal static class UpdateInstaller
             || !CleanupEngine.SafePath(current, parent) || !IsPublishedSingleFile)
             throw new IOException("Updates install from the published portable app. Open Hush-Portable.exe (or the installed Hush.exe) from a writable folder.");
         string directory = Path.GetDirectoryName(staged)!;
+        PrepareStagingRoot(); // elevated: the administrator-only folder must still be administrator-only right now
         if (!directory.StartsWith(UpdateRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !CleanupEngine.SafePath(staged, directory))
             throw new IOException("Invalid update staging location.");
         UpdateService.VerifyExecutable(staged, release.Version);
@@ -53,6 +67,8 @@ internal static class UpdateInstaller
         string directory = Path.GetDirectoryName(Path.GetFullPath(planPath))!;
         try
         {
+            // An elevated helper only trusts a plan that lies inside the administrator-only staging folder (checked again here, in the helper itself).
+            if (AdminMode.Elevation.IsElevated) AdminOnlyDirectory.Validate(AdminRoot);
             if (!directory.StartsWith(UpdateRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
                 || Path.GetFileName(planPath) != "install.json" || !CleanupEngine.SafePath(planPath, directory)) return 1;
             var plan = JsonSerializer.Deserialize<UpdatePlan>(await File.ReadAllTextAsync(planPath)) ?? throw new IOException("Invalid update plan.");
@@ -126,6 +142,15 @@ internal static class UpdateInstaller
 
     // Update staging (a 25 MB downloaded copy plus a 25 MB helper copy per attempt) is removed once an update has finished or failed, and
     // after two days for a download that was never installed. A folder whose helper is still running just fails to delete and is retried later.
+    // Tidies the person's own staging folder and, for an elevated Hush, the administrator-only one (only after it has proven to be administrator-only).
+    internal static void PruneAll()
+    {
+        PruneStaging(UserRoot);
+        if (!AdminMode.Elevation.IsElevated) return;
+        try { AdminOnlyDirectory.Validate(AdminRoot); PruneStaging(AdminRoot); }
+        catch (IOException) { /* missing or not trustworthy: left alone */ }
+    }
+
     internal static int PruneStaging(string root, DateTime? nowUtc = null)
     {
         int removed = 0;

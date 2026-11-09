@@ -1,0 +1,8 @@
+# Line endings (0.9 audit): the repository stores text as LF; the working tree here is LF too. Before this file the index held a mix of CRLF and LF, which made
+# diffs show thousands of changed lines that were only line endings.
+* text=auto eol=lf
+*.sln text eol=crlf
+*.png binary
+*.ico binary
+# Locked archives are byte-exact: their checksums (CHECKSUMS.sha256) are the lock, so git must never rewrite a byte there.
+docs/locked/** -text

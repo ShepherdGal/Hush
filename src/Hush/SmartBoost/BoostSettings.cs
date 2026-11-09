@@ -55,7 +55,8 @@ public sealed class Preferences
         return new();
     }
 
-    public void Save(string path)
+    // Never throws, but a failed save is noted in the crash log (otherwise the Terms or the administrator question would silently come back next start).
+    public void Save(string path, string? dataDirectory = null)
     {
         try
         {
@@ -66,6 +67,6 @@ public sealed class Preferences
             File.WriteAllText(temp, JsonSerializer.Serialize(this));
             File.Move(temp, path, true);
         }
-        catch { }
+        catch (Exception ex) { CrashLog.Write("settings", ex, dataDirectory); }
     }
 }

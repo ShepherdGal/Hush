@@ -33,15 +33,68 @@ internal static class ReviewGroupChecks
             var accents = groups.Select(group => ((SolidColorBrush)group.Accent).Color).Distinct().Count();
             check(accents == 3, "The three groups use the three traffic-light colors");
             Save(window, root, "review-groups");
+            var selectAll = (CheckBox)window.FindName("SelectAllBox");
+            var chevron = (Button)window.FindName("GroupBackButton");
+            check(selectAll.Content?.ToString() == "Select all categories" && chevron.Visibility == Visibility.Collapsed,
+                "The overview shows \"Select all categories\" and no chevron");
+            // On the overview, Select all ticks Safe, Review and Advanced together (as it did before the groups existed), and ticking again clears them.
+            selectAll.IsChecked = true; selectAll.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            check(window.Categories.Where(category => category.HasFiles).All(category => category.Selected == true)
+                && window.ReviewGroups.Where(group => group.HasItems).All(group => group.SelectedCount == group.Count)
+                && window.ReviewGroups.Select(group => group.Level).Distinct().Count() == 3, "Select all categories on the overview selects Safe, Review and Advanced together");
+            selectAll.IsChecked = false; selectAll.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            check(window.ReviewItems.All(item => !item.Selected), "Select all categories clears every group again");
+
+            // Each group row has the colored line and a checkbox of its own (no dot any more).
+            var boxes = Descendants<CheckBox>(groupsView).Where(box => box.DataContext is ReviewGroupSummary).ToList();
+            check(boxes.Count == 3 && Descendants<System.Windows.Shapes.Ellipse>(groupsView).All(dot => dot.Width != 12)
+                && rows.All(button => Descendants<Border>(button).Any(line => line.Width == 6 && line.Background is SolidColorBrush)),
+                "Each group row shows its colored line and a checkbox instead of a dot");
+            // Soft dividers (the same hairline as between the category cards inside a group): under the "Select all" bar and between the three groups.
+            var barDivider = (FrameworkElement)window.FindName("OverviewDivider");
+            var groupDividers = Descendants<Border>(groupsView).Where(border => border.Height == 1 && border.Margin.Left == 36).ToList();
+            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(920, 820, 96, 96, PixelFormats.Pbgra32); bitmap.Render(root);
+            var pixels = new byte[920 * 820 * 4]; bitmap.CopyPixels(pixels, 920 * 4, 0);
+            int Brightness(Point point) { int offset = ((int)point.Y * 920 + (int)point.X) * 4; return pixels[offset] + pixels[offset + 1] + pixels[offset + 2]; }
+            bool Visible(FrameworkElement line)
+            {
+                var box = line.TransformToAncestor(root).TransformBounds(new Rect(line.RenderSize));
+                var middle = new Point(box.Left + box.Width / 2, box.Top + 0.5); var above = new Point(middle.X, box.Top - 4);
+                return line.IsVisible && Math.Abs(box.Height - 1) < 0.01 && Brightness(middle) != Brightness(above);
+            }
+            check(barDivider.IsVisible && Visible(barDivider) && groupDividers.Count(line => line.IsVisible) == 2 && groupDividers.Where(line => line.IsVisible).All(Visible)
+                && barDivider.Margin.Left == 36 && barDivider.Opacity == 0.45 && groupDividers.All(line => line.Opacity == 0.45),
+                "A soft divider sits under Select all categories and one between each pair of groups, drawn like the dividers inside a folder"
+                + $" [bar visible={barDivider.IsVisible}/{Visible(barDivider)} margin={barDivider.Margin.Left} op={barDivider.Opacity}; group dividers={groupDividers.Count} visible={groupDividers.Count(line => line.IsVisible)} pixel={string.Join(',', groupDividers.Where(line => line.IsVisible).Select(Visible))} ops={string.Join(',', groupDividers.Select(line => line.Opacity))}]");
+            var reviewBox = boxes.Single(box => ((ReviewGroupSummary)box.DataContext).Level == SafetyLevel.Review);
+            var safeBefore0 = window.Categories.Where(category => category.Safety == SafetyLevel.Safe).Sum(category => category.SelectedCount);
+            reviewBox.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty, true); reviewBox.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            check(window.OpenGroup == null && groupsView.Visibility == Visibility.Visible && listView.Visibility == Visibility.Collapsed, "Clicking a group's checkbox only selects: it does not open the group");
+            var reviewGroup = window.ReviewGroups.Single(group => group.Level == SafetyLevel.Review);
+            check(reviewGroup.SelectedCount == reviewGroup.Count && reviewGroup.SelectionState == true && reviewBox.IsChecked == true
+                && window.Categories.Where(category => category.Safety == SafetyLevel.Safe).Sum(category => category.SelectedCount) == safeBefore0
+                && window.Categories.Where(category => category.Safety == SafetyLevel.Advanced).All(category => category.SelectedCount == 0),
+                "A group's checkbox selects that whole group and nothing else");
+            window.Categories.First(category => category.Safety == SafetyLevel.Review && category.HasFiles).Selected = false;
+            check(reviewGroup.SelectionState == null && reviewBox.IsChecked == null, "The group's checkbox shows a mixed state when only part of it is selected");
+            reviewBox.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty, false); reviewBox.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            check(reviewGroup.SelectedCount == 0 && reviewBox.IsChecked == false, "Clearing the group's checkbox clears the whole group");
 
             // Open Review (amber): only its categories are listed, and Select all stays inside the group.
             var amber = groups[1];
+            rows.Single(button => button.Tag == amber).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); UiLayoutChecks.Wait(360); UiLayoutChecks.Layout(root, new Size(920, 820));
+            check(!barDivider.IsVisible && chevron.IsVisible && chevron.Content?.ToString() == "Back to the groups" && selectAll.Content?.ToString() == "Select all in Review" && ((FrameworkElement)window.FindName("CollapseAllButton")).IsVisible
+                && chevron.ActualWidth == 36 && chevron.ActualHeight == 36 && Math.Abs(chevron.TransformToAncestor(root).TransformBounds(new Rect(chevron.RenderSize)).Right
+                    - selectAll.TransformToAncestor(root).TransformBounds(new Rect(selectAll.RenderSize)).Left) < 16,
+                "Inside a group a chevron-only Back sits beside \"Select all in <group>\"");
+            chevron.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); UiLayoutChecks.Wait(360); UiLayoutChecks.Layout(root, new Size(920, 820));
+            check(window.OpenGroup == null && groupsView.Visibility == Visibility.Visible && listView.Visibility == Visibility.Collapsed && chevron.Visibility == Visibility.Collapsed
+                && selectAll.Content?.ToString() == "Select all categories", "The chevron returns to the three groups and the overview's Select all comes back");
             rows.Single(button => button.Tag == amber).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); UiLayoutChecks.Wait(360); UiLayoutChecks.Layout(root, new Size(920, 820));
             var sections = Descendants<Expander>(root).Where(section => section.DataContext is ReviewCategory && section.IsVisible).Select(section => (ReviewCategory)section.DataContext).ToList();
             check(window.OpenGroup == SafetyLevel.Review && listView.Visibility == Visibility.Visible && groupsView.Visibility == Visibility.Collapsed
                 && sections.Count > 0 && sections.All(category => category.Safety == SafetyLevel.Review), "Clicking a group lists only its categories");
             Save(window, root, "review-group-open");
-            var selectAll = (CheckBox)window.FindName("SelectAllBox");
             int safeBefore = window.Categories.Where(category => category.Safety == SafetyLevel.Safe).Sum(category => category.SelectedCount);
             selectAll.IsChecked = true; selectAll.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             check(window.Categories.Where(category => category.Safety == SafetyLevel.Review && category.HasFiles).All(category => category.Selected == true)

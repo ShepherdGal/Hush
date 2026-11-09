@@ -53,6 +53,12 @@ internal static class AdminChecks
         check(AdminMode.DecideStart(true, false, true, false) == StartAction.Relaunch && AdminMode.DecideStart(true, false, false, true) == StartAction.Relaunch,
             "Administrator mode: a portable copy, or a copy without its task, asks Windows' own prompt");
 
+        // 0.9 audit (M4): an updated copy that only hands over to an elevated one must still acknowledge the update, or the updater rolls the update back.
+        string[] updateArgs = ["--update-complete", @"C:\staging\started.ok"];
+        check(App.ReceiptBeforeHandOver(StartAction.Relaunch, updateArgs) == @"C:\staging\started.ok" && App.ReceiptBeforeHandOver(StartAction.RunTask, updateArgs) == @"C:\staging\started.ok"
+            && App.ReceiptBeforeHandOver(StartAction.Continue, updateArgs) == null && App.ReceiptBeforeHandOver(StartAction.Relaunch, ["--windows-review"]) == null && App.ReceiptBeforeHandOver(StartAction.Relaunch, []) == null,
+            "Update start: a copy that hands over to an administrator copy acknowledges the update first; a normal start and other arguments do not");
+
         // ---- The task may only point into an administrator-only folder ----
         string pf = Path.Combine(fixture, "ProgramFiles");
         string[] roots = [pf];
@@ -127,5 +133,13 @@ internal static class AdminChecks
         check(Preferences.Load(file).RunAsAdmin == true, "The 'Run as administrator' answer is remembered");
         prefs.RunAsAdmin = false; prefs.Save(file);
         check(Preferences.Load(file).RunAsAdmin == false, "A 'Not now' answer is remembered, so the question is asked only once");
+
+        // A save that cannot happen never throws, but leaves a note in the (fixture) crash log.
+        string blocker = Path.Combine(fixture, "admin-prefs-blocker"); File.WriteAllText(blocker, "a file where a folder is needed");
+        string noteDirectory = Path.Combine(fixture, "admin-prefs-notes");
+        bool escaped = false;
+        try { new Preferences { RunAsAdmin = true }.Save(Path.Combine(blocker, "settings.json"), noteDirectory); } catch { escaped = true; }
+        string noteFile = Path.Combine(noteDirectory, "Logs", "crash.log");
+        check(!escaped && File.Exists(noteFile) && File.ReadAllText(noteFile).Contains("[settings]"), "A settings file that cannot be saved does not throw and is noted in the crash log (fixture folder)");
     }
 }

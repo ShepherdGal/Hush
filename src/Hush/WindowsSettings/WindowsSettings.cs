@@ -244,10 +244,10 @@ internal sealed class WindowsSettingsService
             : environment.Home ? "Windows Home ignores several of these policies, so some choices may have no effect there."
             : "Choose changes, then review before applying. Hush explains each change first and tells you whether to sign out or restart.";
         bool canUndo = history.Values.Count > 0 && history.Values.All(saved => CanRestore(Find(saved.Id), saved));
-        string undoHint = history.Values.Count == 0 ? "Undo restores the values saved before Hush's changes."
+        string undoHint = history.Values.Count == 0 ? "Undo puts back what Hush changed in Windows."
             : history.Pending ? "An interrupted operation needs review. Use Undo changes to restore tracked values."
             : !canUndo ? "Undo is blocked because a value was changed outside Hush after Hush set it, so nothing else is overwritten. Refresh after resolving it."
-            : "Undo restores all changes tracked by Hush, including an originally absent policy. It does not force Windows defaults.";
+            : "Undo puts back what Hush changed in Windows.";
         return new(rows, summary, canUndo, undoHint);
     }
 

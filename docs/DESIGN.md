@@ -66,7 +66,7 @@ The 550 DIP confirmation card has 32 padding, radius 24 and maximum height 650, 
 
 ## Popups
 
-Both About and deletion confirmation share: radius 24, neutral panel, no card border/glow, app-wide blur radius 7 over 280 ms, sharp modal, disabled background, focus cycling and restoration. Reveal 320 ms; close 160 ms. Escape cancels/closes. Confirmed deletion remains permanent and selection-specific.
+Both About and deletion confirmation share: radius 24, neutral panel, no card border/glow, app-wide blur radius 7 that is switched on and off at once (0.9: not animated, and attached only while a popup is open, because a permanent window-wide effect made every frame cost about 50x more CPU), sharp modal, disabled background, focus cycling and restoration. Reveal 320 ms; close 160 ms. Escape cancels/closes. Confirmed deletion remains permanent and selection-specific.
 
 Confirmation: 510 wide, padding 34; label Confirm cleanup, heading Are you sure? (28 SemiBold), selected items/bytes 17 Medium, explanatory text 15 Medium / 25 line-height. Two balanced 44-high actions: Keep my files and outlined Clean selected. Preserve permanent deletion and registry backup wording.
 
@@ -156,7 +156,7 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 
 - The app icon is the user's brush artwork recolored to the same aqua as the accent: hue-rotated toward #38CFC8, black surround keyed to real transparency, and a thin solid #38CFC8 border (deeper aqua toward the bottom-right) with the soft inner glow toned down, so the edge is crisp and not glowing. Source: `src/Hush/Assets/Hush-icon-source.png`; `GenerateIcon.ps1` builds `Hush.ico` (16-256 px) and `Hush-mark*.png`.
 - An ice-blue accent (#7FE0F6) was tried in 0.8 and rejected: the Dark accent is aqua #38CFC8 (hover #7FE3DD) and Light is soft blue #4C7BC8.
-- The header wordmark "Hush" is Inter Italic Medium 500.
+- The header wordmark "Hush" is Inter **Medium 500, upright** (0.9, user direction; the About and Setup wordmarks match). It never changes color or effect: not when the window is inactive, not on hover, never dimmed while Hush works.
 ## The one red (0.8)
 
 - The Clean button's red (#FF795C Dark, #B54428 Light) is the only red in Hush. Advanced items in Review, the Advanced consent checkbox and the Clean button all use it. Review stays orange (#FFA24D, #B35F0C in Light); high resource readings use that orange. `ColorRuleChecks` fails the build on any other red.
@@ -172,7 +172,7 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 ## Teal accent, upright type and shared titles (0.8 follow-up)
 
 - The Dark accent is a slightly greener teal, **#38CFC8** (hover #7FE3DD); Light stays #4C7BC8. The icon is recolored to the same teal (rim #38CFC8). This supersedes every earlier mention of aqua #3CCFD9 or #80E0E6 in this file.
-- **Italic is reserved for the Hush logo and the home heading "Make more room to breathe"**. Every other title and text is upright: Review files, Settings, popup titles, Settings card titles, the empty-state title and the underlined scan-complete link. This supersedes earlier "Inter Italic" statements for those titles.
+- **Italic is reserved for the home heading "Make more room to breathe"** (0.9: the Hush logo is upright). Every other title and text is upright: Review files, Settings, popup titles, Settings card titles, the empty-state title and the underlined scan-complete link. This supersedes earlier "Inter Italic" statements for those titles.
 - **One page-title style:** Review files and Settings both use `PageTitle` (29, Medium 500, upright, same position). Popup titles use `PopupTitle` (28 Regular); Settings card titles use `CardTitle` (18 Medium, accent). `TypographyChecks` enforces this.
 - **Update check:** the searching animation is a calm arc on a quiet track: a crisp rounded accent arc (about 30% of the track) with a fainter arc (about 17%, 35% opacity) trailing behind it, no glow, moving left to right over 2.4 s per pass with sine ease-in-out and leaving and re-entering at the track ends. It always shows for at least 3.5 seconds.
 
@@ -206,5 +206,14 @@ A Settings card right after Info: title "Process", summary "In progress · N app
 - **Loading bars:** `UpdateActivity` is the only loading line: a 5 px track with ONE bar that fills smoothly from empty to full (real progress for the download and the files Boost cleans; `FillOver` for the update check and freeing memory, completing only when the work is done). Never a travelling or sweeping bar.
 - **Review groups:** the page opens on three rows (green Safe, amber Review, red Advanced) in one panel, each with a dot, name, one sentence, "N items · M selected", a size chip and a chevron; a group opens its category list, Back returns. The traffic-light colors are the shared `SafetyPalette` text colors.
 - **Settings:** the Info card is full width; Process, Administrator and Interface size sit left, Smart Boost and Browser data right (one column below 700 DIP); long descriptions live in "?" popups. Windows Update is a red-titled card and, while off, a red line at the top (the one Clean red).
-- **Update popup (About):** "Hush", version, then the update status (text, Check/Update now, the filling bar), then "What's new in this version" (at most five one-line bullets), then the description, terms and Close. The header shows a green upright "There is a new update!" beside the wordmark only when a newer version exists.
+- **Update popup (About):** "Hush", then ONE row (0.9): "Version X" in Medium 500 with the short status beside it ("Updated to latest version.", Medium, green) and Check for updates / Update now at the right end of the row, its text aligned with the version; the filling bar below both; then "What's new in this version" (at most five one-line bullets), then the description, terms and Close. The header shows a green upright "There is a new update!" beside the wordmark only when a newer version exists.
 - **Hover:** `Motion.MouseOnly` (keyboard focus does not highlight: wordmark, Scan button) and `Motion.HoverLift` (how strongly a glow grows on hover; the Scan button uses it).
+
+## 0.9 additions (after the 0.9 build)
+
+- **Cleaning cue inside the gauge (redesigned):** a 250 DIP scan fills the whole inside of the gauge: a 1.6 DIP accent line with a 7 DIP glow and a 94 DIP trail (opacity mask, ends faded) travels rim to rim at steady pace in 2.4 s and fades in and out at the ends; a 2.4 DIP radar arc (52 degrees) orbits just inside the rim every 3.4 s; a dashed ring (1.3 DIP, opacity 0.42) turns once in 16 s the other way; a dot grid (14 DIP spacing, opacity 0.16) sits underneath. Accent brush only, clipped to the disc, no effects, the percentage on top.
+- **Review bar:** one 64 DIP bar above both Review views. Overview: "Select all categories" (all three groups). Inside a group: a 36 x 36 chevron-only Back (`ChevronBackButton`, Segoe Fluent chevron, same ink as TextButton) 5 DIP before "Select all in <group>", and Expand all at the right.
+- **Settings columns:** three cards each (Process, Administrator, Interface size | Smart Boost, Browser data, Services), then Windows Update, Privacy & telemetry and More impact full width. The Services card uses the Settings row pattern: switch, name with "?" popup, what it uses now, and a level dot (green "Rarely needed", amber "Read first" or "Left behind").
+- **Choice chips:** `AccordionBody` clips only to the revealed height, never to the width, so a selected chip's rounded background is not cut at the card's left edge.
+- **Motion cost:** pages and popups fade as one cached picture; no effect is attached to a resting control that does not glow (see "UI smoothness" in CLAUDE.md).
+- **Smooth scrolling:** every vertical scroll area glides to its target on wheel or touchpad input (cubic ease-out, 200-420 ms depending on distance, one notch = Windows' wheel-lines setting, 3 lines = 48 DIP by default); a further notch retargets the glide rather than restarting it. See `UI/SmoothScroll.cs`.

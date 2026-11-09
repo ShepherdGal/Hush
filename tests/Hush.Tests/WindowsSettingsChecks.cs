@@ -259,11 +259,11 @@ internal static class WindowsSettingsChecks
             Require(RowCount() == all, "Clearing the search brings every choice back");
             int before = store.Writes;
             Toggle("diagnostics", true); Toggle("tailored", true);
-            Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 changes", "Actual checkbox bindings stage choices without writing");
+            Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 Windows changes", "Actual checkbox bindings stage choices without writing");
             Require(((TextBlock)window.FindName("PrivacySummary")).Text == $"2 of {WindowsSettingsService.Catalog.Count(item => !item.Advanced)} turned on · 2 waiting for review", "A section summary shows staged choices before anything is applied");
             Click("ApplyWindowsSettingsButton"); Wait(350);
             Require(overlay.Visibility == Visibility.Visible && !((UIElement)window.FindName("AppSurface")).IsEnabled
-                && ((BlurEffect)((UIElement)window.FindName("AppSurface")).Effect).Radius == 7 && store.Writes == before
+                && ((BlurEffect)window.FindName("BackgroundBlur")).Radius == 7 && ((UIElement)window.FindName("AppSurface")).Effect == null == !MainWindow.BackdropBlurEnabled && store.Writes == before
                 && KeyboardNavigation.GetTabNavigation(overlay) == KeyboardNavigationMode.Cycle,
                 "Windows confirmation blurs/blocks the app, traps focus and does not apply changes");
             Capture(root, "windows-confirm-dark");
@@ -321,11 +321,22 @@ internal static class WindowsSettingsChecks
             }
             // Actions menu (like ShutUp10++): recommended only, plus somewhat recommended, all; each stages the switches and opens the usual review.
             Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820)); before = store.Writes;
+            Require(((TextBlock)window.FindName("WindowsSettingsStatus")).Text.StartsWith("Refreshed at ") && Motion.GetMouseOnly((Button)window.FindName("RefreshWindowsSettingsButton")), "Refresh says it refreshed (time and count) and does not keep a pressed look from keyboard focus");
             void Bulk(string menuButton)
             {
                 Click("ActionsButton"); Wait(150);
                 Require(((Popup)window.FindName("ActionsPopup")).IsOpen, "The Actions button opens its menu");
                 Capture((FrameworkElement)((Popup)window.FindName("ActionsPopup")).Child, "windows-actions-menu-dark");
+                // A second click on the Actions button closes the menu (it used to reopen it), and the chevron follows; the next click opens it again.
+                Click("ActionsButton"); Wait(60);
+                Require(!((Popup)window.FindName("ActionsPopup")).IsOpen, "Clicking the Actions button again closes its menu");
+                Wait(700); Click("ActionsButton"); UiLayoutChecks.PumpUntil(() => ((Popup)window.FindName("ActionsPopup")).IsOpen);
+                Require(((Popup)window.FindName("ActionsPopup")).IsOpen, "The Actions button opens the menu again afterwards");
+                // A press anywhere else in the window closes it (the menu stays open until Hush closes it, so the button can toggle reliably with a real mouse).
+                var elsewhere = (UIElement)window.FindName("WindowsSettingsStatus");
+                elsewhere.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseDownEvent, Source = elsewhere });
+                Require(!((Popup)window.FindName("ActionsPopup")).IsOpen, "A press anywhere else in the window closes the Actions menu");
+                Click("ActionsButton"); UiLayoutChecks.PumpUntil(() => ((Popup)window.FindName("ActionsPopup")).IsOpen);
                 Click(menuButton); Wait(340);
             }
             IReadOnlyList<AdjustmentChoice> Choices() => window.AdjustmentChoices; // the list is replaced by every refresh

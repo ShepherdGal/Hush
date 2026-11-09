@@ -38,6 +38,16 @@ internal static class PerformanceChecks
         return 0;
     }
 
+    // Read-only: what the Services card would offer on this PC, with each service's start type and state. Changes nothing.
+    internal static int ServiceReport()
+    {
+        var tuning = new ServiceTuning(new RealServiceSystem(), Path.Combine(Path.GetTempPath(), "Hush.ServiceReport." + Guid.NewGuid().ToString("N")));
+        var offered = tuning.Scan();
+        Console.WriteLine($"{offered.Count} services offered on this PC ({offered.Count(c => c.Running)} running now), from a list of {ServiceTuning.Catalog.Length}.");
+        foreach (var c in offered) Console.WriteLine($"  {c.Level,-11} {c.Name,-34} {c.Status,-34} {c.Title}");
+        return 0;
+    }
+
     // Read-only: the apps the Process card would list on this PC (never ends anything).
     internal static int ProcessReport()
     {

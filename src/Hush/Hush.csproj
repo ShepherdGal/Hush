@@ -12,6 +12,11 @@
     <Copyright>Copyright (c) 2026 ShepherdGal. MIT License.</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Hush.ico</ApplicationIcon>
+    <!-- Run-time settings that keep Hush light (0.9): profile-guided tiering re-compiles hot code in the background for the first minutes of use,
+         which measured at about a full CPU core while a page first opened (0.3 s without it); a background-GC thread and its extra heap are not
+         needed by an app this size. -->
+    <TieredPGO>false</TieredPGO>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
   <ItemGroup>
     <!-- The same icon the executable carries, available to the windows themselves (taskbar, Alt+Tab). -->

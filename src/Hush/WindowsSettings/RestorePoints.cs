@@ -54,13 +54,25 @@ internal sealed class WindowsRestorePoints : IRestorePoints
             if (results is not System.Collections.IEnumerable rows) return false;
             foreach (object item in rows)
             {
-                string? stamp = item.GetType().InvokeMember("CreationTime", System.Reflection.BindingFlags.GetProperty, null, item, null) as string;
-                if (stamp is { Length: >= 14 } && DateTime.TryParseExact(stamp[..14], "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var made)
-                    && DateTime.Now - made < span) return true;
+                try
+                {
+                    string? stamp = item.GetType().InvokeMember("CreationTime", System.Reflection.BindingFlags.GetProperty, null, item, null) as string;
+                    if (stamp is { Length: >= 14 } && DateTime.TryParseExact(stamp[..14], "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var made)
+                        && DateTime.Now - made < span) return true;
+                }
+                finally { Release(item); }
             }
         }
         catch (Exception ex) when (ex is COMException or System.Reflection.TargetInvocationException or InvalidCastException or MissingMemberException or NullReferenceException) { }
+        finally { Release(results); Release(service); Release(locator); }
         return false;
+    }
+
+    // The WMI scripting objects are COM objects: let go of them now instead of waiting for the garbage collector.
+    private static void Release(object? com)
+    {
+        try { if (com != null && Marshal.IsComObject(com)) Marshal.FinalReleaseComObject(com); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidComObjectException) { }
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
@@ -109,5 +121,6 @@ internal sealed class WindowsRestorePoints : IRestorePoints
         }
         catch (Exception ex) when (ex is COMException or System.Reflection.TargetInvocationException or InvalidCastException or MissingMemberException or NullReferenceException)
         { return "Windows refused to turn System Protection on"; }
+        finally { Release(restoreClass); Release(service); Release(locator); }
     }
 }

@@ -32,7 +32,7 @@ internal sealed class CleanupEngine
     // A target the engine will delete from, with its wildcards parsed once instead of once per file.
     private sealed record Approved(CleanupTarget Target, string[]? Patterns);
 
-    public CleanupEngine() : this(new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets), true, null, new ShellRecycleBin(), new WindowsSystemTools(), defaultTargets: true) { }
+    public CleanupEngine() : this(new Lazy<IReadOnlyList<CleanupTarget>>(() => DefaultTargets(note => LogIssue(DataDirectory, note))), true, null, new ShellRecycleBin(), new WindowsSystemTools(), defaultTargets: true) { }
     internal CleanupEngine(IReadOnlyList<CleanupTarget> targets, bool includeRegistry = false, string? dataDirectory = null, IRecycleBin? recycleBin = null, ISystemTools? systemTools = null)
         : this(new Lazy<IReadOnlyList<CleanupTarget>>(targets), includeRegistry, dataDirectory, recycleBin, systemTools) { }
     private CleanupEngine(Lazy<IReadOnlyList<CleanupTarget>> targetSource, bool includeRegistry, string? dataDirectory, IRecycleBin? recycleBin, ISystemTools? systemTools, bool defaultTargets = false)
@@ -65,7 +65,8 @@ internal sealed class CleanupEngine
     // Every default location, its risk category and its rules live here and nowhere else.
     // Locations marked DeletableOnly are system-protected: a file is listed only if this user can open it for deletion right now.
     // Folders that do not exist (application not installed) are never added, so a scan only visits what is really there.
-    internal static List<CleanupTarget> DefaultTargets()
+    // rejected (optional): told about every location that was left out because it is, contains or lies inside a personal or protected folder.
+    internal static List<CleanupTarget> DefaultTargets(Action<string>? rejected = null)
     {
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -281,6 +282,13 @@ internal sealed class CleanupEngine
         // Apps without a hand-written rule: Electron/WebView2/CEF caches, Firefox-family caches, per-app logs, temp and crash dumps (see AppDiscovery).
         // Locations the rules above already own are not added twice. The walk is bounded, so it cannot slow the first scan noticeably.
         list.AddRange(AppDiscovery.Discover(local, roaming, Path.GetTempPath(), list.Select(target => target.Root).ToList()));
+        // Roots are written in their long form (0.9 audit): TEMP is often an 8.3 short name (C:\Users\LONGUS~1\...), and a file's real path as Windows reports it
+        // at delete time is always the long one, so a short root made every delete fail the "file location changed" check. The root guard below also compares long forms.
+        for (int index = 0; index < list.Count; index++)
+        {
+            string longRoot = LongPath(list[index].Root);
+            if (!string.Equals(longRoot, list[index].Root, StringComparison.Ordinal)) list[index] = list[index] with { Root = longRoot };
+        }
         // Administrator mode, different account: when Hush runs as an administrator who is not the signed-in person (a standard user typed an admin's
         // password), every "user" folder above is the administrator's profile, not the person's. Those locations are left out; system locations stay.
         if (UserLocationsSkipped)
@@ -288,7 +296,66 @@ internal sealed class CleanupEngine
             string profile = Normalize(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             list.RemoveAll(target => { try { return UnderRoot(Path.GetFullPath(target.Root), profile); } catch (ArgumentException) { return true; } });
         }
+        // Last line of defense (0.9 audit): a location whose path comes from the environment (the temp folder follows the TEMP/TMP variables, which
+        // a person or a tool can point anywhere) must never turn Documents, the Desktop, a drive root or another protected folder into a cleanup target.
+        var rules = CurrentRootRules();
+        list.RemoveAll(target =>
+        {
+            if (IsAcceptableRoot(target, rules, out string reason)) return false;
+            rejected?.Invoke($"Left out a cleanup location because it {reason}: {target.Group} ({target.Root})");
+            return true;
+        });
         return list;
+    }
+
+    // The folders a cleanup location may never be, contain or (for the first group) lie inside. Injectable so tests need no real folders.
+    internal sealed record RootRules(IReadOnlyList<string> Personal, IReadOnlyList<string> Containers);
+
+    internal static RootRules CurrentRootRules()
+    {
+        string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var personal = new List<string>
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonDocuments),
+            profile.Length > 0 ? Path.Combine(profile, "Downloads") : "",
+            Environment.GetEnvironmentVariable("OneDrive") ?? "", Environment.GetEnvironmentVariable("OneDriveConsumer") ?? "", Environment.GetEnvironmentVariable("OneDriveCommercial") ?? ""
+        };
+        var containers = new List<string>
+        {
+            profile, profile.Length > 0 ? (Path.GetDirectoryName(Normalizable(profile)) ?? "") : "",
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), Environment.GetFolderPath(Environment.SpecialFolder.System),
+            Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), Environment.GetFolderPath(Environment.SpecialFolder.Windows)
+        };
+        return new(personal, containers);
+    }
+
+    private static string Normalizable(string path) => Path.TrimEndingDirectorySeparator(path);
+
+    // A location is accepted unless it is a drive root, lies inside a personal-data folder, or equals/contains a personal or protected folder.
+    // Narrow locations (one file pattern, not recursive: the Desktop's *.lnk, the Windows folder's MEMORY.DMP) only need to be no drive root.
+    internal static bool IsAcceptableRoot(CleanupTarget target, RootRules rules, out string reason)
+    {
+        reason = "";
+        string root;
+        try { root = Normalize(target.Root); }
+        catch (ArgumentException) { reason = "has an invalid path"; return false; }
+        if (root.Length < 4) { reason = "is a drive root"; return false; }
+        if (!target.Recursive && target.Pattern != null) return true;
+        static string? Full(string path) { try { return string.IsNullOrWhiteSpace(path) ? null : Normalize(path); } catch (ArgumentException) { return null; } }
+        static bool Within(string path, string folder) => path.Equals(folder, StringComparison.OrdinalIgnoreCase) || path.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        foreach (string personal in rules.Personal.Select(Full).OfType<string>())
+        {
+            if (Within(root, personal)) { reason = "is or lies inside a personal folder"; return false; }
+            if (Within(personal, root)) { reason = "contains a personal folder"; return false; }
+        }
+        foreach (string container in rules.Containers.Select(Full).OfType<string>())
+            if (Within(container, root)) { reason = "is or contains a protected system or profile folder"; return false; }
+        return true;
     }
 
     private readonly record struct Raw(string? Name, long Length, long Modified, long Created, bool IsDirectory);
@@ -304,6 +371,19 @@ internal sealed class CleanupEngine
     private static string[]? Patterns(string? pattern) => pattern?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static string Normalize(string root) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+
+    // The long form of a path that contains 8.3 short names ("PROGRA~1"); anything else, or a path that does not exist, comes back unchanged.
+    internal static string LongPath(string path)
+    {
+        try
+        {
+            if (path.IndexOf('~') < 0) return path;
+            var buffer = new char[32768];
+            uint length = Native.GetLongPathName(path, buffer, (uint)buffer.Length);
+            return length > 0 && length < buffer.Length ? new string(buffer, 0, (int)length) : path;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or ArgumentException) { return path; }
+    }
 
     // Where two targets overlap, the most specific one owns the files: an outer target never enters the root of an inner one, and targets
     // with the same root share one "already counted" set. Nothing is remembered for targets that overlap nothing, so a scan of millions
@@ -459,7 +539,9 @@ internal sealed class CleanupEngine
     }
 
     // A short local note, so "why did Hush skip that?" has an answer. Written under this engine's data directory. Never throws.
-    private void LogScanIssue(string text)
+    private void LogScanIssue(string text) => LogIssue(dataDirectory, text);
+
+    private static void LogIssue(string dataDirectory, string text)
     {
         try
         {
@@ -717,12 +799,12 @@ internal sealed class CleanupEngine
         recycleBin.Empty();
     }
 
-    // Windows' own tools do the work. The tool must still be offered by a fresh read-only probe, so a forged item cannot start anything.
+    // Hush does the work itself (no Windows tool). It must still be offered by a fresh read-only probe, so a forged item cannot start anything.
     private void RunSystemTool(CleanupItem item, CancellationToken token, IProgress<string>? note = null)
     {
         if (systemTools == null || item.ToolId == null) throw new IOException("This Windows cleanup is not available.");
         if (!systemTools.Probe(token).Any(offer => offer.ToolId == item.ToolId)) throw new IOException("Windows no longer offers this cleanup; scan again.");
-        note?.Report($"Windows is running \"{item.Group}\". This can take several minutes; Hush is still working…");
+        note?.Report($"Removing \"{item.Group}\". This can take several minutes; Hush is still working…");
         systemTools.Run(item.ToolId, token);
     }
 
@@ -1015,6 +1097,8 @@ internal static class Native
     internal static extern bool GetFileInformationByHandle(SafeFileHandle handle, out FileInformation info);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, [Out] char[] path, uint size, uint flags);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern uint GetLongPathName(string shortPath, [Out] char[] longPath, uint size);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool SetFileInformationByHandle(SafeFileHandle handle, int type, ref Disposition info, uint size);

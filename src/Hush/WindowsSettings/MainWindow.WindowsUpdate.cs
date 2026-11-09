@@ -19,11 +19,6 @@ public partial class MainWindow
     internal bool IsWindowUpdateOffForTests() => updateSwitch.IsOff;
     internal bool WindowsOptionsShown => WindowsOptions.Visibility == Visibility.Visible;
 
-    private async void ProbeRestorePoints()
-    {
-        try { restoreStatus = await Task.Run(() => RestorePoints.Probe()); } catch { restoreStatus = null; }
-    }
-
     // The lasting red line at the top of Settings and the card's own summary follow the saved history (which only exists while Hush's change is in place).
     internal void RefreshWindowsUpdateState()
     {
@@ -169,7 +164,19 @@ public partial class MainWindow
                 if (off)
                 {
                     var (error, note) = await EnsureRestorePointAsync();
-                    if (error != null) { message = error + " Nothing was changed. Untick \"Create a restore point first\" to continue without one."; goto finished; }
+                    if (error != null)
+                    {
+                        // The popup STAYS OPEN: the person sees why, the restore point box is unticked, and the same button then continues without one
+                        // (or Cancel leaves everything as it was). It used to close and tell them to untick a box they could no longer reach.
+                        updateAction = action;
+                        windowsSettingsBusy = false;
+                        RestorePointBox.IsChecked = false;
+                        ConfirmWindowsSettingsButton.IsEnabled = !off || WindowsConsentBox.IsChecked == true;
+                        CancelWindowsSettingsButton.IsEnabled = true;
+                        WindowsConfirmNote.Text = error + " Nothing was changed. The restore point box is now unticked: press the button again to continue without one, or Cancel.";
+                        WindowsConfirmNote.Visibility = Visibility.Visible;
+                        return;
+                    }
                     restoreNote = note;
                 }
                 message = restoreNote + await RunUpdateSwitchAsync(off);
@@ -177,7 +184,6 @@ public partial class MainWindow
             }
         }
         catch (Exception) { message = "Windows Update could not be changed. Nothing further was done."; }
-        finished:
         windowsSettingsBusy = false;
         ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = true;
         RefreshWindowsUpdateState();

@@ -43,7 +43,7 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
     private bool unsized;
     public string TotalLabel => Id == "Registry" ? (Files.Count == 1 ? "1 entry" : $"{Files.Count:N0} entries")
         : CountedByItems.Contains(Id) ? (Files.Count == 1 ? "1 Item" : $"{Files.Count:N0} Items")
-        : unsized ? "By Windows" : Sizes.Format(TotalBytes);
+        : unsized ? "—" : Sizes.Format(TotalBytes);
     private bool expanded, selecting;
     internal Action<bool>? SelectionBatchState { get; set; }
     // Raised for every single-item selection change so the window can update its totals from counters, not by scanning all files.
@@ -139,12 +139,8 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "Graphics data your AMD or Intel driver saved for games and apps. It refills by itself.", "System"),
         new("Crash", "Old Crash Reports & Memory Dumps", SafetyLevel.Review, "Old crash and memory dumps; may be useful for troubleshooting",
             "Snapshots saved when a program or Windows stopped working. They can be large and are only needed for troubleshooting.", "System"),
-        new("WindowsOld", "Previous Windows Installations", SafetyLevel.Advanced, "Windows.old, removed through Microsoft's Disk Cleanup handler. Irreversible: you can no longer go back to the previous Windows version",
-            "The old copy of Windows kept after an upgrade so you could go back. Removing it frees a lot of space but you can no longer roll back.", "System"),
-        new("ComponentStore", "Windows Update Component Cleanup", SafetyLevel.Advanced, "DISM /StartComponentCleanup: removes superseded component versions from the WinSxS store. Irreversible: installed updates can then no longer be uninstalled",
-            "Windows removes old versions of its own parts that updates replaced. Windows decides what goes; installed updates can no longer be uninstalled.", "System"),
-        new("ComponentReset", "Deep Component Cleanup", SafetyLevel.Advanced, "DISM /StartComponentCleanup /ResetBase: also removes the ability to uninstall any update installed so far. Irreversible; needs administrator rights and can take many minutes",
-            "Windows removes every older version of its own parts. Updates installed so far can no longer be uninstalled. This cannot be undone.", "System"),
+        new("WindowsOld", "Previous Windows Installations", SafetyLevel.Advanced, "Windows.old, removed by Hush itself (administrator mode; Hush takes ownership of the old files). Includes the old Users folder. Irreversible: you can no longer go back to the previous Windows version",
+            "The old copy of Windows kept after an upgrade so you could go back, including the old Users folder. Removing it frees a lot of space but you can no longer roll back.", "System"),
         new("RecycleBin", "Recycle Bin", SafetyLevel.Advanced, "Files you deleted earlier. Emptying is permanent and covers every drive; opt-in",
             "Files you deleted earlier. Emptying it removes them for good and cannot be undone.", "System"),
         new("Installer", "Old Installation Leftovers", SafetyLevel.Review, "Extracted graphics-driver installers at the drive root and old CHKDSK file fragments; usually needs administrator rights",
@@ -231,8 +227,13 @@ public sealed class ReviewGroupSummary(SafetyLevel level) : INotifyPropertyChang
     public int SelectedCount { get; private set; }
     public long Bytes { get; private set; }
     public bool HasItems => Count > 0;
+    // A soft divider shows above every group except the first one that is listed (the bar above the list has its own).
+    private bool dividerAbove;
+    public bool DividerAbove { get => dividerAbove; internal set { if (dividerAbove == value) return; dividerAbove = value; PropertyChanged?.Invoke(this, new(nameof(DividerAbove))); } }
+    // The group's checkbox: ticked when everything in it is selected, mixed when only part of it is, empty when nothing is.
+    public bool? SelectionState => Count == 0 || SelectedCount == 0 ? false : SelectedCount == Count ? true : null;
     public string CountLabel => $"{(Count == 1 ? "1 item" : $"{Count:N0} items")} · {SelectedCount:N0} selected";
-    public string TotalLabel => Bytes > 0 ? Sizes.Format(Bytes) : "By Windows";
+    public string TotalLabel => Bytes > 0 ? Sizes.Format(Bytes) : "—";
     public string AutomationName => $"{Title} group: {CountLabel}";
     private bool light;
     public System.Windows.Media.Brush Accent => (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(SafetyPalette.Text(Level, light))!;

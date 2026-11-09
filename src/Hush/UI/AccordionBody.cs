@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 
 namespace Hush;
@@ -13,7 +14,11 @@ public sealed class AccordionBody : Decorator
         new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsMeasure));
     public bool Expanded { get => (bool)GetValue(ExpandedProperty); set => SetValue(ExpandedProperty, value); }
     private double Reveal => (double)GetValue(RevealProperty);
-    public AccordionBody() { ClipToBounds = true; }
+    // The body is cut to its revealed height, but NOT to its width: the choice chips and switches in the cards pull their rounded backgrounds a few DIP
+    // into the card's padding (so their text lines up with the rest), and a plain ClipToBounds cut the selected chip's left edge off.
+    private const double SideBleed = 24;
+    private Size clippedFor;
+    public AccordionBody() { }
     private static void ExpandedChanged(DependencyObject value, DependencyPropertyChangedEventArgs args)
     {
         var body = (AccordionBody)value;
@@ -29,6 +34,13 @@ public sealed class AccordionBody : Decorator
     protected override Size ArrangeOverride(Size arrangeSize)
     {
         Child?.Arrange(new Rect(0, 0, arrangeSize.Width, Child.DesiredSize.Height));
+        if (arrangeSize != clippedFor)
+        {
+            clippedFor = arrangeSize;
+            var clip = new RectangleGeometry(new Rect(-SideBleed, 0, arrangeSize.Width + 2 * SideBleed, arrangeSize.Height));
+            clip.Freeze();
+            Clip = clip;
+        }
         return arrangeSize;
     }
 }

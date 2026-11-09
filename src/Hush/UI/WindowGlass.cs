@@ -1,0 +1,80 @@
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Shell;
+
+namespace Hush;
+
+// How the main window gets its rounded, see-through shape (0.9, user direction).
+//  Layered  The classic way (AllowsTransparency): WPF draws every frame on the graphics card, copies the whole window back to main memory and hands the copy to
+//           Windows. That copy is the main cost of every animation and of scrolling on a weak PC, and its buffers cost memory (measured: 10 to 50 MB private).
+//  Glass    DEFAULT on Windows 11. The same look (Hush's own 24 DIP corners, no border, no shadow) with per-pixel transparency from Windows' compositor instead
+//           of a copy: frames go straight to the screen. Measured against Layered: card expand 10-12% -> 3-5% of a core, wheel scroll 14-19% -> 1-13%, popup
+//           open 7-14% -> 4-12%, private memory 127 -> 117 MB on Home and 160 -> 125 MB in Settings, idle 0.2% -> 0.0%. Corners, shadow bands and content pixels
+//           match the layered window (checked on a Windows 11 display).
+// Command line: --layered forces the old window (the way back), --glass forces Glass (also on Windows 10, where it is unverified).
+// Windows 10 stays Layered by default, and so does every test window (tests ask for a look explicitly).
+// The Windows 11 native "Mica" look was built, refined and PARKED on the owner's instruction: it lives, locked, in docs/locked/mica-look. Do not bring it back
+// here, and do not touch that folder, unless the owner says so.
+internal enum WindowLook { Layered, Glass }
+
+internal static class WindowGlass
+{
+    // Tests set this to build a window in a given look; the real app decides by the command line and the Windows build.
+    internal static WindowLook? Forced;
+    // The look the main window actually got.
+    internal static WindowLook Active { get; private set; } = WindowLook.Layered;
+
+    // Pure decision, so every case is tested: build = the Windows build number (22000 = Windows 11).
+    internal static WindowLook Choose(IReadOnlyList<string> arguments, int build, bool realApp)
+    {
+        bool Has(string flag) => arguments.Any(argument => argument.Equals(flag, StringComparison.OrdinalIgnoreCase));
+        if (Has("--layered")) return WindowLook.Layered;
+        if (Has("--glass")) return WindowLook.Glass;
+        return realApp && build >= 22000 ? WindowLook.Glass : WindowLook.Layered;
+    }
+
+    internal static WindowLook ChooseForThisProcess()
+    {
+        if (Forced is { } forced) return forced;
+        bool realApp = System.Reflection.Assembly.GetEntryAssembly() == typeof(App).Assembly;
+        return Choose(Environment.GetCommandLineArgs().Skip(1).ToList(), Environment.OSVersion.Version.Build, realApp);
+    }
+
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+    [StructLayout(LayoutKind.Sequential)] private struct BlurBehind { public int Flags; public int Enable; public IntPtr Region; public int TransitionOnMaximized; }
+    [DllImport("dwmapi.dll")] private static extern int DwmEnableBlurBehindWindow(IntPtr window, ref BlurBehind blurBehind);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr handle);
+
+    private const int RoundedCorners = 33, BorderColor = 34, DarkFrame = 20, NcRendering = 2, Backdrop = 38;
+
+    // Must run before the window is shown.
+    internal static void Apply(Window window, WindowLook look)
+    {
+        Active = look;
+        if (look == WindowLook.Layered) return;
+        window.AllowsTransparency = false;
+        window.Background = Brushes.Transparent;
+        WindowChrome.SetWindowChrome(window, new WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(0), GlassFrameThickness = new Thickness(-1), CornerRadius = new CornerRadius(0), UseAeroCaptionButtons = false });
+        window.SourceInitialized += (_, _) =>
+        {
+            IntPtr handle = new WindowInteropHelper(window).Handle;
+            if (HwndSource.FromHwnd(handle) is { CompositionTarget: { } target }) target.BackgroundColor = Colors.Transparent;
+            // No system corner rounding, border, backdrop or frame (the frame brings a rectangular shadow), so only Hush's own rounded shape shows.
+            int doNotRound = 1, noBorder = unchecked((int)0xFFFFFFFE), noBackdrop = 1, dark = 1, noFrame = 1;
+            DwmSetWindowAttribute(handle, RoundedCorners, ref doNotRound, sizeof(int));
+            DwmSetWindowAttribute(handle, BorderColor, ref noBorder, sizeof(int));
+            DwmSetWindowAttribute(handle, Backdrop, ref noBackdrop, sizeof(int));
+            DwmSetWindowAttribute(handle, DarkFrame, ref dark, sizeof(int));
+            DwmSetWindowAttribute(handle, NcRendering, ref noFrame, sizeof(int));
+            // Per-pixel alpha straight from the compositor with an EMPTY blur region: nothing is blurred, and the window's transparent pixels stay fully
+            // transparent (the extended glass frame alone fills them with a grey or white frame colour).
+            IntPtr empty = CreateRectRgn(0, 0, -1, -1);
+            var behind = new BlurBehind { Flags = 0x1 | 0x2, Enable = 1, Region = empty }; // DWM_BB_ENABLE | DWM_BB_BLURREGION
+            DwmEnableBlurBehindWindow(handle, ref behind);
+            DeleteObject(empty);
+        };
+    }
+}

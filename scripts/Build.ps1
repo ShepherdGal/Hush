@@ -48,8 +48,9 @@ Hush $version - which file do I use?
 
   Hush-Portable.zip        PORTABLE. Unzip it anywhere you can write to (for example D:\Hush\), then double-click
                            Hush-Portable.exe. Nothing is installed.
-  Hush-Setup.zip           INSTALLER. Unzip it and run Hush-Setup.exe. It installs Hush for your account only (no administrator
-                           rights), adds a Start menu entry and an optional desktop shortcut, and lists Hush under Settings > Apps.
+  Hush-Setup.zip           INSTALLER. Unzip it and run Hush-Setup.exe. Installing needs no administrator rights (it is for your
+                           account only). If you later agree to the optional administrator mode, Hush asks once and then moves the
+                           installed copy to Program Files. Setup adds a Start menu entry and an optional desktop shortcut, and lists Hush under Settings > Apps.
 
 (GitHub does not accept .exe uploads, so the downloads are zips. In this folder the unzipped Hush-Portable.exe and Hush-Setup.exe
 are also kept for using on this PC.)

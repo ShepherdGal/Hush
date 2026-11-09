@@ -225,14 +225,16 @@ public partial class MainWindow
 
     private void ResourceTick(object? sender, EventArgs e)
     {
+        if (WindowState == WindowState.Minimized) return; // nobody is looking: no reading, no redraw
         var sample = resourceMonitor.Sample();
-        ShowMeter(CpuFill, CpuText, sample.CpuPercent, $"{sample.CpuPercent:0}%", ResourceSnapshot.Busy);
-        ShowMeter(MemoryFill, MemoryText, sample.MemoryPercent, $"{sample.MemoryPercent:0}%", ResourceSnapshot.Busy);
+        // A bar only moves for a change worth seeing (CPU jitters by a few points every reading): every redraw of this window costs real CPU, and much more on a weak PC.
+        ShowMeter(CpuFill, CpuText, sample.CpuPercent, $"{sample.CpuPercent:0}%", ResourceSnapshot.Busy, minChange: 4);
+        ShowMeter(MemoryFill, MemoryText, sample.MemoryPercent, $"{sample.MemoryPercent:0}%", ResourceSnapshot.Busy, minChange: 2);
         MemoryText.ToolTip = $"{Sizes.Format(sample.MemoryUsed)} of {Sizes.Format(sample.MemoryTotal)} in use";
         ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{sample.DiskUsedPercent:0}%", ResourceSnapshot.Full);
         DiskText.ToolTip = $"{Sizes.Format(sample.DiskFree)} free of {Sizes.Format(sample.DiskTotal)} on the system drive";
         lastSample = sample;
-        if (++processTick % 3 == 0) RefreshProcesses(rebuildList: false); // the app count follows along while Settings is open
+        if (++processTick % 10 == 0) RefreshProcesses(rebuildList: false); // the app count follows along (every 20 s) while Settings is open
         if (DateTime.UtcNow >= infoNoteUntilUtc)
         {
             InfoSummary.Text = sample.Headline;
@@ -241,10 +243,19 @@ public partial class MainWindow
     }
 
     // A bar uses the theme accent and turns Review-orange (never red) once its reading is high.
-    private static void ShowMeter(Border fill, TextBlock text, double percent, string label, double warnAt, int milliseconds = 400)
+    private static void ShowMeter(Border fill, TextBlock text, double percent, string label, double warnAt, int milliseconds = 400, double minChange = 0)
     {
+        // Every redraw of this window costs real CPU, so a bar whose reading and color did not change (or moved by less than minChange points) is left alone.
+        bool warn = percent >= warnAt;
+        if (fill.Tag is bool shownWarn && shownWarn == warn)
+        {
+            if (text.Text == label) return;
+            if (minChange > 0 && text.Tag is double shown && Math.Abs(shown - percent) < minChange) return;
+        }
+        text.Tag = percent; // the reading the bar currently shows
+        fill.Tag = warn;
         text.Text = label;
-        fill.SetResourceReference(Border.BackgroundProperty, percent >= warnAt ? "MeterWarnBrush" : "TealBrush");
+        fill.SetResourceReference(Border.BackgroundProperty, warn ? "MeterWarnBrush" : "TealBrush");
         // The slim vertical bar fills from the bottom (transform animation, no layout work).
         var scale = (ScaleTransform)fill.RenderTransform;
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, Motion.Tween(scale.ScaleY, Math.Clamp(percent, 0, 100) / 100, milliseconds));
@@ -317,7 +328,7 @@ public partial class MainWindow
         consentSurfaceWasEnabled = AppSurface.IsEnabled;
         consentBlurRadius = BackgroundBlur.Radius;
         AppSurface.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, Math.Max(7, consentBlurRadius), 280));
+        SetBackdropBlur(Math.Max(7, consentBlurRadius));
         ConsentOverlay.Visibility = Visibility.Visible;
         Motion.Reveal(ConsentOverlay);
         ConsentCancelButton.Focus();
@@ -329,7 +340,7 @@ public partial class MainWindow
     {
         var pending = consent; consent = null;
         ConsentOverlay.IsEnabled = false;
-        BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, consentBlurRadius, 160));
+        SetBackdropBlur(consentBlurRadius);
         await Motion.FadeOut(ConsentOverlay);
         ConsentOverlay.Visibility = Visibility.Collapsed;
         ConsentOverlay.IsEnabled = true;

@@ -10,7 +10,7 @@ using Hush;
 internal sealed class FakeRestorePoints : IRestorePoints
 {
     internal RestorePointStatus Status = new(true, false, true);
-    internal string? CreateError, EnableError;
+    internal string? CreateError, EnableError = null;
     internal readonly List<string> Created = [], Enabled = [];
     public RestorePointStatus Probe() => Status;
     public string? Create(string description) { Created.Add(description); return CreateError; }
@@ -161,8 +161,12 @@ internal static class WindowsUpdateChecks
             points.CreateError = "Windows did not create the restore point"; int writesBefore = system.Writes.Count;
             Click("TurnOffUpdateButton"); UiLayoutChecks.PumpUntil(() => overlay.Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
             consent.IsChecked = true; consent.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-            Click("ConfirmWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => overlay.Visibility == Visibility.Collapsed);
-            check(system.Writes.Count == writesBefore && !window.IsWindowsUpdateOff && Text("WindowsSettingsStatus").Contains("restore point"), "If the restore point fails nothing is changed and the person is told why");
+            Click("ConfirmWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => Text("WindowsConfirmNote").Contains("restore point"));
+            // 0.9: the popup STAYS OPEN with the reason (it used to close and tell the person to untick a box they could no longer reach).
+            check(system.Writes.Count == writesBefore && !window.IsWindowsUpdateOff && overlay.Visibility == Visibility.Visible && ((CheckBox)window.FindName("RestorePointBox")).IsChecked == false
+                && confirm.IsEnabled && Text("WindowsConfirmNote").Contains("Nothing was changed") && Text("WindowsConfirmNote").Contains("without one"),
+                "If the restore point fails nothing is changed, the popup stays open and says why and how to continue without one");
+            Click("CancelWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => overlay.Visibility == Visibility.Collapsed);
             points.CreateError = null;
 
             // System Protection off: the box is unavailable, the turn-on box is offered and used first.

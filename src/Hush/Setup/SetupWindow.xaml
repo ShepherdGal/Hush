@@ -5,15 +5,15 @@
     <Grid Margin="38,24,38,34">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <Grid>
-        <TextBlock Text="Hush" FontSize="33" FontWeight="Normal" FontStyle="Italic" Foreground="{DynamicResource TealTextBrush}" VerticalAlignment="Center"/>
+        <TextBlock Text="Hush" FontSize="33" FontWeight="Medium" Foreground="{DynamicResource TealTextBrush}" VerticalAlignment="Center"/>
         <Button x:Name="CloseButton" Style="{StaticResource CaptionButton}" Click="Close_Click" HorizontalAlignment="Right" Margin="0,0,-12,0" ToolTip="Close" AutomationProperties.Name="Close">
           <Path Style="{StaticResource CaptionIcon}" Stretch="None" Data="M4,4 L14,14 M14,4 L4,14"/>
         </Button>
       </Grid>
       <TextBlock x:Name="Heading" Grid.Row="1" Style="{StaticResource PopupTitle}" Margin="0,24,0,0" TextWrapping="Wrap"/>
-      <StackPanel Grid.Row="2" Margin="0,14,0,0">
-        <TextBlock x:Name="Details" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="24"/>
-        <TextBlock x:Name="TermsNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
+      <StackPanel Grid.Row="2" Margin="0,14,0,0">
+        <TextBlock x:Name="Details" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="24"/>
+        <TextBlock x:Name="TermsNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
       </StackPanel>
       <StackPanel x:Name="OptionPanel" Grid.Row="3" Margin="0,22,0,0">
         <CheckBox x:Name="OptionBox" FontSize="{DynamicResource BodyFontSize}"/>

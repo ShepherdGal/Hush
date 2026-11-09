@@ -134,9 +134,9 @@ internal sealed class SchtasksScheduler : IAdminTaskScheduler
         var start = new ProcessStartInfo("schtasks.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new IOException("Windows did not start the task scheduler.");
-        string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync(); // both read at once: a full pipe can never block the wait below
         if (!process.WaitForExit(30000)) { try { process.Kill(); } catch { } throw new IOException("The task scheduler did not answer."); }
-        return (process.ExitCode, output);
+        return (process.ExitCode, output.GetAwaiter().GetResult() + errors.GetAwaiter().GetResult());
     }
 
     public bool Exists() { try { return Run("/Query", "/TN", AdminMode.TaskName).Code == 0; } catch { return false; } }
@@ -147,7 +147,9 @@ internal sealed class SchtasksScheduler : IAdminTaskScheduler
         if (folder == null || !AdminMode.IsAdminOnlyFolder(folder + Path.DirectorySeparatorChar + "x")) throw new IOException("The administrator task may only point at Hush in an administrator-only folder.");
         using var identity = WindowsIdentity.GetCurrent();
         string xml = TaskXml(exe, identity.User?.Value ?? throw new IOException("Windows did not report the current user."));
-        string file = Path.Combine(Path.GetTempPath(), "hush-task-" + Guid.NewGuid().ToString("N") + ".xml");
+        // The task definition is written where only administrators can write: in a folder other programs can change, the file could be swapped between
+        // writing it and handing it to the Task Scheduler, which would register a task of their choosing with the highest privileges.
+        string file = Path.Combine(AdminOnlyDirectory.Ensure(HushSetup.AdminHelperRoot), "hush-task-" + Guid.NewGuid().ToString("N") + ".xml");
         try
         {
             File.WriteAllText(file, xml, System.Text.Encoding.Unicode);

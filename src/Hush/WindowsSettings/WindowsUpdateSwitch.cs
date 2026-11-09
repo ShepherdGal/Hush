@@ -208,9 +208,26 @@ internal sealed class RealWindowsUpdateSystem : IWindowsUpdateSystem
         return open?.GetValue("Start") is int start ? start : null;
     }
 
+    private static bool DelayedStart(string service)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+        using var open = root.OpenSubKey(ServiceKey(service));
+        return open?.GetValue("DelayedAutostart") is int delayed && delayed == 1;
+    }
+
     public bool TryWriteServiceStart(string service, int start, out string error)
     {
         error = "";
+        // 1. Windows' own service tool: the Service Control Manager applies the service's own permissions, which let administrators change most of
+        //    these services, while their registry keys are often locked to TrustedInstaller (writing the key directly was refused on many PCs, which is
+        //    why turning Windows Update off could not work). The delayed-start flag is kept as it was when a service goes back to Automatic.
+        string kind = start switch { 2 => DelayedStart(service) ? "delayed-auto" : "auto", 3 => "demand", 4 => "disabled", _ => "" };
+        if (kind.Length > 0)
+        {
+            try { if (Run("sc.exe", "config", service, "start=", kind).Code == 0) return true; }
+            catch (IOException) { /* fall back to the registry below */ }
+        }
+        // 2. The registry value itself, where its key allows it.
         try
         {
             using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);

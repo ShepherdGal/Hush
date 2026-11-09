@@ -80,7 +80,8 @@ internal sealed class UpdateService : IUpdateClient
         ValidateSource(release.AssetUri);
         if (release.Bytes is <= 0 or > MaxBytes || release.Sha256.Length != 64 || !release.Sha256.All(Uri.IsHexDigit))
             throw new InvalidDataException("Release integrity information is missing or invalid.");
-        string directory = Path.Combine(stagingRoot ?? Path.Combine(CleanupEngine.DataDirectory, "Updates"), Guid.NewGuid().ToString("N"));
+        // Elevated: the administrator-only staging folder (created and checked here); otherwise the person's own data folder.
+        string directory = Path.Combine(stagingRoot ?? UpdateInstaller.PrepareStagingRoot(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         if (!CleanupEngine.SafePath(directory, directory)) throw new IOException("Update staging location is unsafe.");
         string staged = Path.Combine(directory, "Hush.exe");

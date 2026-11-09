@@ -60,9 +60,9 @@ internal static class UpdateFlowChecks
                 "About has no token, GitHub sign-in or second install step, and exposes Check for updates immediately under the version");
             Require(!((FrameworkElement)window.FindName("AppSurface")).IsEnabled, "About still blocks background input");
             var title = TextBlocks(card).First(text => text.Text == "Hush");
-            Require(title.FontStyle == FontStyles.Italic && title.FontWeight == FontWeights.Normal
+            Require(title.FontStyle == FontStyles.Normal && title.FontWeight == FontWeights.Medium
                 && ((SolidColorBrush)title.Foreground).Color == (Color)Application.Current.Resources["PrimaryAccentColor"],
-                "The About title is the aqua italic Hush wordmark style");
+                "The About title is the upright Hush wordmark in the accent color");
             var pending = new TaskCompletionSource<AppRelease?>(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Check = _ => pending.Task;
             Click("CheckUpdateButton"); Wait(360); Layout(new Size(800, 740));
@@ -84,10 +84,10 @@ internal static class UpdateFlowChecks
             Wait(500); Capture("about-checking-2-" + (window.IsLightTheme ? "light" : "dark"));
             Wait(500); Capture("about-checking-3-" + (window.IsLightTheme ? "light" : "dark"));
             pending.SetResult(null); Until(() => !window.IsUpdateBusy);
-            Require(status.Text.Contains("up to date") && !sweep.IsRunning, "A current release stops progress and reports the installed version");
+            Require(status.Text.Contains("latest version") && !sweep.IsRunning, "A current release stops progress and reports the installed version");
             client.Check = _ => throw new InvalidDataException("Updates can't be checked right now. Try again in a little while.");
             Click("CheckUpdateButton"); Until(() => !window.IsUpdateBusy);
-            Require(status.Text.Contains("can't be checked") && !status.Text.Contains("up to date"), "Unavailable releases never claim a successful current check");
+            Require(status.Text.Contains("can't be checked") && !status.Text.Contains("latest version"), "Unavailable releases never claim a successful current check");
             var release = new AppRelease(new Version(9, 0, 0), "# Improvements\n**Clearer controls**\n[Details](https://example.invalid/)",
                 new Uri($"https://api.github.com/repos/{UpdateService.Repository}/releases/assets/1"), 10, new string('0', 64));
             client.Check = _ => Task.FromResult<AppRelease?>(release);
@@ -96,8 +96,8 @@ internal static class UpdateFlowChecks
                 && notes.Text.Contains("Clearer controls") && !notes.Text.Contains("**") && !notes.Text.Contains("https://"),
                 "An available update shows its version, plain release notes, what will happen and one Update now action");
             var accentColor = (Color)Application.Current.Resources["PrimaryAccentColor"];
-            Require(((SolidColorBrush)status.Foreground).Color == accentColor && status.FontWeight == FontWeights.SemiBold && hint.Text.Contains("Update now"),
-                "A new version is announced in the main accent color and semibold");
+            Require(((SolidColorBrush)status.Foreground).Color == ((SolidColorBrush)Application.Current.Resources["GoodBrush"]).Color && status.FontWeight == FontWeights.Medium && hint.Text.Contains("Update now"),
+                "A new version is announced in green (Medium, never bold)");
             Layout(new Size(800, 740)); Capture("about-update-found-" + (window.IsLightTheme ? "light" : "dark"));
             var consent = (FrameworkElement)window.FindName("ConsentOverlay");
             void Ask() { Click("CheckUpdateButton"); Until(() => consent.Visibility == Visibility.Visible); }
@@ -148,7 +148,7 @@ internal static class UpdateFlowChecks
             Require(firstFill > 0.15 && sweep.Fill > firstFill && sweep.Fill < 0.99, $"The check's loading bar fills smoothly from empty and is not full before the answer is in ({firstFill:0.00} then {sweep.Fill:0.00})");
             Capture("about-checking-" + (window.IsLightTheme ? "light" : "dark"));
             Until(() => !window.IsUpdateBusy);
-            Require(searching.ElapsedMilliseconds >= 3400 && searching.ElapsedMilliseconds < 6500 && status.Text.Contains("up to date"),
+            Require(searching.ElapsedMilliseconds >= 3400 && searching.ElapsedMilliseconds < 6500 && status.Text.Contains("latest version"),
                 $"The searching animation lasts at least 3.5 seconds before the result appears ({searching.ElapsedMilliseconds} ms)");
             searching.Restart();
             Click("CheckUpdateButton"); Until(() => window.IsUpdateBusy); Wait(700); Click("CancelUpdateButton"); Until(() => !window.IsUpdateBusy);
@@ -157,7 +157,7 @@ internal static class UpdateFlowChecks
             var late = new TaskCompletionSource<AppRelease?>(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Check = _ => late.Task;
             Click("CheckUpdateButton"); Close(); Open(); late.SetResult(release); Wait(80);
-            Require(check.Content.ToString() == "Check for updates" && status.Text == "Check for the latest release.",
+            Require(check.Content.ToString() == "Check for updates" && status.Text == "",
                 "A closed session's late response cannot modify a reopened About popup");
             client.Check = async token => { await Task.Delay(Timeout.Infinite, token); return null; };
             Click("CheckUpdateButton"); Click("CancelUpdateButton"); Until(() => !window.IsUpdateBusy);
@@ -184,7 +184,7 @@ internal static class UpdateFlowChecks
             Require(notice.Visibility == Visibility.Visible && notice.Opacity > 0.95 && notice.Content.ToString() == "There is a new update!" && ((SolidColorBrush)notice.Foreground).Color == ((SolidColorBrush)Application.Current.Resources["GoodBrush"]).Color
                 && notice.FontStyle == FontStyles.Normal && checks == 1 && downloads == downloadsBefore && installs == installsBefore, $"A newer version fades in a green, upright 'There is a new update!' beside the wordmark; nothing is downloaded or installed (vis {notice.Visibility}, opacity {notice.Opacity}, fg {((SolidColorBrush)notice.Foreground).Color} vs {((SolidColorBrush)Application.Current.Resources["GoodBrush"]).Color}, checks {checks}, downloads {downloads}, installs {installs})");
             Click("UpdateNoticeButton"); Until(() => about.Visibility == Visibility.Visible); Wait(100);
-            Require(checks == 2 && (window.IsUpdateBusy || status.Text.Contains("available")), "Clicking the notice opens the update popup and runs the check there");
+            Require(checks == 1 && !window.IsUpdateBusy && status.Text.Contains("is available") && ((SolidColorBrush)status.Foreground).Color == ((SolidColorBrush)Application.Current.Resources["GoodBrush"]).Color, "Clicking the notice opens the update popup, which already says in green that a version is available (no second check)");
             Until(() => !window.IsUpdateBusy);
             Require(status.Text.Contains("is available") && check.Content.ToString() == "Update now" && downloads == downloadsBefore && installs == installsBefore, "The popup then offers Update now without downloading anything yet");
             Close();
