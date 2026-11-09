@@ -81,10 +81,10 @@ public partial class SetupWindow : Window
             result = await Task.Run(() => HushSetup.Install(sourceExe ?? Environment.ProcessPath ?? "", option, locations));
         else
         {
-            result = await Task.Run(() => HushSetup.Uninstall(locations, option, runningExe));
+            result = await Task.Run(() => HushSetup.Uninstall(locations, option, runningExe, HushSetup.IsAdminCopy(runningExe, locations) ? AdminMode.Scheduler : null));
             if (result is { Success: true, Deferred: true })
             {
-                try { HushSetup.StartDeferredRemoval(locations); }
+                try { HushSetup.StartDeferredRemoval(locations, runningExe); }
                 catch { result = new(true, "Hush was removed. A few leftover files remain in " + locations.InstallDirectory + " and can be deleted by hand."); }
             }
         }

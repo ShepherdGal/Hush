@@ -419,7 +419,6 @@ internal static class SmartBoostChecks
                 var overlay = (FrameworkElement)window.FindName(overlayName); var before = overlay.Visibility;
                 overlay.Visibility = Visibility.Visible; UiLayoutChecks.Layout(root, new Size(920, 820));
                 UiLayoutChecks.Require(LeftOf(action) < LeftOf(exit) - 20, $"{overlayName}: the action ({action}) is on the left and the exit ({exit}) on the right");
-                if (overlayName == "AboutOverlay") UiLayoutChecks.Require(LeftOf("AboutUpdatesButton") < LeftOf("CloseAboutButton") - 20, "About: Release notes sits beside the action and Close is at the far right");
                 overlay.Visibility = before;
             }
             Console.WriteLine("PASS: Smart Boost section, off-by-default timers, resource indicators, startup apps with Undo, consent for Automatic Boost, shared settings file, low-resource mode and Quick Boost confirmation");

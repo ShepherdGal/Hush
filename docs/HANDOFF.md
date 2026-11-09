@@ -2,6 +2,14 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## 0.9 is built and versioned, not released (November 9, 2026)
+
+All 23 items of [PLAN-0.9.md](PLAN-0.9.md) are implemented (details in the CHANGELOG's "0.9 work" section); the version is now 0.9 (`<Version>0.9.0</Version>`, About shows "0.9") and `ReleaseNotes.Current` has the 0.9 bullets; nothing is committed, pushed or released, and `scripts/Verify.ps1` passes (run it with `pwsh`: Windows PowerShell 5.1 cannot; add `-ExecutionPolicy Bypass` if scripts are blocked). Run `Hush.Tests.exe --benchmark` and `--stress-scan` after touching the engine.
+
+**Not verifiable on this PC (needs the owner):** the self-contained build on a clean Windows 10/11 VM with no .NET (also its ~60-70 MB size and the in-app update of such a file); the real administrator flow (UAC prompt, the Program Files move, the `Hush (administrator)` task, start-without-prompt); real Disk Cleanup handlers (Thumbnails, Defender), DISM analyze and `/ResetBase`; the real System Restore point and System Protection toggle; the real Windows Update switch (services, tasks, which of them Windows refuses on a given build, e.g. WaaSMedicSvc); Store apps and elevated apps in the Process list. Tray-only apps are only remembered after they had a window (no tray-icon detection). **Test seams to know:** `MainWindow.ReviewShowsAllByDefault` (layout tests show the whole category list; the product shows the three groups), `MainWindow.RestorePoints`, `AdminMode.Elevation/Scheduler`, `WindowsUpdateSwitch(IWindowsUpdateSystem)`.
+
+**Decisions for the user:** whether the Windows Update switch should also appear inside the "More impact" topic list (it is its own card); a firewall telemetry blocker and a Store app uninstaller (notes in docs/WINDOWS-SETTINGS.md).
+
 ## 0.8.3 (November 8, 2026)
 
 Released as v0.8.3 ("Hush 0.8.3", not a prerelease, tag on commit c0a3b87) with Hush-Portable.zip, Hush-Setup.zip, LICENSE and Hush-icon.png; the portable zip SHA-256 is f3d9d478328e5b069879087a0fa808ff52995915785af14775c25bf49db4cf7a. Release notes text: artifacts/RELEASE NOTES 0.8.3.md (local, not in Git).

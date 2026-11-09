@@ -7,7 +7,9 @@
 #   artifacts\WHICH FILE.txt            one paragraph saying which file to use
 # Each zip holds just its exe plus LICENSE and the terms. Old layouts (artifacts\Hush\, Hush.exe, Hush-windows-x64.zip) are removed
 # so there is exactly one place and one copy of each file.
-param([switch]$Standalone)
+# 0.9: the .NET runtime is inside the exe (self-contained, compressed), so nobody has to install .NET. -FrameworkDependent makes the small
+# build that needs the .NET 10 Desktop Runtime (for quick local tests only, never for a release).
+param([switch]$FrameworkDependent)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $env:DOTNET_CLI_HOME = Join-Path $root '.build-home'
@@ -16,9 +18,10 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $project = Join-Path $root 'src\Hush\Hush.csproj'
 $artifacts = Join-Path $root 'artifacts'
 $stage = Join-Path $artifacts '.staging'
-$selfContained = if ($Standalone) { 'true' } else { 'false' }
+$selfContained = if ($FrameworkDependent) { 'false' } else { 'true' }
+$compress = if ($FrameworkDependent) { 'false' } else { 'true' }
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-dotnet publish $project -c Release -r win-x64 --self-contained $selfContained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $stage
+dotnet publish $project -c Release -r win-x64 --self-contained $selfContained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=$compress -p:DebugType=None -p:DebugSymbols=false -o $stage
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 $built = Join-Path $stage 'Hush.exe'
@@ -51,7 +54,7 @@ Hush $version - which file do I use?
 (GitHub does not accept .exe uploads, so the downloads are zips. In this folder the unzipped Hush-Portable.exe and Hush-Setup.exe
 are also kept for using on this PC.)
 Both run the same program and both update themselves from inside the app (About > Check for updates).
-You only need one of them. Needs Windows 10/11 64-bit and the .NET 10 Desktop Runtime.
+You only need one of them. Needs Windows 10/11 64-bit. Nothing else has to be installed.
 LICENSE (MIT) and Hush-icon.png are loose copies for reading and for the project page; you do not need them to run Hush.
 "@ | Set-Content -LiteralPath (Join-Path $artifacts 'WHICH FILE.txt') -Encoding utf8
 # Remove staging and the old layouts (artifacts\Hush\, the pre-zip Hush.exe and the combined zip) so nothing is duplicated.

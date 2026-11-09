@@ -20,7 +20,8 @@ public partial class MainWindow
     // Only the real app asks at start-up (tests build windows without making them the application's main window).
     private async void ShowTermsOnStart()
     {
-        if (!await EnsureTermsAccepted()) Close();
+        if (!await EnsureTermsAccepted()) { Close(); return; }
+        await AskAdministratorChoice();
     }
 
     private async void Terms_Click(object sender, RoutedEventArgs e) => await AskConsent("Terms of use", Terms.Body, "OK", "Close");

@@ -19,10 +19,8 @@ internal sealed class CleanupEngine
     private Lazy<IReadOnlyList<CleanupTarget>> targetSource;
     private Lazy<Dictionary<string, Approved>> approvedSource;
     private readonly bool defaultTargets;
-    // Settings > Temporary files: how old a file in the Temp folders must be before it is listed. Read when the default targets are built (and again
-    // by ReloadTargets after the choice changes); the delete-time check uses the same target, so scan and clean can never disagree.
-    internal static string TempAgeChoice = "day";
-    internal static TimeSpan TempAge => TempAgeChoice switch { "hour" => TimeSpan.FromHours(1), "any" => TimeSpan.FromMinutes(10), _ => TimeSpan.FromDays(1) };
+    // Temporary files (0.9, user direction): files of any age are found. The safety that stays: a file in use is always skipped (exclusive-handle delete)
+    // and every file is checked again at delete time.
     private IReadOnlyList<CleanupTarget> targets => targetSource.Value;
     private Dictionary<string, Approved> approved => approvedSource.Value;
     private readonly bool includeRegistry;
@@ -59,14 +57,8 @@ internal sealed class CleanupEngine
         return lookup;
     });
 
-    // Rebuilds the default targets (after the Temporary files age changed). Only the real engine has default targets. A stricter age makes
-    // a clean of results from an older scan skip the files that are now too young, which is the safe direction.
-    internal void ReloadTargets()
-    {
-        if (!defaultTargets) return;
-        targetSource = new Lazy<IReadOnlyList<CleanupTarget>>(DefaultTargets);
-        approvedSource = NewApprovedSource();
-    }
+    // True when this process is elevated as a different Windows account than the person signed in (see AdminMode). Read once per target build.
+    internal static bool UserLocationsSkipped => !AdminMode.Elevation.IsSignedInUser;
 
     private static string ApprovalKey(string root, CleanupKind kind, string group) => $"{root}|{kind}|{group}";
 
@@ -85,8 +77,8 @@ internal sealed class CleanupEngine
         var list = new List<CleanupTarget>
         {
             // ----- Recommended -----
-            new(Path.GetTempPath(), "User temp", CleanupKind.Temp, TempAge, Category: "Temp"),
-            new(Path.Combine(windows, "Temp"), "Windows temp", CleanupKind.Temp, TempAge, Category: "Temp"),
+            new(Path.GetTempPath(), "User temp", CleanupKind.Temp, TimeSpan.Zero, Category: "Temp"),
+            new(Path.Combine(windows, "Temp"), "Windows temp", CleanupKind.Temp, TimeSpan.Zero, Category: "Temp"),
             // Explorer keeps these open, so only unlocked files are listed.
             new(Path.Combine(local, "Microsoft", "Windows", "Explorer"), "Thumbnail cache", CleanupKind.Cache, Days(1),
                 "thumbcache_*.db;iconcache_*.db", Recursive: false, Category: "Thumbnails", DeletableOnly: true),
@@ -99,7 +91,8 @@ internal sealed class CleanupEngine
             new(Path.Combine(local, "Microsoft", "Windows", "WER", "Temp"), "Windows diagnostics", CleanupKind.Temp, Days(7), Category: "Junk"),
             new(Path.Combine(common, "Microsoft", "Windows", "WER", "Temp"), "Windows diagnostics", CleanupKind.Temp, Days(7), Category: "Junk", DeletableOnly: true),
             // Windows Update downloads, update logs, Delivery Optimization and setup logs (Review, opt-in, usually need administrator rights).
-            new(Path.Combine(windows, "SoftwareDistribution", "Download"), "Windows Update downloads", CleanupKind.Temp, Days(14), Category: "Update", DeletableOnly: true),
+            // While Windows is installing an update (the servicing worker is running) its downloads are in use: the location is skipped with a note, never forced.
+            new(Path.Combine(windows, "SoftwareDistribution", "Download"), "Windows Update downloads", CleanupKind.Temp, Days(14), Processes: ["TiWorker", "TrustedInstaller"], Category: "Update", DeletableOnly: true),
             new(Path.Combine(windows, "Logs", "WindowsUpdate"), "Windows Update logs", CleanupKind.Temp, Days(14), "*.etl", Category: "Update", DeletableOnly: true),
             new(Path.Combine(windows, "ServiceProfiles", "NetworkService", "AppData", "Local", "Microsoft", "Windows", "DeliveryOptimization", "Cache"),
                 "Delivery Optimization cache", CleanupKind.Cache, Days(7), Category: "Delivery", DeletableOnly: true),
@@ -138,8 +131,8 @@ internal sealed class CleanupEngine
             new(Path.Combine(roaming, "Microsoft", "Windows", "Recent"), "Recent item shortcuts", CleanupKind.Temp, TimeSpan.Zero, "*.lnk", Recursive: false, Category: "RecentAccess"),
             new(Path.Combine(roaming, "Microsoft", "Office", "Recent"), "Office recent documents", CleanupKind.Temp, TimeSpan.Zero, "*.lnk", Recursive: false, Category: "RecentDocs"),
             // Diagnostic trace files only; never the Windows Event Log (.evtx) and never security logs.
-            new(Path.Combine(common, "Microsoft", "Diagnosis", "ETLLogs"), "Windows diagnostic traces", CleanupKind.Temp, Days(7), "*.etl", Category: "EventTrace", DeletableOnly: true),
-            new(Path.Combine(windows, "Logs", "SIH"), "Windows update trace logs", CleanupKind.Temp, Days(7), "*.etl", Category: "EventTrace", DeletableOnly: true),
+            new(Path.Combine(common, "Microsoft", "Diagnosis", "ETLLogs"), "Windows diagnostic traces", CleanupKind.Temp, Days(1), "*.etl", Category: "EventTrace", DeletableOnly: true),
+            new(Path.Combine(windows, "Logs", "SIH"), "Windows update trace logs", CleanupKind.Temp, Days(1), "*.etl", Category: "EventTrace", DeletableOnly: true),
         };
         // Adds one target per named sub-folder of baseDir that exists today. The application must be closed (processes) for its cache.
         void AddFolders(string category, string group, CleanupKind kind, int days, string baseDir, string[] subfolders, string[]? processes = null,
@@ -168,7 +161,7 @@ internal sealed class CleanupEngine
         // so it is Review, never Safe. System-protected: listed only when this user may delete the file.
         string prefetch = Path.Combine(windows, "Prefetch");
         if (Directory.Exists(prefetch))
-            list.Add(new(prefetch, "Prefetch files", CleanupKind.Cache, Days(1), "*.pf", Recursive: false, Category: "Prefetch", DeletableOnly: true));
+            list.Add(new(prefetch, "Prefetch files", CleanupKind.Cache, TimeSpan.Zero, "*.pf", Recursive: false, Category: "Prefetch", DeletableOnly: true));
         // Shader caches are rebuilt by the graphics driver on demand.
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, local, ["D3DSCache"]);
         AddFolders("DirectX", "DirectX cache", CleanupKind.Cache, 7, Path.Combine(local, "Microsoft"), ["DirectX Shader Cache"]);
@@ -260,6 +253,8 @@ internal sealed class CleanupEngine
         AddFolders("Cache", "Java download cache", CleanupKind.Cache, 30, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Sun", "Java", "Deployment"), ["cache"], ["java", "javaw"]);
         // Developer and creator caches: rebuildable, but re-downloading or re-indexing costs time, so they are Review (opt-in).
         AddFolders("DevCache", "NuGet cache", CleanupKind.Cache, 14, Path.Combine(local, "NuGet"), ["v3-cache", "plugins-cache", "Cache"]);
+        // The restored packages themselves (0.9): re-downloaded on the next build, so an offline build fails until then. Its own Review row.
+        AddFolders("NuGetPackages", "NuGet packages", CleanupKind.Cache, 0, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget"), ["packages"]);
         AddFolders("DevCache", "npm cache", CleanupKind.Cache, 14, local, ["npm-cache"]);
         AddFolders("DevCache", "pip cache", CleanupKind.Cache, 14, Path.Combine(local, "pip"), ["Cache"]);
         AddFolders("DevCache", "Yarn cache", CleanupKind.Cache, 14, Path.Combine(local, "Yarn"), ["Cache"]);
@@ -286,6 +281,13 @@ internal sealed class CleanupEngine
         // Apps without a hand-written rule: Electron/WebView2/CEF caches, Firefox-family caches, per-app logs, temp and crash dumps (see AppDiscovery).
         // Locations the rules above already own are not added twice. The walk is bounded, so it cannot slow the first scan noticeably.
         list.AddRange(AppDiscovery.Discover(local, roaming, Path.GetTempPath(), list.Select(target => target.Root).ToList()));
+        // Administrator mode, different account: when Hush runs as an administrator who is not the signed-in person (a standard user typed an admin's
+        // password), every "user" folder above is the administrator's profile, not the person's. Those locations are left out; system locations stay.
+        if (UserLocationsSkipped)
+        {
+            string profile = Normalize(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            list.RemoveAll(target => { try { return UnderRoot(Path.GetFullPath(target.Root), profile); } catch (ArgumentException) { return true; } });
+        }
         return list;
     }
 
@@ -333,7 +335,7 @@ internal sealed class CleanupEngine
     private sealed class TargetRun
     {
         internal readonly List<CleanupItem> Items = [];
-        internal int Examined, Inaccessible;
+        internal int Examined, Inaccessible, Protected;
         internal long Files, Bytes;
         internal bool Busy;
         internal volatile bool Abandoned;
@@ -352,7 +354,7 @@ internal sealed class CleanupEngine
             ? targets.Where(target => !ReviewCategory.SettingsOnly.Contains(target.Category ?? "")).ToList()
             : targets.Where(options.Include).ToList();
         List<CleanupItem> found = [];
-        int inaccessible = 0, busy = 0, examined = 0, stalled = 0;
+        int inaccessible = 0, busy = 0, examined = 0, stalled = 0, protectedFiles = 0;
         long fileCount = 0, bytes = 0;
         bool countOnly = options.CountOnly;
         bool extras = !countOnly && options.Include == null;
@@ -402,7 +404,7 @@ internal sealed class CleanupEngine
             catch (AggregateException failure) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.InnerException ?? failure).Throw(); }
             if (!skipped)
             {
-                found.AddRange(run.Items); examined += run.Examined; inaccessible += run.Inaccessible; fileCount += run.Files; bytes += run.Bytes;
+                found.AddRange(run.Items); examined += run.Examined; inaccessible += run.Inaccessible; protectedFiles += run.Protected; fileCount += run.Files; bytes += run.Bytes;
                 if (run.Busy) busy++;
             }
             if (!token.IsCancellationRequested) progress?.Report(new(target.Group, examined, found.Count, bytes, end));
@@ -429,7 +431,7 @@ internal sealed class CleanupEngine
         }
         if (!token.IsCancellationRequested) progress?.Report(new("Complete", examined, found.Count, bytes, 1,
             RegistryEntries: found.Count(item => item.Kind is CleanupKind.Registry or CleanupKind.RecycleBin or CleanupKind.SystemTool)));
-        return new(found.OrderByDescending(x => x.Bytes).ToList(), inaccessible, busy, token.IsCancellationRequested, fileCount, bytes, stalled);
+        return new(found.OrderByDescending(x => x.Bytes).ToList(), inaccessible, busy, token.IsCancellationRequested, fileCount, bytes, stalled, protectedFiles);
     }
 
     // Runs one extra scan step on its own thread with a time limit. Whatever it found is added only if it finished in time.
@@ -551,7 +553,7 @@ internal sealed class CleanupEngine
                                 run.Beat();
                                 bool deletable = CanDelete(full);
                                 run.Beat();
-                                if (!deletable) continue;
+                                if (!deletable) { run.Protected++; continue; }
                             }
                         }
                         string? shortcutTarget = null, shortcutHash = null;
@@ -606,7 +608,7 @@ internal sealed class CleanupEngine
         {
             foreach (var offer in systemTools!.Probe(token))
                 found.Add(new CleanupItem { Path = offer.Title, Root = "Windows tool", Group = offer.Title, Kind = CleanupKind.SystemTool, CategoryId = offer.CategoryId,
-                    Bytes = offer.Bytes, ItemCount = offer.ItemCount, ToolId = offer.ToolId, Detail = offer.Detail, Selected = false });
+                    Bytes = offer.Bytes, ItemCount = offer.ItemCount, ToolId = offer.ToolId, Detail = offer.Detail, Selected = offer.SelectedByDefault });
         }
         catch (Exception ex) when (IsFileError(ex) || ex is COMException or InvalidOperationException) { }
     }
@@ -639,7 +641,8 @@ internal sealed class CleanupEngine
         public void Flush() => writer.Flush();
     }
 
-    internal CleanupResult Clean(IReadOnlyList<CleanupItem> items, IProgress<int>? progress, CancellationToken token)
+    // note: a plain sentence for the "still working" state while one of Windows' own tools runs (they can take many minutes).
+    internal CleanupResult Clean(IReadOnlyList<CleanupItem> items, IProgress<int>? progress, CancellationToken token, IProgress<string>? note = null)
     {
         // Open the audit log first: if it cannot be created, nothing is deleted.
         string logs = Path.Combine(dataDirectory, "Logs");
@@ -674,7 +677,7 @@ internal sealed class CleanupEngine
                 {
                     if (item.Kind == CleanupKind.Registry) DeleteRegistry(item);
                     else if (item.Kind == CleanupKind.RecycleBin) EmptyRecycleBin(item);
-                    else if (item.Kind == CleanupKind.SystemTool) RunSystemTool(item, token);
+                    else if (item.Kind == CleanupKind.SystemTool) RunSystemTool(item, token, note);
                     else DeleteFile(item, path, pathBuffer, context);
                     deleted++;
                     bytes += item.Bytes;
@@ -715,10 +718,11 @@ internal sealed class CleanupEngine
     }
 
     // Windows' own tools do the work. The tool must still be offered by a fresh read-only probe, so a forged item cannot start anything.
-    private void RunSystemTool(CleanupItem item, CancellationToken token)
+    private void RunSystemTool(CleanupItem item, CancellationToken token, IProgress<string>? note = null)
     {
         if (systemTools == null || item.ToolId == null) throw new IOException("This Windows cleanup is not available.");
         if (!systemTools.Probe(token).Any(offer => offer.ToolId == item.ToolId)) throw new IOException("Windows no longer offers this cleanup; scan again.");
+        note?.Report($"Windows is running \"{item.Group}\". This can take several minutes; Hush is still working…");
         systemTools.Run(item.ToolId, token);
     }
 
@@ -739,7 +743,7 @@ internal sealed class CleanupEngine
 
         // Hold an exclusive handle through metadata validation and deletion. Never follow a final symlink.
         using SafeFileHandle handle = Native.CreateFile(itemPath, 0x80010080, 0, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
-        if (handle.IsInvalid) throw new IOException("File is busy or inaccessible.");
+        if (handle.IsInvalid) throw new IOException(WindowsSystemTools.IsElevated() ? "In use by a program right now" : "In use, or needs administrator rights");
         if (!Native.GetFileInformationByHandle(handle, out var info)) throw new IOException("Cannot verify file identity.");
         if ((info.Attributes & (uint)(FileAttributes.Directory | FileAttributes.ReparsePoint | FileAttributes.System | FileAttributes.ReadOnly)) != 0
             || info.NumberOfLinks != 1) throw new IOException("Protected, linked, or read-only file.");
@@ -753,7 +757,7 @@ internal sealed class CleanupEngine
         DateTime modified = DateTime.FromFileTimeUtc(((long)info.WriteHigh << 32) | info.WriteLow);
         DateTime created = DateTime.FromFileTimeUtc(((long)info.CreationHigh << 32) | info.CreationLow);
         if (length != item.Bytes || modified != item.ModifiedUtc || created != item.CreatedUtc || !OldEnough(modified, created, target.MinimumAge))
-            throw new IOException("File changed after scan; scan again.");
+            throw new IOException("Changed since the scan");
         if (item.Kind == CleanupKind.Shortcut)
         {
             if (item.ShortcutTarget == null || item.ShortcutHash == null || !IsOrphanExecutable(item.ShortcutTarget))

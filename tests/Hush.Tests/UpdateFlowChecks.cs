@@ -29,7 +29,6 @@ internal static class UpdateFlowChecks
             var root = (FrameworkElement)window.Content;
             var about = (FrameworkElement)window.FindName("AboutOverlay");
             var card = (FrameworkElement)window.FindName("AboutCard");
-            var body = (AccordionBody)window.FindName("AboutUpdatesBody");
             var check = (Button)window.FindName("CheckUpdateButton");
             var status = (TextBlock)window.FindName("UpdateStatus");
             var hint = (TextBlock)window.FindName("UpdateHint");
@@ -57,8 +56,8 @@ internal static class UpdateFlowChecks
             }
             Open(); Layout(new Size(800, 740));
             Require(window.FindName("UpdateToken") == null && window.FindName("ConnectGitHubButton") == null && window.FindName("UpdateInstallPanel") == null
-                && check.IsVisible && !body.Expanded && card.ActualHeight < 350,
-                "About is compact, has no token, GitHub sign-in or second install step, and exposes Check for updates immediately");
+                && check.IsVisible && card.ActualHeight < 600,
+                "About has no token, GitHub sign-in or second install step, and exposes Check for updates immediately under the version");
             Require(!((FrameworkElement)window.FindName("AppSurface")).IsEnabled, "About still blocks background input");
             var title = TextBlocks(card).First(text => text.Text == "Hush");
             Require(title.FontStyle == FontStyles.Italic && title.FontWeight == FontWeights.Normal
@@ -67,7 +66,7 @@ internal static class UpdateFlowChecks
             var pending = new TaskCompletionSource<AppRelease?>(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Check = _ => pending.Task;
             Click("CheckUpdateButton"); Wait(360); Layout(new Size(800, 740));
-            Require(window.IsUpdateBusy && sweep.IsRunning && body.Expanded && !check.IsEnabled,
+            Require(window.IsUpdateBusy && sweep.IsRunning && !check.IsEnabled,
                 "Checking shows progress and never asks for credentials");
             // One bar only: sample the running track several times; at most one bright run may ever exist (nothing follows the bar), and the track is 5 px thick.
             int RunsAcross(byte[] pixels)
@@ -78,9 +77,9 @@ internal static class UpdateFlowChecks
             }
             int mostRuns = 0, framesWithBar = 0;
             for (int frame = 0; frame < 6; frame++) { int runs = RunsAcross(SweepPixels()); mostRuns = Math.Max(mostRuns, runs); if (runs > 0) framesWithBar++; Wait(300); }
-            Require(mostRuns == 1 && framesWithBar >= 2 && Math.Abs(sweep.ActualHeight - 5) < 0.01, $"The update search is a single moving bar, 5 px thick, with nothing following it (max {mostRuns} bar in {framesWithBar} of 6 frames)");
+            Require(mostRuns == 1 && framesWithBar >= 2 && Math.Abs(sweep.ActualHeight - 5) < 0.01, $"The update search is one filling bar, 5 px thick, with nothing following it (max {mostRuns} bar in {framesWithBar} of 6 frames)");
             var before = SweepPixels(); Wait(260);
-            Require(!before.SequenceEqual(SweepPixels()), "The checking glide changes actual rendered pixels");
+            Require(!before.SequenceEqual(SweepPixels()), "The checking bar fills: its actual rendered pixels change");
             Capture("about-checking-" + (window.IsLightTheme ? "light" : "dark"));
             Wait(500); Capture("about-checking-2-" + (window.IsLightTheme ? "light" : "dark"));
             Wait(500); Capture("about-checking-3-" + (window.IsLightTheme ? "light" : "dark"));
@@ -145,6 +144,9 @@ internal static class UpdateFlowChecks
             var searching = System.Diagnostics.Stopwatch.StartNew();
             Click("CheckUpdateButton"); Until(() => window.IsUpdateBusy); Wait(1500);
             Require(window.IsUpdateBusy && sweep.IsRunning && double.IsNaN(sweep.Progress) && status.Text.Contains("Looking"), "An instant answer still keeps the search animation going for its minimum time");
+            double firstFill = sweep.Fill; Wait(700);
+            Require(firstFill > 0.15 && sweep.Fill > firstFill && sweep.Fill < 0.99, $"The check's loading bar fills smoothly from empty and is not full before the answer is in ({firstFill:0.00} then {sweep.Fill:0.00})");
+            Capture("about-checking-" + (window.IsLightTheme ? "light" : "dark"));
             Until(() => !window.IsUpdateBusy);
             Require(searching.ElapsedMilliseconds >= 3400 && searching.ElapsedMilliseconds < 6500 && status.Text.Contains("up to date"),
                 $"The searching animation lasts at least 3.5 seconds before the result appears ({searching.ElapsedMilliseconds} ms)");
@@ -155,7 +157,7 @@ internal static class UpdateFlowChecks
             var late = new TaskCompletionSource<AppRelease?>(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Check = _ => late.Task;
             Click("CheckUpdateButton"); Close(); Open(); late.SetResult(release); Wait(80);
-            Require(!body.Expanded && check.Content.ToString() == "Check for updates" && status.Text == "Check for the latest release.",
+            Require(check.Content.ToString() == "Check for updates" && status.Text == "Check for the latest release.",
                 "A closed session's late response cannot modify a reopened About popup");
             client.Check = async token => { await Task.Delay(Timeout.Infinite, token); return null; };
             Click("CheckUpdateButton"); Click("CancelUpdateButton"); Until(() => !window.IsUpdateBusy);
@@ -165,9 +167,32 @@ internal static class UpdateFlowChecks
             {
                 if (window.IsLightTheme != light) window.ToggleTheme();
                 Open(); Layout(new Size(920, 820)); Capture($"about-summary-{(light ? "light" : "dark")}");
-                Click("AboutUpdatesButton"); Wait(360); Layout(new Size(800, 740)); Capture($"about-details-{(light ? "light" : "dark")}");
                 Close();
             }
+            // ---- The quiet update notice beside the wordmark ----
+            var notice = (Button)window.FindName("UpdateNoticeButton");
+            Require(notice.Visibility == Visibility.Collapsed, "Nothing shows beside the wordmark before any check has found an update");
+            client.Check = _ => Task.FromResult<AppRelease?>(null);
+            var quiet = window.RunQuietUpdateCheck(); Until(() => quiet.IsCompleted);
+            Require(notice.Visibility == Visibility.Collapsed, "Up to date: no notice");
+            client.Check = _ => throw new System.Net.Http.HttpRequestException("offline");
+            quiet = window.RunQuietUpdateCheck(); Until(() => quiet.IsCompleted);
+            Require(notice.Visibility == Visibility.Collapsed, "Offline or failing: no notice and no error");
+            int checks = 0, downloadsBefore = downloads, installsBefore = installs;
+            client.Check = _ => { checks++; return Task.FromResult<AppRelease?>(release); };
+            quiet = window.RunQuietUpdateCheck(); Until(() => quiet.IsCompleted); Wait(420);
+            Require(notice.Visibility == Visibility.Visible && notice.Opacity > 0.95 && notice.Content.ToString() == "There is a new update!" && ((SolidColorBrush)notice.Foreground).Color == ((SolidColorBrush)Application.Current.Resources["GoodBrush"]).Color
+                && notice.FontStyle == FontStyles.Normal && checks == 1 && downloads == downloadsBefore && installs == installsBefore, $"A newer version fades in a green, upright 'There is a new update!' beside the wordmark; nothing is downloaded or installed (vis {notice.Visibility}, opacity {notice.Opacity}, fg {((SolidColorBrush)notice.Foreground).Color} vs {((SolidColorBrush)Application.Current.Resources["GoodBrush"]).Color}, checks {checks}, downloads {downloads}, installs {installs})");
+            Click("UpdateNoticeButton"); Until(() => about.Visibility == Visibility.Visible); Wait(100);
+            Require(checks == 2 && (window.IsUpdateBusy || status.Text.Contains("available")), "Clicking the notice opens the update popup and runs the check there");
+            Until(() => !window.IsUpdateBusy);
+            Require(status.Text.Contains("is available") && check.Content.ToString() == "Update now" && downloads == downloadsBefore && installs == installsBefore, "The popup then offers Update now without downloading anything yet");
+            Close();
+            var briefSource = string.Join("\n", "## What changed", "- long thing", "", "## In brief", "- **Cleans** system Temp files", "* One Hush window at a time", "- [Link](http://x) text", "- four", "- five", "- six is cut", "", "## Other", "- not this");
+            var brief = ReleaseNotes.InBrief(briefSource);
+            Require(brief.Split("\n").Length == 5 && brief.StartsWith("\u2022 Cleans system Temp files") && brief.Contains("\u2022 Link text") && !brief.Contains("six") && !brief.Contains("not this"),
+                "The short release notes come from the 'In brief' section: at most five one-line bullets without markdown");
+            Require(ReleaseNotes.InBrief("nothing useful").Length > 0 && ReleaseNotes.InBrief("- " + new string('x', 200)).Length <= 80, "Release notes without bullets fall back to a plain line and long bullets are cut to one line");
             Console.WriteLine("PASS: About without any sign-in, aqua italic title, smooth check animation, one-click download with real progress, verified hand-over, failures, cancellation, late responses and both-theme layouts");
         }
         finally { window.Close(); }

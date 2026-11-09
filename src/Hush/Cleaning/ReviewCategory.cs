@@ -143,6 +143,8 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "The old copy of Windows kept after an upgrade so you could go back. Removing it frees a lot of space but you can no longer roll back.", "System"),
         new("ComponentStore", "Windows Update Component Cleanup", SafetyLevel.Advanced, "DISM /StartComponentCleanup: removes superseded component versions from the WinSxS store. Irreversible: installed updates can then no longer be uninstalled",
             "Windows removes old versions of its own parts that updates replaced. Windows decides what goes; installed updates can no longer be uninstalled.", "System"),
+        new("ComponentReset", "Deep Component Cleanup", SafetyLevel.Advanced, "DISM /StartComponentCleanup /ResetBase: also removes the ability to uninstall any update installed so far. Irreversible; needs administrator rights and can take many minutes",
+            "Windows removes every older version of its own parts. Updates installed so far can no longer be uninstalled. This cannot be undone.", "System"),
         new("RecycleBin", "Recycle Bin", SafetyLevel.Advanced, "Files you deleted earlier. Emptying is permanent and covers every drive; opt-in",
             "Files you deleted earlier. Emptying it removes them for good and cannot be undone.", "System"),
         new("Installer", "Old Installation Leftovers", SafetyLevel.Review, "Extracted graphics-driver installers at the drive root and old CHKDSK file fragments; usually needs administrator rights",
@@ -160,8 +162,6 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "Saved copies of web pages that help Firefox open sites quicker. Your passwords, bookmarks and logins are not touched.", "Apps"),
         new("BrowserChrome", "Google Chrome", SafetyLevel.Review, "Chrome page, code and GPU caches; passwords, cookies and saved sessions are never included. Chrome must be closed",
             "Saved copies of web pages that help Chrome open sites quicker. Your passwords, logins and open tabs are not touched.", "Apps"),
-        new("BrowserOther", "Other Browsers", SafetyLevel.Review, "Brave, Vivaldi, Opera and other Chromium browser caches; passwords, cookies and saved sessions are never included. The browser must be closed",
-            "Saved copies of web pages kept by your other browsers. Passwords and logins are not touched.", "Apps"),
         new("BrowserLogs", "Browser Log Files", SafetyLevel.Review, "Crash reports and usage-metrics files kept by Edge, Chrome, Firefox and other browsers; passwords, cookies, history and sessions are never included. The browser must be closed",
             "Crash reports and small technical logs your browsers keep. Your passwords, logins and open tabs are not touched.", "Apps"),
         new("BrowserUpdates", "Browser Update Files", SafetyLevel.Review, "Downloaded update packages and update logs of Firefox; the installed browser is not affected. Firefox must be closed",
@@ -170,6 +170,8 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "Old driver installers and small log files NVIDIA left behind. Your installed driver stays as it is.", "Apps"),
         new("DevCache", "NuGet & Developer Caches", SafetyLevel.Review, "NuGet, npm, pip, Poetry, Composer, Yarn, Go, Visual Studio, IDE and Adobe media caches; rebuildable, but re-downloading or re-indexing takes time",
             "Downloads and work files kept by programming and design tools. Nothing of yours, but they download again the next time you use those tools.", "Apps"),
+        new("NuGetPackages", "NuGet Packages", SafetyLevel.Review, "The restored NuGet packages in your .nuget packages folder; the next build downloads them again, and offline builds fail until then",
+            "Libraries your programming tools downloaded. They download again at the next build, so builds without internet fail until then.", "Apps"),
         new("AppLogs", "Application Log Files", SafetyLevel.Review, "Old *.log files in apps' own Logs folders inside your AppData; the apps write new ones; useful only when diagnosing a problem",
             "Diary files that apps keep about what they did. New ones are written as you use them.", "Apps"),
         new("AppTemp", "Application Temporary Files", SafetyLevel.Review, "Old files in apps' own Temp or tmp folders inside your AppData; files in use are skipped",
@@ -191,6 +193,9 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "The list of sites you visited. Bookmarks, passwords and logins are not touched.", "Privacy"),
         new("BrowserCookies", "Browser Cookies & Site Data", SafetyLevel.Advanced, "Chromium and Firefox cookie databases. You will be signed out of websites. Passwords and saved sessions are never included; the browser must be closed",
             "The small files websites use to remember you. Removing them signs you out of websites.", "Privacy"),
+        // Last on purpose (0.9): people with many tabs open are least likely to tick it by accident.
+        new("BrowserOther", "Other Browsers", SafetyLevel.Review, "Brave, Vivaldi, Opera and other Chromium browser caches; passwords, cookies and saved sessions are never included. The browser must be closed",
+            "Saved copies of web pages kept by your other browsers. Passwords and logins are not touched.", "Apps"),
     ];
     // Chosen only in Settings > Browser data (with a red mark and a warning), never part of a normal scan or Quick Boost.
     internal static readonly HashSet<string> SettingsOnly = ["BrowserHistory", "BrowserCookies"];
@@ -209,4 +214,35 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
         CleanupKind.Registry => "Registry", CleanupKind.Shortcut => "Shortcuts", CleanupKind.Junk => "Junk", CleanupKind.RecycleBin => "RecycleBin",
         _ => group switch { "DirectX cache" => "DirectX", "Crash reports" => "Crash", _ => kind == CleanupKind.Cache ? "Cache" : "Temp" }
     };
+}
+
+// One of the three color groups on the Review page (Green Safe, Amber Review, Red Advanced): what it holds, in numbers the page can show at a glance.
+public sealed class ReviewGroupSummary(SafetyLevel level) : INotifyPropertyChanged
+{
+    internal SafetyLevel Level { get; } = level;
+    public string Title => Level switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review", _ => "Advanced" };
+    public string Summary => Level switch
+    {
+        SafetyLevel.Safe => "Temporary files and caches that Windows rebuilds. Recommended.",
+        SafetyLevel.Review => "Browser, app and system leftovers. You choose what to clean.",
+        _ => "Cannot be undone, or touches recovery data. Needs your explicit consent."
+    };
+    public int Count { get; private set; }
+    public int SelectedCount { get; private set; }
+    public long Bytes { get; private set; }
+    public bool HasItems => Count > 0;
+    public string CountLabel => $"{(Count == 1 ? "1 item" : $"{Count:N0} items")} · {SelectedCount:N0} selected";
+    public string TotalLabel => Bytes > 0 ? Sizes.Format(Bytes) : "By Windows";
+    public string AutomationName => $"{Title} group: {CountLabel}";
+    private bool light;
+    public System.Windows.Media.Brush Accent => (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(SafetyPalette.Text(Level, light))!;
+    public event PropertyChangedEventHandler? PropertyChanged;
+    internal void Update(IReadOnlyList<ReviewCategory> categories, bool isLight)
+    {
+        Count = categories.Sum(category => category.Files.Count);
+        SelectedCount = categories.Sum(category => category.SelectedCount);
+        Bytes = categories.Sum(category => category.TotalBytes);
+        light = isLight;
+        PropertyChanged?.Invoke(this, new(string.Empty));
+    }
 }

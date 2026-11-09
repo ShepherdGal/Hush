@@ -12,7 +12,7 @@ Status as of November 7, 2026: the old repository was deleted by the owner and h
 
 1. Confirm the version in Hush.csproj with the user; update ReleaseNotes.cs, docs/CHANGELOG.md and docs/HANDOFF.md.
 2. Run `scripts/Verify.ps1` (use `-Configuration Release` if a preview locks the Verification build).
-3. Run `scripts/Build.ps1` (framework-dependent; needs .NET 10 Desktop Runtime) or `scripts/Build.ps1 -Standalone`.
+3. Run `scripts/Build.ps1` (self-contained and compressed, about 60-70 MB; nothing to install on the user's PC). `-FrameworkDependent` makes a small build for local tests only.
 4. Commit the reviewed source and docs in the project folder (`.gitignore` already keeps bin/obj/artifacts/Backups/settings/logs and binaries out).
 5. Tag `vX.Y` or `vX.Y.Z` and create a non-prerelease GitHub release with plain-language notes.
 6. Start the release notes with the "Which file?" block below, then the changes. Attach the exact `Hush-Portable.zip` from `artifacts` (the portable app; required for in-app updates) and `Hush-Setup.zip` (the installer: the same program, which opens setup because of its name). Never upload the loose `.exe` files (GitHub refuses them). Never replace a published tag's binary; publish a new version instead.
@@ -33,11 +33,16 @@ Every release body starts with this, so people can find the right download at a 
 **Which file?**
 - **Hush-Portable.zip** - portable. Unzip, run Hush-Portable.exe; nothing is installed.
 - **Hush-Setup.zip** - installer. Unzip, run Hush-Setup.exe. For your account only, no administrator rights.
-You only need one. Needs Windows 10/11 64-bit and the .NET 10 Desktop Runtime. Use at your own risk (see docs/TERMS.md).
+You only need one. Needs Windows 10/11 64-bit; nothing else to install. Use at your own risk (see docs/TERMS.md).
+
+In brief
+- (at most five one-line bullets in plain words, for example "Cleans system Temp files". The app shows this section in its update popup under "What's new in this version"; keep it short.)
 
 What's new
-- ...
+- ... (the long notes stay on the release page)
 ```
+
+Also update `src/Hush/Updates/ReleaseNotes.cs` (`Current`) with the same short bullets for the version being released: the About window shows it for the installed version.
 
 ## One place for the files on the build PC
 

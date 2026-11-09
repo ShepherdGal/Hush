@@ -158,21 +158,22 @@ internal static class UiLayoutChecks
                 Require(about.Visibility == Visibility.Visible && !surface.IsEnabled && blur.Radius > 6.9
                     && ((TextBlock)window.FindName("AboutVersion")).Text.Contains(UpdateService.DisplayVersion), "Title opens the versioned About popup with shared blur");
                 var aboutCard = (Border)window.FindName("AboutCard");
-                var updatesBody = (AccordionBody)window.FindName("AboutUpdatesBody");
                 Layout(root, new Size(800, 740));
-                Require(aboutCard.ActualHeight < 350 && !updatesBody.Expanded && !updatesBody.IsEnabled && updatesBody.Visibility == Visibility.Collapsed,
-                    "About opens as a compact readable summary with hidden, disabled update content");
-                ((Button)window.FindName("AboutUpdatesButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(360); root.UpdateLayout();
-                Layout(root, new Size(800, 740));
-                Require(updatesBody.Expanded && ((Button)window.FindName("CheckUpdateButton")).IsEnabled && window.FindName("ConnectGitHubButton") == null && window.FindName("UpdateToken") == null
-                    && new Rect(root.RenderSize).Contains(Bounds(aboutCard, root)), "Updates are available on demand and fit the minimum window");
+                // 0.9 order: the version first, the update status and its action directly under it, then what is new (about five one-line bullets).
+                double Top(string name) { var element = (FrameworkElement)window.FindName(name); return element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize)).Top; }
+                var notesText = ((TextBlock)window.FindName("PatchNotes")).Text;
+                Require(Top("AboutVersion") < Top("UpdateStatus") && Top("UpdateStatus") < Top("PatchNotesHeading") && Top("CheckUpdateButton") < Top("PatchNotesHeading")
+                    && ((TextBlock)window.FindName("PatchNotesHeading")).Text == "What's new in this version" && notesText.Split('\n').Length <= 5 && notesText.Split('\n').All(line => line.Length <= 70 && line.StartsWith('\u2022'))
+                    && ((Button)window.FindName("CheckUpdateButton")).IsEnabled && window.FindName("AboutUpdatesButton") == null && window.FindName("ConnectGitHubButton") == null && window.FindName("UpdateToken") == null
+                    && aboutCard.ActualHeight < 600 && new Rect(root.RenderSize).Contains(Bounds(aboutCard, root)),
+                    "About shows the version, then the update status and action, then at most five one-line bullets of what is new, and fits the minimum window");
                 ((Button)window.FindName("CloseAboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 PumpUntil(() => about.Visibility == Visibility.Collapsed);
                 Require(surface.IsEnabled, "About close restores input");
                 ((Button)window.FindName("AboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(350);
                 Layout(root, new Size(800, 740));
-                Require(!updatesBody.Expanded && aboutCard.ActualHeight < 350,
-                    "Reopening About restores the compact summary");
+                Require(((TextBlock)window.FindName("UpdateStatus")).Text == "Check for the latest release." && !((UpdateActivity)window.FindName("UpdateSweep")).IsRunning,
+                    "Reopening About starts from the quiet, unchecked state");
                 ((Button)window.FindName("CloseAboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 PumpUntil(() => about.Visibility == Visibility.Collapsed);
                 var restarted = window.ActivateGaugeAsync();
@@ -349,7 +350,9 @@ internal static class UiLayoutChecks
                 VerifyScanRipples(engine);
                 Console.WriteLine("PASS: The scan cue (soft ripples drifting out from the gauge) is off until a scan runs, moves while it runs and fades out afterwards");
                 UiSizeChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
-                UiSizeChecks.RunTempAge(engine, fixture, (ok, message) => Require(ok, message));
+                ProcessChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                ReviewGroupChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                WindowsUpdateChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 Console.WriteLine("PASS: Interface size (Smart, 75%, 100%, 120%) rescales the real window, is remembered, and always fits the screen");
                 Console.WriteLine("PASS: Empty gauge, real live odometer count, safety selection, shared motion, About/update popup, blurred confirmation and responsive layout verified");
             }
@@ -363,7 +366,7 @@ internal static class UiLayoutChecks
             }
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        if (!thread.Join(TimeSpan.FromSeconds(50))) throw new TimeoutException("The UI verification did not finish within 50 seconds.");
+        if (!thread.Join(TimeSpan.FromSeconds(85))) throw new TimeoutException("The UI verification did not finish within 85 seconds.");
         if (failure != null) throw new Exception("UI layout verification failed", failure);
     }
 
@@ -534,6 +537,7 @@ internal static class UiLayoutChecks
         finally { window.Close(); }
     }
 
+    internal static CleanupItem[] PreviewItemsForGroups() => PreviewItems();
     private static CleanupItem[] PreviewItems() =>
     [
         new() { Path = @"C:\Users\Example\AppData\Local\Temp\a-very-long-filename-that-must-wrap-without-overlapping-the-size-column.tmp", Root = @"C:\Temp", Group = "User temp", Bytes = 123456789 },
@@ -677,14 +681,22 @@ internal static class UiLayoutChecks
                 && ((TextBlock)window.FindName("StatusTitle")).Text == "Scan Completed", $"The home screen shows Scan Completed with Take a look and Clean side by side in both themes (light={light})");
             Save(root, new Size(920, 820), Path.Combine(directory, $"home-{(light ? "light" : "dark")}.png"));
             ExportCounterPreviews(window, root, directory, light);
+            Require(Motion.GetMouseOnly((Button)window.FindName("AboutButton")) && Motion.GetMouseOnly((Button)window.FindName("ScanCircleButton")),
+                "The header logo and the Scan button react to the mouse only, so the logo looks the same whether the window is active or not");
+            // The main Scan button gets the same gentle glow-intensify hover as the other glowing buttons (0.9); it never scales.
+            var scanButton = (Button)window.FindName("ScanCircleButton");
+            double restingGlow = ((System.Windows.Media.Effects.DropShadowEffect)scanButton.Effect).Opacity; double restingWidth = scanButton.ActualWidth;
+            Motion.PreviewInteraction(scanButton, true, false); Wait(400);
+            Require(((System.Windows.Media.Effects.DropShadowEffect)scanButton.Effect).Opacity > restingGlow + 0.25 && scanButton.ActualWidth == restingWidth && scanButton.RenderTransform == Transform.Identity || scanButton.RenderTransform == null || scanButton.RenderTransform.Value.IsIdentity,
+                $"Hovering the main Scan button strengthens its glow and does not resize it (light={light})");
+            Save(root, new Size(920, 820), Path.Combine(directory, $"scan-hover-{(light ? "light" : "dark")}.png"));
+            Motion.PreviewInteraction(scanButton, false, false); Wait(350);
             ((Button)window.FindName("HomeCleanButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(330);
             Save(root, new Size(920, 820), Path.Combine(directory, $"confirmation-{(light ? "light" : "dark")}.png"));
             ((Button)window.FindName("CancelDeleteButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => ((FrameworkElement)window.FindName("ModalOverlay")).Visibility == Visibility.Collapsed);
             ((Button)window.FindName("AboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(350);
             Save(root, new Size(920, 820), Path.Combine(directory, $"about-{(light ? "light" : "dark")}.png"));
-            ((Button)window.FindName("AboutUpdatesButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Wait(360);
-            Save(root, new Size(920, 820), Path.Combine(directory, $"about-updates-{(light ? "light" : "dark")}.png"));
             ((Button)window.FindName("CloseAboutButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => ((FrameworkElement)window.FindName("AboutOverlay")).Visibility == Visibility.Collapsed);
             window.ShowReviewPage(true); Wait(300);

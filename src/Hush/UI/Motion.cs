@@ -71,6 +71,17 @@ public static class Motion
         "Glow", typeof(double), typeof(Motion), new PropertyMetadata(0.08, AppearanceChanged));
     public static readonly DependencyProperty OuterGlowProperty = DependencyProperty.RegisterAttached(
         "OuterGlow", typeof(bool), typeof(Motion), new PropertyMetadata(false, AppearanceChanged));
+    // Only the mouse highlights this button (keyboard focus alone does not): the header wordmark must look the same whether the window is active or
+    // not, and Windows puts keyboard focus on it as soon as the window is activated.
+    public static readonly DependencyProperty MouseOnlyProperty = DependencyProperty.RegisterAttached(
+        "MouseOnly", typeof(bool), typeof(Motion), new PropertyMetadata(false, AppearanceChanged));
+    // How much stronger the glow gets on hover (the main Scan button asks for a clear but gentle lift; the default is the faint one).
+    public static readonly DependencyProperty HoverLiftProperty = DependencyProperty.RegisterAttached(
+        "HoverLift", typeof(double), typeof(Motion), new PropertyMetadata(-1.0, AppearanceChanged));
+    public static bool GetMouseOnly(DependencyObject value) => (bool)value.GetValue(MouseOnlyProperty);
+    public static void SetMouseOnly(DependencyObject value, bool mouseOnly) => value.SetValue(MouseOnlyProperty, mouseOnly);
+    public static double GetHoverLift(DependencyObject value) => (double)value.GetValue(HoverLiftProperty);
+    public static void SetHoverLift(DependencyObject value, double lift) => value.SetValue(HoverLiftProperty, lift);
     private static readonly DependencyProperty StateProperty = DependencyProperty.RegisterAttached("State", typeof(ButtonMotion), typeof(Motion));
     public static bool GetEnabled(DependencyObject value) => (bool)value.GetValue(EnabledProperty);
     public static void SetEnabled(DependencyObject value, bool enabled) => value.SetValue(EnabledProperty, enabled);
@@ -222,7 +233,7 @@ public static class Motion
         {
             UpdateSurface(paletteChange: true);
         }
-        private bool Highlighted => button.IsEnabled && (hovered || button.IsKeyboardFocusWithin);
+        private bool Highlighted => button.IsEnabled && (hovered || (!GetMouseOnly(button) && button.IsKeyboardFocusWithin));
         // The strong Clean hover follows the mouse only: Hush focuses the Clean button after a scan, and focus alone must not look like a hover.
         private bool MouseHighlighted => button.IsEnabled && hovered;
         private void ForegroundChanged(object? sender, EventArgs e) { UpdateInk(paletteChange: true); UpdateSurface(paletteChange: true); }
@@ -300,7 +311,8 @@ public static class Motion
         {
             bool hover = Highlighted;
             // Outline-glow buttons (Clean, Clean selected) get a clearly visible hover lift in their own color; quiet buttons keep the faint one.
-            double lift = GetOuterGlow(button) ? (pressed ? 0.22 : MouseHighlighted ? 0.42 : 0.04) : (pressed ? 0.02 : 0.035);
+            double baseLift = GetHoverLift(button) >= 0 ? GetHoverLift(button) : 0.035;
+            double lift = GetOuterGlow(button) ? (pressed ? 0.22 : MouseHighlighted ? 0.42 : 0.04) : (pressed ? baseLift * 0.55 : baseLift);
             double strength = button.IsEnabled && GetGlow(button) > 0 ? GetGlow(button) + (hover ? lift : 0) : 0;
             UpdateSurface();
             UpdateInk();

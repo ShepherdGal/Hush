@@ -71,8 +71,8 @@ internal static class CategoryChecks
         }
         check(ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Safe).Select(d => d.Id).Order().SequenceEqual(["Temp", "Thumbnails"]),
             "Only verified disposable temp files and thumbnail caches are Safe; browser caches, shader caches, logs and traces are Review");
-        check(new[] { "WindowsOld", "ComponentStore", "RecycleBin", "Registry", "BrowserCookies" }.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
-            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 5,
+        check(new[] { "WindowsOld", "ComponentStore", "ComponentReset", "RecycleBin", "Registry", "BrowserCookies" }.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
+            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 6,
             "Irreversible or recovery-related categories are Advanced (red) and nothing else is");
         check(ReviewCategory.Definitions.Select(d => d.Id).Distinct().Count() == ReviewCategory.Definitions.Length
             && ReviewCategory.Definitions.All(d => ReviewCategory.GroupDefinitions.Any(g => g.Id == d.GroupId)),
@@ -212,20 +212,9 @@ internal static class CategoryChecks
             && defaults.Where(t => Path.GetFullPath(t.Root).StartsWith(windowsRoot, StringComparison.OrdinalIgnoreCase) && !t.Group.EndsWith("temp")).All(t => t.DeletableOnly),
             "Shortcuts use narrow rules and every Windows-folder location (except Windows temp) uses the deletable-only probe");
 
-        // Settings > Temporary files: the age of both Temp folders follows the choice (unknown values read as the 1-day default).
-        string savedChoice = CleanupEngine.TempAgeChoice;
-        try
-        {
-            foreach (var (choice, age) in new[] { ("day", TimeSpan.FromDays(1)), ("hour", TimeSpan.FromHours(1)), ("any", TimeSpan.FromMinutes(10)), ("nonsense", TimeSpan.FromDays(1)) })
-            {
-                CleanupEngine.TempAgeChoice = choice;
-                var temps = CleanupEngine.DefaultTargets().Where(t => t.Category == "Temp" && t.Group is "User temp" or "Windows temp").ToList();
-                check(temps.Count >= 1 && temps.All(t => t.MinimumAge == age && t.Kind == CleanupKind.Temp), $"The Temp folders use the '{choice}' age choice ({age})");
-            }
-        }
-        finally { CleanupEngine.TempAgeChoice = savedChoice; }
-        check(Preferences.NormalizeTempAge("hour") == "hour" && Preferences.NormalizeTempAge("any") == "any" && Preferences.NormalizeTempAge(null) == "day"
-            && Preferences.NormalizeTempAge("weekly") == "day" && new Preferences().TempAge == "day", "The Temporary files choice normalizes and defaults to one day");
+        // Temporary files (0.9): both Temp folders list files of any age (a file in use is skipped when deleting, and every file is re-checked).
+        var tempTargets = CleanupEngine.DefaultTargets().Where(t => t.Category == "Temp" && t.Group is "User temp" or "Windows temp").ToList();
+        check(tempTargets.Count >= 1 && tempTargets.All(t => t.MinimumAge == TimeSpan.Zero && t.Kind == CleanupKind.Temp), "The Temp folders find files of any age");
 
         // Rules added after a real PC showed what was missing: narrow, user-AppData-only (Prefetch is the one deletable-only system folder), Review level.
         string windowsPrefetch = Path.Combine(windowsRoot, "Prefetch");

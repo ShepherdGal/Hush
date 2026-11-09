@@ -37,7 +37,7 @@ Hush is completely free, with no ads, no accounts, and no tracking. Your cleanup
 | Just run it, nothing installed | **[Hush-Portable.zip](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-Portable.zip)** | Unzip it anywhere you can write to (for example `D:\Hush\`), run `Hush-Portable.exe` and make a shortcut to it. |
 | Install it like a normal app | **[Hush-Setup.zip](https://github.com/ShepherdGal/Hush/releases/latest/download/Hush-Setup.zip)** | Unzip it and run `Hush-Setup.exe`. For your account only, no administrator rights. Adds a Start menu entry, an optional desktop shortcut and a Settings > Apps entry. |
 
-*Requires Windows 10 or 11 (64-bit) and the .NET 10 Desktop Runtime (Windows offers to download it if it is missing). Windows may display a warning because the app is not digitally signed: choose **More info > Run anyway**. Both versions update themselves from inside the app (click **Hush** > **Check for updates**). Each zip also holds the terms of use and the MIT license.*
+*Requires Windows 10 or 11 (64-bit); nothing else needs to be installed. Windows may display a warning because the app is not digitally signed: choose **More info > Run anyway**. Both versions update themselves from inside the app (click **Hush** > **Check for updates**). Each zip also holds the terms of use and the MIT license.*
 
 ## Use at your own risk
 

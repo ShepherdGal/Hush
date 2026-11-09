@@ -89,6 +89,17 @@ internal static class ScaleChecks
         check(!WindowsSystemTools.BuildComponentCleanupArguments().Contains("ResetBase", StringComparison.OrdinalIgnoreCase)
             && WindowsSystemTools.BuildComponentCleanupArguments().Contains("StartComponentCleanup"), "Component cleanup never uses /ResetBase");
 
+        check(WindowsSystemTools.BuildResetBaseArguments().Contains("/ResetBase") && WindowsSystemTools.BuildResetBaseArguments().Contains("StartComponentCleanup")
+            && WindowsSystemTools.BuildResetBaseArguments().StartsWith("/Online /Cleanup-Image"), "Deep component cleanup (/ResetBase) is its own DISM command, never part of the normal one");
+        string report = string.Join(" | ", "Windows Explorer Reported Size of Component Store : 7.31 GB", "Actual Size of Component Store : 6.95 GB", "    Shared with Windows : 4.89 GB", "    Backups and Disabled Features : 1.95 GB", "    Cache and Temporary Data : 112.12 MB", "Date of Last Cleanup : 2026-10-01 10:12:00", "Number of Reclaimable Packages : 3", "Component Store Cleanup Recommended : Yes");
+        long reclaim = WindowsSystemTools.ParseReclaimable(report);
+        check(Math.Abs(reclaim - (long)(1.95 * 1024 * 1024 * 1024 + 112.12 * 1024 * 1024)) < 1024 && WindowsSystemTools.ParseReclaimable("nothing useful") == -1,
+            "The component store analysis is read by its size lines (language independent) and anything else reads as unknown");
+        check(new SystemToolOffer("thumbnails", "Thumbnails", "t", "d", 0, SelectedByDefault: true).SelectedByDefault && !new SystemToolOffer("x", "Defender", "t", "d", 0).SelectedByDefault,
+            "Windows tools are opt-in unless the offer says otherwise (only Thumbnails, and only when Hush already runs as administrator)");
+        var summary = new CleanupResult(0, 5, 0, false, "x", SkipReasons: new Dictionary<string, int> { ["In use by a program right now"] = 4, ["Changed since the scan"] = 1 });
+        check(summary.SkipSummary == "4 in use by a program right now · 1 changed since the scan", "A clean says why files were skipped, in plain words with counts");
+
         // Audit log: the intent of a batch is on disk before its results, and results carry the measured outcome.
         string logRoot = Path.Combine(fixture, "audit-order");
         var paths = Enumerable.Range(0, 5).Select(i => Make(logRoot, $"a{i}.tmp")).ToArray();

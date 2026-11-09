@@ -134,6 +134,9 @@ static void RunChecks()
         ExpandedSafetyChecks.Run(fixture, Check);
         CategoryChecks.Run(fixture, Check);
         DiscoveryChecks.Run(fixture, Check);
+        ProcessChecks.RunEngine(fixture, Check);
+        AdminChecks.Run(fixture, Check);
+        WindowsUpdateChecks.RunEngine(fixture, Check);
         ScaleChecks.Run(fixture, Check);
         UiSizeChecks.Run(Check);
         ColorRuleChecks.Run(Check);

@@ -42,7 +42,7 @@ public partial class MainWindow
     {
         // The bar is full when the Safe junk reaches the cleanup threshold chosen in Smart Boost.
         ShowMeter(TempFill, TempText, TempFraction(reading.Bytes) * 100, reading.Files == 0 ? "0 B" : Sizes.Format(reading.Bytes), 100, milliseconds);
-        TempText.ToolTip = reading.Files == 0 ? "No Safe temporary files found" : $"{reading.Files:N0} Safe temporary files";
+        TempText.ToolTip = (reading.Files == 0 ? "No Safe temporary files are ready to clean." : $"{reading.Files:N0} Safe temporary files ({Sizes.Format(reading.Bytes)}) are ready to clean.");
     }
 
     // The Info card's one line normally reads the PC ("Everything looks light."); for a few seconds after a Boost it reports the result.
@@ -78,12 +78,16 @@ public partial class MainWindow
             boostCancellation?.Dispose();
             boostCancellation = new();
             var token = boostCancellation.Token;
+            // One bar for the whole Boost: the first half follows the files really cleaned, the second half fills over the memory stage's minimum time.
+            BoostSweep.Progress = 0;
             BoostSweep.IsRunning = true;
 
             // Stage 1: temporary files.
             BoostButton.Content = "Cleaning…";
             var clock = Stopwatch.StartNew();
-            var cleaned = await Task.Run(() => boostController.RunAutomaticBoost(token));
+            var cleanProgress = new Progress<double>(fraction => BoostSweep.Progress = 0.5 * fraction);
+            var cleaned = await Task.Run(() => boostController.RunAutomaticBoost(token, cleanProgress));
+            BoostSweep.Progress = 0.5;
             var after = await Task.Run(() => boostController.Measure(token));
             await Pace(clock);
             var tempText = new NumberTween { ValueChanged = value => TempText.Text = Sizes.Format((long)Math.Max(0, value)) };
@@ -95,6 +99,8 @@ public partial class MainWindow
 
             // Stage 2: memory.
             BoostButton.Content = "Freeing memory…";
+            BoostSweep.Progress = double.NaN;
+            BoostSweep.FillOver(BoostStageMinimum == TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : BoostStageMinimum + TimeSpan.FromMilliseconds(400), 0.95);
             clock.Restart();
             var memory = await Task.Run(() => memoryBooster.Release(token));
             await Pace(clock);
@@ -105,7 +111,8 @@ public partial class MainWindow
             await memoryText.RunAsync(beforePercent, afterPercent, (int)drain);
             MemoryText.Text = $"{afterPercent:0}%";
 
-            // Done: a short, soft glow on the button and a one-line result.
+            // Done: the bar arrives at full, then a short, soft glow on the button and a one-line result.
+            await BoostSweep.CompleteAsync();
             BoostSweep.IsRunning = false;
             BoostButton.Content = "Done";
             if (BoostDoneHold > TimeSpan.Zero) PulseBoostButton();

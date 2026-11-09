@@ -97,7 +97,8 @@ internal sealed record ScanProgress(string Location, int Examined, int Found, lo
 }
 // Items is empty for a count-only scan (background junk monitoring); FileCount and TotalBytes are always filled.
 // Stalled counts locations or Windows steps that stopped answering and were skipped so the scan could finish.
-internal sealed record ScanResult(List<CleanupItem> Items, int Inaccessible, int BusyCaches, bool Stopped, long FileCount = 0, long TotalBytes = 0, int Stalled = 0);
+// ProtectedFiles counts files in system-protected locations that qualify but could not be opened for deletion (in use, or needs administrator rights).
+internal sealed record ScanResult(List<CleanupItem> Items, int Inaccessible, int BusyCaches, bool Stopped, long FileCount = 0, long TotalBytes = 0, int Stalled = 0, int ProtectedFiles = 0);
 // Restricts or lightens a scan. Include picks targets (Quick Boost: Safe only); CountOnly measures without keeping items;
 // ReportIntervalMs slows progress reporting in low-resource mode; Background lowers the scanning thread to background CPU and disk priority.
 // StallMilliseconds: a location that produces nothing for this long is skipped (0 turns the watchdog off); StepTimeoutMilliseconds limits the registry and
@@ -109,6 +110,9 @@ internal sealed record CleanupResult(int Deleted, int Skipped, long Bytes, bool 
     IReadOnlyDictionary<string, int>? SkipReasons = null)
 {
     public long MeasuredFreed => Math.Max(0, FreeSpaceAfter - FreeSpaceBefore);
+    // Why files were skipped, in plain words with counts (for the result line): "12 in use by a program right now · 3 changed since the scan".
+    public string SkipSummary => SkipReasons == null || SkipReasons.Count == 0 ? ""
+        : string.Join(" · ", SkipReasons.OrderByDescending(pair => pair.Value).Take(3).Select(pair => $"{pair.Value:N0} {char.ToLowerInvariant(pair.Key[0])}{pair.Key[1..]}"));
 }
 
 public static class SafetyPalette

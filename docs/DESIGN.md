@@ -184,8 +184,8 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 
 ## Simple Info card, Boost animation, single update bar (0.8.1)
 
-- **Info card:** title and one short muted line on the left, the Boost button on the right of the same row (vertically centered on it, its right edge on the card's content edge, 42 high, min 124 wide); a hairline below (it becomes the Boost sweep while Boost runs); four slim vertical bars (Processor, Memory usage, Temporary files, System drive used) with a 21 SemiBold value and muted label. No notes, no last-check line, no links: those are tooltips. The old "Set up Smart Boost" link, memory note and result paragraph were removed.
-- **Boost sequence:** confirmation popup, then "Cleaning…" (single soft bar sweeps the hairline; the Temporary files bar and its number ease down together over 900 ms), then "Freeing memory…" (the Memory bar and percent ease down the same way), then "Done" with one soft glow pulse on the button and a result in the Info card's single line for 12 seconds. Stages stay at least 800 ms; "Done" rests 1.5 s.
+- **Info card:** title and one short muted line on the left, the Boost button on the right of the same row (vertically centered on it, its right edge on the card's content edge, 42 high, min 124 wide); a hairline below (it becomes the Boost loading bar (it fills from empty to full) while Boost runs); four slim vertical bars (Processor, Memory usage, Temporary files, System drive used) with a 21 SemiBold value and muted label. No notes, no last-check line, no links: those are tooltips. The old "Set up Smart Boost" link, memory note and result paragraph were removed.
+- **Boost sequence:** confirmation popup, then "Cleaning…" (one bar fills the hairline from empty, following the files really cleaned; the Temporary files bar and its number ease down together over 900 ms), then "Freeing memory…" (the Memory bar and percent ease down the same way), then "Done" with one soft glow pulse on the button and a result in the Info card's single line for 12 seconds. Stages stay at least 800 ms; "Done" rests 1.5 s.
 - **Update search:** one bar only (30% of the track), no second bar following it; the track is 5 px thick (was 4).
 
 ## Clean popup and Clean button (0.8.2)
@@ -195,3 +195,16 @@ The Clean confirmation ("Are you sure?") keeps its normal window and shows what 
 ## Home and Settings polish (0.8.3)
 
 Home: heading "Make more room to breathe." (period), gauge value 36 and label 18, status title 18 and the line under it 17. "Scan Completed" is plain text; below the details are two buttons of exactly the same size (140x40, text 18, padding 20,7): Take a look (`AccentOutlineButton`: Clean's shape and glow in the theme accent, fill `AccentFillBrush`) and Clean, 14 apart and centered. Settings: one compact line per Windows choice (switch, name with "?" popup, level dot), collapsible topic headings, a search box at the top of the Privacy card and an Actions menu in the footer (an outlined accent button like Take a look) (see CLAUDE.md, "Compact Settings").
+
+## Process card (after 0.8.3)
+
+A Settings card right after Info: title "Process", summary "In progress · N apps · memory" (updates while Settings is open). Opened, it lists apps like Windows' Process management: icon (letter placeholder if none), name, "Memory usage: 1.8 GB · 3 processes" and a plain End button (84x36). The list is rebuilt only when the card opens or Refresh is clicked so rows never jump under the pointer. End opens the shared consent popup ("End Zen?", action End on the left, Keep it open on the right).
+
+
+## 0.9 additions
+
+- **Loading bars:** `UpdateActivity` is the only loading line: a 5 px track with ONE bar that fills smoothly from empty to full (real progress for the download and the files Boost cleans; `FillOver` for the update check and freeing memory, completing only when the work is done). Never a travelling or sweeping bar.
+- **Review groups:** the page opens on three rows (green Safe, amber Review, red Advanced) in one panel, each with a dot, name, one sentence, "N items · M selected", a size chip and a chevron; a group opens its category list, Back returns. The traffic-light colors are the shared `SafetyPalette` text colors.
+- **Settings:** the Info card is full width; Process, Administrator and Interface size sit left, Smart Boost and Browser data right (one column below 700 DIP); long descriptions live in "?" popups. Windows Update is a red-titled card and, while off, a red line at the top (the one Clean red).
+- **Update popup (About):** "Hush", version, then the update status (text, Check/Update now, the filling bar), then "What's new in this version" (at most five one-line bullets), then the description, terms and Close. The header shows a green upright "There is a new update!" beside the wordmark only when a newer version exists.
+- **Hover:** `Motion.MouseOnly` (keyboard focus does not highlight: wordmark, Scan button) and `Motion.HoverLift` (how strongly a glow grows on hover; the Scan button uses it).

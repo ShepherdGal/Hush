@@ -7,14 +7,17 @@ namespace Hush;
 
 // Where an installed Hush lives. Everything is per user (no administrator rights, nothing machine-wide) and injectable,
 // so tests run against temp folders and a HKCU\Software\Hush.TestFixtures\<GUID> registry root, never the real PC.
-internal sealed record SetupLocations(string InstallDirectory, string StartMenuDirectory, string DesktopDirectory, string RegistryKey, string DataDirectory)
+internal sealed record SetupLocations(string InstallDirectory, string StartMenuDirectory, string DesktopDirectory, string RegistryKey, string DataDirectory, string AdminInstallDirectory = "")
 {
     internal static SetupLocations Default => new(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Hush"),
         Environment.GetFolderPath(Environment.SpecialFolder.Programs),
         Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Hush",
-        CleanupEngine.DataDirectory);
+        CleanupEngine.DataDirectory,
+        // Administrator mode (0.9) moves the installed copy to a folder only administrators can write to.
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Hush"));
+    internal string AdminExe => Path.Combine(AdminInstallDirectory, "Hush.exe");
     internal string InstalledExe => Path.Combine(InstallDirectory, "Hush.exe");
     internal string StartMenuShortcut => Path.Combine(StartMenuDirectory, "Hush.lnk");
     internal string DesktopShortcut => Path.Combine(DesktopDirectory, "Hush.lnk");
@@ -29,10 +32,12 @@ internal static class HushSetup
     private const string TempPrefix = ".hush-install-";
     internal static bool SamePath(string first, string second) =>
         string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase);
-    internal static bool IsInstalledCopy(string? exePath, SetupLocations locations) => exePath != null && SamePath(exePath, locations.InstalledExe);
+    internal static bool IsInstalledCopy(string? exePath, SetupLocations locations) => exePath != null && (SamePath(exePath, locations.InstalledExe) || IsAdminCopy(exePath, locations));
+    // The administrator-mode copy in the admin-only folder (Program Files\Hush).
+    internal static bool IsAdminCopy(string? exePath, SetupLocations locations) => exePath != null && locations.AdminInstallDirectory.Length > 0 && SamePath(exePath, locations.AdminExe);
     internal static bool IsInstalled(SetupLocations locations)
     {
-        if (!File.Exists(locations.InstalledExe)) return false;
+        if (!File.Exists(locations.InstalledExe) && !File.Exists(locations.AdminExe)) return false;
         using var key = Registry.CurrentUser.OpenSubKey(locations.RegistryKey);
         return key?.GetValue("UninstallString") is string;
     }
@@ -87,17 +92,19 @@ internal static class HushSetup
     }
 
     // Writes only Hush's own uninstall entry in the current user's hive (the entry Windows lists under Settings > Apps).
-    private static void Register(SetupLocations locations)
+    private static void Register(SetupLocations locations) => RegisterFor(locations, locations.InstalledExe, locations.InstallDirectory);
+
+    internal static void RegisterFor(SetupLocations locations, string exe, string directory)
     {
         using var key = Registry.CurrentUser.CreateSubKey(locations.RegistryKey, writable: true);
         key.SetValue("DisplayName", "Hush");
         key.SetValue("DisplayVersion", UpdateService.DisplayVersion);
         key.SetValue("Publisher", "Hush");
-        key.SetValue("InstallLocation", locations.InstallDirectory);
-        key.SetValue("DisplayIcon", locations.InstalledExe + ",0");
-        key.SetValue("UninstallString", $"\"{locations.InstalledExe}\" --uninstall");
+        key.SetValue("InstallLocation", directory);
+        key.SetValue("DisplayIcon", exe + ",0");
+        key.SetValue("UninstallString", $"\"{exe}\" --uninstall");
         key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
-        key.SetValue("EstimatedSize", (int)Math.Max(1, new FileInfo(locations.InstalledExe).Length / 1024), RegistryValueKind.DWord);
+        key.SetValue("EstimatedSize", (int)Math.Max(1, new FileInfo(exe).Length / 1024), RegistryValueKind.DWord);
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
@@ -112,23 +119,27 @@ internal static class HushSetup
             if (key.GetValue("DisplayVersion") is not string shown || shown != UpdateService.DisplayVersion)
             {
                 key.SetValue("DisplayVersion", UpdateService.DisplayVersion);
-                key.SetValue("EstimatedSize", (int)Math.Max(1, new FileInfo(locations.InstalledExe).Length / 1024), RegistryValueKind.DWord);
+                string exe = File.Exists(locations.AdminExe) && key.GetValue("InstallLocation") is string where && SamePath(where, locations.AdminInstallDirectory) ? locations.AdminExe : locations.InstalledExe;
+                key.SetValue("EstimatedSize", (int)Math.Max(1, new FileInfo(exe).Length / 1024), RegistryValueKind.DWord);
             }
         }
         catch { }
     }
 
-    internal static SetupResult Uninstall(SetupLocations locations, bool removeData, string? runningExe)
+    internal static SetupResult Uninstall(SetupLocations locations, bool removeData, string? runningExe, IAdminTaskScheduler? adminScheduler = null)
     {
         try
         {
             // A shortcut is removed only if it really points at this installation.
             foreach (string shortcut in new[] { locations.StartMenuShortcut, locations.DesktopShortcut })
-                if (File.Exists(shortcut) && ShortcutTarget(shortcut) is { } target && SamePath(target, locations.InstalledExe)) File.Delete(shortcut);
+                if (File.Exists(shortcut) && ShortcutTarget(shortcut) is { } target && (SamePath(target, locations.InstalledExe) || SamePath(target, locations.AdminExe))) File.Delete(shortcut);
+            // The administrator task and the Program Files copy go too (removing the task needs administrator rights, which the admin copy has).
+            if (adminScheduler != null) { try { adminScheduler.Remove(); } catch (IOException) { } }
             Registry.CurrentUser.DeleteSubKeyTree(locations.RegistryKey, throwOnMissingSubKey: false);
             if (removeData) RemoveData(locations.DataDirectory);
             if (IsInstalledCopy(runningExe, locations)) return new(true, "Hush was removed. The last files are deleted when this window closes.", Deferred: true);
             RemoveInstalledFiles(locations.InstallDirectory);
+            if (locations.AdminInstallDirectory.Length > 0) RemoveInstalledFiles(locations.AdminInstallDirectory);
             return new(true, "Hush was removed.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -155,19 +166,20 @@ internal static class HushSetup
     }
 
     // The running Hush.exe cannot delete itself, so a copy in a temp folder waits for it to exit, then removes the install folder.
-    internal static void StartDeferredRemoval(SetupLocations locations)
+    // which: "all" (uninstall), "user" (the per-user folder after moving to Program Files) or "admin" (the Program Files folder after moving back).
+    internal static void StartDeferredRemoval(SetupLocations locations, string? runningExe = null, string which = "all")
     {
         string helperDirectory = Path.Combine(Path.GetTempPath(), "hush-uninstall-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(helperDirectory);
         string helper = Path.Combine(helperDirectory, "Hush.exe");
-        File.Copy(locations.InstalledExe, helper, false);
+        File.Copy(runningExe != null && File.Exists(runningExe) ? runningExe : locations.InstalledExe, helper, false);
         using var process = Process.GetCurrentProcess();
         var start = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = helperDirectory };
-        start.ArgumentList.Add("--finish-uninstall"); start.ArgumentList.Add(process.Id.ToString());
+        start.ArgumentList.Add("--finish-uninstall"); start.ArgumentList.Add(process.Id.ToString()); start.ArgumentList.Add(which);
         Process.Start(start)?.Dispose();
     }
 
-    internal static async Task<int> FinishUninstallAsync(string processId)
+    internal static async Task<int> FinishUninstallAsync(string processId, string which = "all")
     {
         try
         {
@@ -178,7 +190,8 @@ internal static class HushSetup
                 || !SamePath(Path.GetDirectoryName(helperDirectory)!, Path.GetTempPath())) return 1;
             try { using var old = Process.GetProcessById(id); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60)); await old.WaitForExitAsync(timeout.Token); }
             catch (ArgumentException) { /* The window already closed. */ }
-            RemoveInstalledFiles(locations.InstallDirectory);
+            if (which is "all" or "user") RemoveInstalledFiles(locations.InstallDirectory);
+            if (which is "all" or "admin" && locations.AdminInstallDirectory.Length > 0) { try { RemoveInstalledFiles(locations.AdminInstallDirectory); } catch (UnauthorizedAccessException) { } }
             // Last step: remove this helper's own temp folder once this process has ended.
             Process.Start(new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true,
                 Arguments = $"/d /c ping 127.0.0.1 -n 3 >nul & rmdir /s /q \"{helperDirectory}\"" })?.Dispose();

@@ -20,8 +20,8 @@ public partial class MainWindow
     {
         string? self = Environment.ProcessPath;
         if (self == null) return false;
-        try { Process.Start(new ProcessStartInfo(self, arguments) { UseShellExecute = true, Verb = "runas" }); return true; }
-        catch (System.ComponentModel.Win32Exception) { return false; } // the person declined Windows' permission prompt
+        // Let go of the one-at-a-time lock first so the elevated copy can take it; it comes back if the person declines Windows' permission prompt.
+        return App.HandOver(() => AdminMode.Elevation.Launch(self, arguments, false, out _));
     }
     internal IReadOnlyList<AdjustmentChoice> AdjustmentChoices => adjustmentChoices;
 
@@ -133,6 +133,7 @@ public partial class MainWindow
     private void StageBulk(BulkLevel level)
     {
         ActionsPopup.IsOpen = false;
+        applyAllStaged = level == BulkLevel.All && !updateSwitch.IsOff; // only "all" offers Windows Update, and only with its own checkbox in the confirmation
         foreach (var choice in adjustmentChoices)
         {
             if (!choice.CanEdit) continue;
@@ -140,7 +141,7 @@ public partial class MainWindow
             if (include) choice.Selected = true;
         }
         if (adjustmentChoices.Count(choice => choice.CanEdit && choice.Selected != choice.Baseline.Enabled) == 0)
-        { WindowsSettingsStatus.Text = "Nothing to change: those settings are already on."; return; }
+        { WindowsSettingsStatus.Text = "Nothing to change: those settings are already on."; applyAllStaged = false; return; }
         ApplyWindowsSettings_Click(this, new RoutedEventArgs());
     }
     private void ActionRecommended_Click(object sender, RoutedEventArgs e) => StageBulk(BulkLevel.Recommended);
@@ -150,6 +151,7 @@ public partial class MainWindow
     {
         ActionsPopup.IsOpen = false;
         if (UndoWindowsSettingsButton.IsEnabled) UndoWindowsSettings_Click(sender, e);
+        else if (updateSwitch.IsOff) ShowUpdateConfirmation(UpdateAction.TurnOn); // only Windows Update was changed: undo that
         else WindowsSettingsStatus.Text = "Nothing to undo: Hush has not changed any Windows setting.";
     }
     private void UpdateWindowsChanges()
@@ -215,6 +217,19 @@ public partial class MainWindow
             ? "These changes need administrator rights. Choose Restart as administrator: Windows shows its own permission prompt, Hush reopens on this page and asks you to confirm once more. Nothing has been changed yet, and scan results on screen will be cleared."
             : RestartAdvice(plan).Text;
         WindowsConfirmNote.Visibility = Visibility.Visible;
+        // Before applying (not undoing) the popup offers a restore point; "Apply all settings" also offers its own checkbox for turning Windows Update off.
+        PrepareWindowsOptions(restore: !plan.Undo, alsoUpdate: applyAllStaged && !plan.Undo, consent: false);
+        if (!plan.Undo) RefreshRestoreOptions(restore: true, alsoUpdate: applyAllStaged, consent: false);
+        if (plan.Undo && updateSwitch.IsOff)
+        {
+            undoAlsoUpdate = true;
+            WindowsConfirmDetail.Text += "\n\nWindows Update is off because of Hush, so it will also be turned back on.";
+        }
+        OpenWindowsOverlay();
+    }
+
+    private void OpenWindowsOverlay()
+    {
         confirmationReturnFocus = Keyboard.FocusedElement;
         AppSurface.IsEnabled = false;
         BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
@@ -259,6 +274,8 @@ public partial class MainWindow
     private async Task HideWindowsSettingsConfirmation()
     {
         windowsPlan = null;
+        updateAction = UpdateAction.None; applyAllStaged = false; undoAlsoUpdate = false;
+        WindowsOptions.Visibility = Visibility.Collapsed;
         WindowsSettingsOverlay.IsEnabled = false;
         BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 0, 160));
         await Motion.FadeOut(WindowsSettingsOverlay);
@@ -271,12 +288,15 @@ public partial class MainWindow
     { if (!windowsSettingsBusy) await HideWindowsSettingsConfirmation(); }
     private async void ConfirmWindowsSettings_Click(object sender, RoutedEventArgs e)
     {
-        if (windowsSettingsBusy || windowsPlan == null || WindowsSettingsOverlay.Visibility != Visibility.Visible) return;
+        if (windowsSettingsBusy || WindowsSettingsOverlay.Visibility != Visibility.Visible) return;
+        if (updateAction != UpdateAction.None) { await ConfirmUpdateActionAsync(); return; }
+        if (windowsPlan == null) return;
         var plan = windowsPlan;
         windowsPlan = null; // One confirmation authorizes one immutable batch only.
+        bool alsoUpdateOff = AlsoUpdateOffBox.Visibility == Visibility.Visible && AlsoUpdateOffBox.IsChecked == true, alsoUpdateOn = undoAlsoUpdate && plan.Undo;
         windowsSettingsBusy = true;
         ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = false;
-        string outcome;
+        string outcome, extra = "";
         bool applied = false, keepStaged = false;
         try
         {
@@ -285,29 +305,38 @@ public partial class MainWindow
                 // Nothing is written here. The administrator copy of Hush re-stages the same choices and asks for this confirmation again.
                 string arguments = plan.Undo ? "--windows-undo"
                     : "--windows-review " + string.Join(",", plan.Changes.Select(change => (change.Target.Exists ? "+" : "-") + change.Id));
-                if (await Task.Run(() => ElevatedLauncher(arguments))) { ExitForRestart(); return; }
+                if (await Task.Run(() => ElevatedLauncher(arguments))) { windowsSettingsBusy = false; ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = true; ExitForRestart(); return; }
                 outcome = "Windows' permission prompt was declined or could not open, so nothing was changed. Your choices are still staged.";
                 keepStaged = true;
             }
             else
             {
+                string restoreNote = "";
+                if (!plan.Undo)
+                {
+                    var (error, note) = await EnsureRestorePointAsync();
+                    if (error != null) { outcome = error + " Nothing was changed. Untick \"Create a restore point first\" to continue without one."; keepStaged = true; goto finished; }
+                    restoreNote = note;
+                }
                 await Task.Run(() => windowsSettings.Execute(plan));
                 applied = true;
-                outcome = (plan.Undo ? "Tracked Windows values restored and verified. " : "Windows policy values saved and verified. Undo changes is available. ") + RestartAdvice(plan).Text;
+                if (alsoUpdateOff) extra = await RunUpdateSwitchAsync(turnOff: true);
+                else if (alsoUpdateOn) extra = await RunUpdateSwitchAsync(turnOff: false);
+                outcome = restoreNote + (plan.Undo ? "Tracked Windows values restored and verified. " : "Windows policy values saved and verified. Undo changes is available. ") + RestartAdvice(plan).Text;
             }
         }
         catch (Exception)
         { outcome = "Windows changes could not be completed. Review the refreshed state; any saved history is kept for recovery."; }
-        finally
-        {
-            windowsSettingsBusy = false;
-            ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = true;
-        }
+        finished:
+        windowsSettingsBusy = false;
+        ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = true;
+        RefreshWindowsUpdateState();
         if (applied)
         {
             LoadWindowsSettings();
             WindowsSettingsStatus.Text = outcome;
             ShowWindowsResult(plan);
+            if (extra.Length > 0) WindowsConfirmDetail.Text = extra + "\n\n" + WindowsConfirmDetail.Text;
             return;
         }
         await HideWindowsSettingsConfirmation();

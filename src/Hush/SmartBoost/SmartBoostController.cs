@@ -24,12 +24,14 @@ internal sealed class SmartBoostController(CleanupEngine engine)
 
     // Automatic Boost: scan the Safe categories and clean exactly what that scan found. Every delete is re-verified by the engine and logged.
     // Returns null when nothing was found or the scan was stopped (a partial scan is never cleaned).
-    public CleanupResult? RunAutomaticBoost(CancellationToken token)
+    // progress (optional): 0..1 of the files cleaned so far, for the Boost bar.
+    public CleanupResult? RunAutomaticBoost(CancellationToken token, IProgress<double>? progress = null)
     {
         using var background = LowResourceMode.BackgroundScope();
         var scan = engine.Scan(null, token, new(IsSafeTarget, Background: true));
         if (scan.Stopped) return null;
         var items = scan.Items.Where(item => item.Selected && item.Safety == SafetyLevel.Safe).ToList();
-        return items.Count == 0 ? null : engine.Clean(items, null, token);
+        if (items.Count == 0) return null;
+        return engine.Clean(items, progress == null ? null : new Progress<int>(done => progress.Report(Math.Min(1.0, done / (double)items.Count))), token);
     }
 }

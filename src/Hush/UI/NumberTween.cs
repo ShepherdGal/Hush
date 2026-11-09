@@ -21,6 +21,15 @@ internal sealed class NumberTween : Animatable
         var animation = new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(milliseconds)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop };
         animation.Completed += (_, _) => { Value = to; done.TrySetResult(); };
         BeginAnimation(ValueProperty, animation);
+        // WPF only ticks animations while something is being drawn; a window that is minimized (or not shown) could leave this roll waiting forever
+        // and with it the Boost sequence. A short watchdog finishes the roll at its final value so the work around it can always continue.
+        _ = Task.Delay(milliseconds + 400).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+        {
+            if (done.Task.IsCompleted) return;
+            BeginAnimation(ValueProperty, null);
+            Value = to;
+            done.TrySetResult();
+        }), TaskScheduler.Default);
         return done.Task;
     }
 }

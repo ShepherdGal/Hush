@@ -67,9 +67,11 @@ public partial class MainWindow : Window
 
     internal MainWindow(CleanupEngine engine, Func<IProgress<ScanProgress>?, CancellationToken, ScanResult>? scan = null, string? preferencesPath = null,
         Func<IUpdateClient>? updateFactory = null, Action<string, AppRelease>? installUpdate = null,
-        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null)
+        WindowsSettingsService? windowsSettings = null, StartupAppsService? startupApps = null, IMemoryBooster? memoryBooster = null, IProcessManager? processManager = null, WindowsUpdateSwitch? windowsUpdate = null)
     {
         this.memoryBooster = memoryBooster ?? new WindowsMemoryBooster();
+        this.processManager = processManager ?? new WindowsProcessManager();
+        updateSwitch = windowsUpdate ?? new WindowsUpdateSwitch(new RealWindowsUpdateSystem(), Path.Combine(CleanupEngine.DataDirectory, "Windows settings"));
         this.engine = engine;
         this.scan = scan == null ? engine.Scan : (progress, token, _) => scan(progress, token);
         this.updateFactory = updateFactory ?? (() => new UpdateService());
@@ -80,7 +82,7 @@ public partial class MainWindow : Window
         settingsPath = preferencesPath ?? Path.Combine(CleanupEngine.DataDirectory, "settings.json");
         InitializeComponent();
         var categoryView = CollectionViewSource.GetDefaultView(Categories);
-        categoryView.Filter = value => value is ReviewCategory { HasFiles: true };
+        categoryView.Filter = value => value is ReviewCategory { HasFiles: true } category && InOpenGroup(category);
         CategoriesList.ItemsSource = categoryView;
         foreach (var category in Categories)
         {
@@ -91,7 +93,6 @@ public partial class MainWindow : Window
         prefs = Preferences.Load(settingsPath);
         light = prefs.Light;
         InitializeUiSize();
-        InitializeTempAge();
         ApplyTheme();
         ResetGauge();
         RefreshSelection();
@@ -183,6 +184,7 @@ public partial class MainWindow : Window
     private void OpenResults_Click(object sender, RoutedEventArgs e)
     {
         if (!scanned || busy) return;
+        OpenReviewGroup(null); // Take a look always starts from the three groups
         ShowReviewPage(true);
         PrimaryButton.Focus();
     }
@@ -196,6 +198,7 @@ public partial class MainWindow : Window
         {
             ShowTermsOnStart();
             _ = Task.Run(() => UpdateInstaller.PruneStaging(UpdateInstaller.StagingRoot));
+            _ = RunQuietUpdateCheck();
         }
     }
 
@@ -253,9 +256,13 @@ public partial class MainWindow : Window
         if (busy || SettingsPage.Visibility == Visibility.Visible) return;
         settingsReturnToReview = ReviewPage.Visibility == Visibility.Visible;
         LoadWindowsSettings();
+        RefreshWindowsUpdateState();
+        ProbeRestorePoints();
+        RefreshAdminSwitch();
         LoadStartupApps();
         StartResourceIndicators();
         RefreshTempFiles();
+        RefreshProcesses(rebuildList: SettingsProcessSection.IsExpanded);
         Motion.EnterPage(MainContent, () =>
         {
             ScanPage.Visibility = ReviewPage.Visibility = Visibility.Collapsed;
@@ -263,6 +270,21 @@ public partial class MainWindow : Window
         });
         SettingsBackButton.Focus();
     }
+
+    // The Settings sections sit in two columns side by side; in a narrow window they stack into one.
+    private void SettingsScroll_SizeChanged(object sender, SizeChangedEventArgs e) => ApplySettingsColumns(e.NewSize.Width);
+
+    internal void ApplySettingsColumns(double width)
+    {
+        bool wide = width >= 700;
+        Grid.SetColumnSpan(SettingsLeftColumn, wide ? 1 : 2);
+        Grid.SetColumn(SettingsRightColumn, wide ? 1 : 0);
+        Grid.SetRow(SettingsRightColumn, wide ? 0 : 1);
+        Grid.SetColumnSpan(SettingsRightColumn, wide ? 1 : 2);
+        SettingsRightColumn.Margin = wide ? new Thickness(16, 0, 0, 0) : new Thickness(0);
+    }
+
+    internal bool SettingsInTwoColumns => Grid.GetColumn(SettingsRightColumn) == 1;
 
     private void SettingsBack_Click(object sender, RoutedEventArgs e)
     {
@@ -305,9 +327,54 @@ public partial class MainWindow : Window
         GaugeFinishGlow.BlurRadius = 12;
     }
 
+    // ----- Review: three color groups first, then the categories of the one that was opened (0.9) -----
+    private SafetyLevel? openGroup;
+    private readonly List<ReviewGroupSummary> reviewGroups = [];
+    internal SafetyLevel? OpenGroup => openGroup;
+    internal IReadOnlyList<ReviewGroupSummary> ReviewGroups => reviewGroups;
+    // Test seam only: the layout checks that inspect every category card at once show the whole list instead of the overview. The product never sets it.
+    internal static bool ReviewShowsAllByDefault;
+    internal bool ReviewShowsAllCategories { get; set; } = ReviewShowsAllByDefault;
+    private bool InOpenGroup(ReviewCategory category) => ReviewShowsAllCategories || openGroup == null || category.Safety == openGroup;
+    private void ApplyReviewView()
+    {
+        bool list = items.Count > 0 && (ReviewShowsAllCategories || openGroup != null);
+        CategoryListView.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+        ReviewGroupsView.Visibility = items.Count > 0 && !list ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private IEnumerable<ReviewCategory> VisibleCategories => Categories.Where(category => category.HasFiles && InOpenGroup(category));
+
+    internal void OpenReviewGroup(SafetyLevel? level)
+    {
+        openGroup = level;
+        CollectionViewSource.GetDefaultView(Categories).Refresh();
+        ApplyReviewView();
+        ReviewScroll.ScrollToTop();
+        RefreshSelection();
+    }
+
+    private void ReviewGroup_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: ReviewGroupSummary group } && !busy) { OpenReviewGroup(group.Level); Motion.Reveal(CategoryListView); }
+    }
+
+    // Three rows at most; recomputed from the categories' own running totals (never by looping the files).
+    private void UpdateReviewGroups()
+    {
+        if (reviewGroups.Count == 0)
+            foreach (var level in new[] { SafetyLevel.Safe, SafetyLevel.Review, SafetyLevel.Advanced }) reviewGroups.Add(new ReviewGroupSummary(level));
+        foreach (var group in reviewGroups) group.Update(Categories.Where(category => category.Safety == group.Level && category.HasFiles).ToList(), light);
+        var shown = reviewGroups.Where(group => group.HasItems).ToList();
+        if (ReviewGroupsList.ItemsSource is not List<ReviewGroupSummary> current || !current.SequenceEqual(shown)) ReviewGroupsList.ItemsSource = shown;
+        // A group that no longer has anything (after cleaning) closes back to the overview.
+        if (openGroup != null && !reviewGroups.Any(group => group.Level == openGroup && group.HasItems)) OpenReviewGroup(null);
+    }
+
     private void Back_Click(object sender, RoutedEventArgs e)
     {
         if (busy) return;
+        // Inside a group, Back returns to the three groups; from the groups it leaves Review.
+        if (openGroup != null && ReviewPage.Visibility == Visibility.Visible) { OpenReviewGroup(null); Motion.Reveal(ReviewGroupsView); return; }
         Headline.Text = "Make more room to breathe.";
         GaugeValue.Text = $"{Math.Floor(GaugePercent):0}%";
         GaugeLabel.Text = scanned ? "Click to scan again" : "Click to scan";
@@ -399,11 +466,16 @@ public partial class MainWindow : Window
             GaugeLabel.Text = "Click to scan again";
             StatusTitle.Text = stopped ? "Scan stopped. Review partial results." : items.Count == 0 ? (scanSkippedLocations ? "No cleanup items found." : "Everything looks clean.") : "Scan Completed";
             var notes = new List<string>();
-            if (result.BusyCaches > 0) notes.Add("caches of open apps skipped");
+            if (result.BusyCaches > 0) notes.Add("locations in use (an open app, or Windows installing an update) skipped");
+            // System-protected files that qualify but cannot be opened for deletion: administrator mode reaches most of them; the rest are simply in use.
+            if (result.ProtectedFiles > 0)
+                notes.Add(AdminMode.Elevation.IsElevated ? $"{result.ProtectedFiles:N0} system files are in use right now and were left alone"
+                    : $"{result.ProtectedFiles:N0} system files can only be cleaned in administrator mode (Settings > Administrator) or are in use");
             if (result.Inaccessible > 0) notes.Add($"{result.Inaccessible:N0} inaccessible paths skipped");
             if (result.Stalled > 0) notes.Add($"{result.Stalled:N0} location{(result.Stalled == 1 ? "" : "s")} did not respond and {(result.Stalled == 1 ? "was" : "were")} skipped (see Logs\\scan-issues.log)");
+            if (CleanupEngine.UserLocationsSkipped) notes.Add("Hush is running as a different Windows account than yours, so only system locations were scanned; your own folders are cleaned only when Hush runs as you");
             if (foundRegistry > 0) notes.Add("registry entries are opt-in");
-            StatusDetail.Text = FoundSummary();
+            StatusDetail.Text = FoundSummary() + (result.ProtectedFiles > 0 && !AdminMode.Elevation.IsElevated ? $" · {result.ProtectedFiles:N0} more need administrator mode" : "");
             ResultCount.ToolTip = notes.Count > 0 ? string.Join(" · ", notes) : null;
         }
         catch (OperationCanceledException) when (cancellation?.IsCancellationRequested == true)
@@ -448,15 +520,20 @@ public partial class MainWindow : Window
     }
 
     private void HomeClean_Click(object sender, RoutedEventArgs e)
-    { if (CanClean) ShowConfirmation(); }
+    { if (CanClean) ShowConfirmation(fromHome: true); }
 
-    private void ShowConfirmation()
+    private void ShowConfirmation(bool fromHome = false)
     {
         if (!CanClean) return;
         confirmedItems = items.Where(x => x.Selected).ToArray();
         if (confirmedItems.Length == 0) return;
         ConfirmSummary.Text = $"Clean {confirmedItems.Length:N0} selected items and free {Sizes.Format(confirmedItems.Sum(x => x.Bytes))}?";
         ConfirmDetail.Text = ConfirmationText(confirmedItems);
+        // From Home, Clean only touches what was selected by default (the green Safe items); say so once, plainly.
+        ConfirmHomeNote.Text = confirmedItems.All(x => x.Safety == SafetyLevel.Safe)
+            ? "Cleans only the green, recommended items. Use Take a look to choose more."
+            : "Includes the extra items you chose in Take a look.";
+        ConfirmHomeNote.Visibility = fromHome ? Visibility.Visible : Visibility.Collapsed;
         BuildConfirmGroups(confirmedItems);
         // Advanced (red) items are irreversible or recovery-related: the clean button stays off until the person ticks the consent box.
         bool advanced = confirmedItems.Any(x => x.Safety == SafetyLevel.Advanced);
@@ -570,7 +647,8 @@ public partial class MainWindow : Window
         });
         try
         {
-            var result = await Task.Run(() => engine.Clean(selected, progress, cancellation!.Token));
+            var toolNote = new Progress<string>(text => { if (busy) StatusDetail.Text = text; });
+            var result = await Task.Run(() => engine.Clean(selected, progress, cancellation!.Token, toolNote));
             RemoveDeleted();
             foreach (var item in selected) if (item.Outcome != "Deleted") item.Selected = false;
             if (!result.Stopped) await CompleteGauge();
@@ -579,7 +657,7 @@ public partial class MainWindow : Window
             // The claim comes from the items; the measurement comes from Windows' own free-space figure for the fixed drives.
             string measured = result.MeasuredFreed > 0 ? $" · disk reports {Sizes.Format(result.MeasuredFreed)} more free" : "";
             StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed{measured} · {result.Deleted:N0} cleaned · {result.Skipped:N0} skipped";
-            StatusDetail.Text = FoundSummary();
+            StatusDetail.Text = FoundSummary() + (result.Skipped > 0 && result.SkipSummary.Length > 0 ? " · skipped: " + result.SkipSummary : "");
             lastCleanResult = result;
         }
         catch (Exception ex)
@@ -717,14 +795,14 @@ public partial class MainWindow : Window
 
     private void CollapseAll_Click(object sender, RoutedEventArgs e)
     {
-        bool expand = !Categories.Where(category => category.HasFiles).All(category => category.Expanded);
-        foreach (var category in Categories) category.Expanded = category.HasFiles && expand;
+        bool expand = !VisibleCategories.All(category => category.Expanded);
+        foreach (var category in Categories) category.Expanded = category.HasFiles && InOpenGroup(category) && expand;
         UpdateSectionToggle();
     }
 
     private void UpdateSectionToggle()
     {
-        bool expanded = Categories.Any(category => category.HasFiles) && Categories.Where(category => category.HasFiles).All(category => category.Expanded);
+        bool expanded = VisibleCategories.Any() && VisibleCategories.All(category => category.Expanded);
         SectionToggleLabel.Text = expanded ? "Collapse all" : "Expand all";
         CollapseAllButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, SectionToggleLabel.Text);
         SectionToggleRotation.BeginAnimation(RotateTransform.AngleProperty, Motion.Tween(SectionToggleRotation.Angle, expanded ? 180 : 0, 240));
@@ -770,8 +848,12 @@ public partial class MainWindow : Window
         SelectAllBox.IsEnabled = CanSelectCandidates && items.Count > 0;
         SelectAllBox.Visibility = CanSelectCandidates ? Visibility.Visible : Visibility.Hidden;
         ReadOnlyResultsLabel.Visibility = CanSelectCandidates ? Visibility.Collapsed : Visibility.Visible;
-        SelectAllBox.IsChecked = items.Count == 0 || selected == 0 ? false : selected == items.Count ? true : null;
+        // Select all covers the categories on screen (the opened group), so a group can be ticked without touching the others.
+        int scopeSelected = VisibleCategories.Sum(category => category.SelectedCount), scopeTotal = VisibleCategories.Sum(category => category.Files.Count);
+        SelectAllBox.IsChecked = scopeTotal == 0 || scopeSelected == 0 ? false : scopeSelected == scopeTotal ? true : null;
         bool hasItems = items.Count > 0;
+        UpdateReviewGroups();
+        ApplyReviewView();
         CategorySurface.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
         ReviewEmptyState.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
         SelectionDetails.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
@@ -821,7 +903,7 @@ public partial class MainWindow : Window
     {
         bool selected = SelectAllBox.IsChecked == true;
         batchSelection = true;
-        try { foreach (var category in Categories) if (category.HasFiles) category.Selected = selected; }
+        try { foreach (var category in VisibleCategories.ToList()) category.Selected = selected; }
         finally { batchSelection = false; }
         RefreshSelection();
     }
@@ -850,6 +932,7 @@ public partial class MainWindow : Window
         Set("CleanFillBrush", "#08FF795C");
         Set("AccentFillBrush", "#08" + SafetyPalette.Accent(light).TrimStart('#'));
         foreach (var category in Categories) category.SetTheme(light);
+        UpdateReviewGroups();
         ThemeSunCore.Opacity = light ? 1 : 0.3;
         ThemeSunRays.Opacity = light ? 1 : 0.55;
         ThemeButton.ToolTip = light ? "Switch to dark theme" : "Switch to light theme";
@@ -875,39 +958,38 @@ public partial class MainWindow : Window
         AppSurface.IsEnabled = false;
         BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 7, 280));
         AboutOverlay.Visibility = Visibility.Visible;
-        AboutUpdatesBody.Visibility = Visibility.Collapsed;
-        AboutUpdatesBody.Expanded = false;
-        AboutUpdatesButton.Content = "Release notes";
-        AboutUpdatesButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Show release notes");
-        PatchNotesHeading.Text = $"Installed release {UpdateService.DisplayVersion}";
+        PatchNotesHeading.Text = "What's new in this version";
         PatchNotes.Text = ReleaseNotes.Current;
         SetUpdateStatus("Check for the latest release.");
-        UpdateDetailsScroll.ScrollToTop();
         Motion.Reveal(AboutOverlay);
         CloseAboutButton.Focus();
     }
 
-    private void RevealUpdateDetails()
+    // ----- The quiet update notice beside the wordmark (0.9) -----
+    // One silent check at start (anonymous, nothing downloaded). Only a newer version shows the green line; up to date, offline or any failure shows nothing.
+    internal async Task RunQuietUpdateCheck()
     {
-        AboutUpdatesBody.Visibility = Visibility.Visible;
-        AboutUpdatesBody.Expanded = true;
-        AboutUpdatesButton.Content = "Hide details";
-        AboutUpdatesButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Hide release details");
-        UpdateDetailsScroll.ScrollToTop();
+        try
+        {
+            using var service = updateFactory();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            var release = await Task.Run(() => service.CheckAsync(timeout.Token), timeout.Token);
+            if (release == null || closing) return;
+            UpdateNoticeButton.Visibility = Visibility.Visible;
+            UpdateNoticeButton.BeginAnimation(OpacityProperty, Motion.Tween(0, 1, 320));
+        }
+        catch { /* offline or unavailable: nothing to say */ }
+    }
+
+    // Clicking the notice opens the update popup and runs the check there (with the filling bar); nothing downloads before the person agrees.
+    private void UpdateNotice_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || AboutOverlay.Visibility == Visibility.Visible) return;
+        About_Click(sender, e);
+        if (AboutOverlay.Visibility == Visibility.Visible) CheckUpdate_Click(CheckUpdateButton, e);
     }
 
     private async void CloseAbout_Click(object sender, RoutedEventArgs e) => await HideAbout();
-
-    private void AboutUpdates_Click(object sender, RoutedEventArgs e)
-    {
-        if (!AboutUpdatesBody.Expanded) RevealUpdateDetails();
-        else
-        {
-            AboutUpdatesBody.Expanded = false;
-            AboutUpdatesButton.Content = "Release notes";
-            AboutUpdatesButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Show release notes");
-        }
-    }
 
     private void ClearUpdateSession()
     {
@@ -935,7 +1017,6 @@ public partial class MainWindow : Window
         if (value) UpdateSweep.Progress = double.NaN; // Indeterminate until a download reports real progress.
         UpdateSweep.IsRunning = value;
         CancelUpdateButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
-        AboutUpdatesButton.IsEnabled = !value;
         CheckUpdateButton.IsEnabled = !value;
         CheckUpdateButton.Content = availableRelease == null ? "Check for updates" : "Update now";
         CheckUpdateButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, availableRelease == null ? "Check for updates" : "Update now: download and install the update");
@@ -945,7 +1026,6 @@ public partial class MainWindow : Window
     {
         ClearUpdateSession();
         AboutOverlay.IsEnabled = false;
-        AboutUpdatesBody.Expanded = false;
         BackgroundBlur.BeginAnimation(BlurEffect.RadiusProperty, Motion.Tween(BackgroundBlur.Radius, 0, 160));
         await Motion.FadeOut(AboutOverlay);
         AboutOverlay.Visibility = Visibility.Collapsed;
@@ -961,7 +1041,6 @@ public partial class MainWindow : Window
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
     {
         if (updateBusy) return;
-        RevealUpdateDetails();
         // Installing replaces the running app and restarts it, so it is only ever done after an explicit "Are you sure".
         if (availableRelease != null)
         {
@@ -984,6 +1063,7 @@ public partial class MainWindow : Window
             {
                 UpdateHint.Visibility = Visibility.Collapsed;
                 SetUpdateStatus("Looking for a newer version…");
+                UpdateSweep.FillOver(MinimumUpdateCheck < TimeSpan.FromMilliseconds(3500) ? TimeSpan.FromMilliseconds(3500) : MinimumUpdateCheck); // no real progress exists: the bar fills over the minimum check time and completes with the answer
                 // Even when the answer is instant, the search animation plays for a calm, readable moment (cancel still stops it at once).
                 var checkClock = Stopwatch.StartNew();
                 AppRelease? release;
@@ -994,6 +1074,8 @@ public partial class MainWindow : Window
                     if (remaining > TimeSpan.Zero && !operation.IsCancellationRequested) await Task.Delay(remaining, operation.Token);
                 }
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
+                await UpdateSweep.CompleteAsync(); // the answer is really in: the bar arrives at full
+                if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 availableRelease = release;
                 if (release == null) SetUpdateStatus($"You're up to date. Installed version {UpdateService.DisplayVersion}.", good: true);
                 else
@@ -1002,8 +1084,8 @@ public partial class MainWindow : Window
                     UpdateHint.Text = "Update now downloads it securely, checks it and restarts Hush to finish. Your current version is kept as a backup.";
                     UpdateHint.Visibility = Visibility.Visible;
                     UpdateHint.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
-                    PatchNotesHeading.Text = $"Release notes - {UpdateService.Display(release.Version)}";
-                    PatchNotes.Text = PlainReleaseNotes(release.Notes);
+                    PatchNotesHeading.Text = $"What's new in {UpdateService.Display(release.Version)}";
+                    PatchNotes.Text = ReleaseNotes.InBrief(release.Notes);
                     PatchNotesPanel.BeginAnimation(OpacityProperty, Motion.Tween(0, 1));
                 }
             }
@@ -1021,7 +1103,7 @@ public partial class MainWindow : Window
                 string staged = await service.DownloadAsync(release, progress, operation.Token);
                 if (!IsCurrentAbout(session) || operation.IsCancellationRequested) return;
                 // The download is verified (size, SHA-256, Windows x64 identity and version) before anything is replaced.
-                UpdateSweep.Progress = double.NaN;
+                UpdateSweep.Progress = 1;
                 SetUpdateStatus("Verified. Restarting to finish the update…");
                 try
                 {

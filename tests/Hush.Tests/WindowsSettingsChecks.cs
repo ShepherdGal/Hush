@@ -38,6 +38,7 @@ internal static class WindowsSettingsChecks
         Require(perUser.All(id => !Definition(id).Machine) && perDevice.All(id => Definition(id).Machine) && perUser.Length + perDevice.Length == catalog.Count && perDevice.Length >= 11,
             "Office and per-user choices write only the current user; every other choice is device-wide and marked administrator-only");
         // ShutUp10++-style levels: only recommended and somewhat recommended exist. Nothing that would be "not recommended" is offered.
+        // "Turn off Windows Update" is deliberately NOT a catalog choice (0.9): it is its own red module (WindowsUpdateSwitch) with consent, saved originals and Undo.
         string[] never = ["camera", "microphone", "location-access", "defender", "smartscreen", "windows-update", "store", "onedrive", "biometrics", "firewall", "uac"];
         Require(never.All(word => !catalog.Any(item => item.Id.Contains(word, StringComparison.OrdinalIgnoreCase) || item.Key.Contains(word, StringComparison.OrdinalIgnoreCase)
                 && !item.Key.Contains("WindowsUpdate\\AU", StringComparison.OrdinalIgnoreCase))),
@@ -237,7 +238,8 @@ internal static class WindowsSettingsChecks
             window.SetAllTopicsExpanded(true); Wait(420); Layout(new Size(920, 820));
             ScrollToSearch(); Wait(150); Layout(new Size(920, 820));
             Capture(root, "settings-topics-open-dark");
-            var helps = Descendants<HelpMark>(root).ToList();
+            // Only the Windows choices (other Settings sections may carry their own "?" popups too).
+            var helps = Descendants<HelpMark>((DependencyObject)window.FindName("PrivacyAdjustments")).Concat(Descendants<HelpMark>((DependencyObject)window.FindName("AdvancedAdjustments"))).ToList();
             Require(helps.Count == WindowsSettingsService.Catalog.Count && helps.All(help => help.HelpText.Length > 20), $"Every choice has a \"?\" with its explanation ({helps.Count} found)");
             var firstHelp = helps[0];
             var invoke = (System.Windows.Automation.Provider.IInvokeProvider)new System.Windows.Automation.Peers.ButtonAutomationPeer(firstHelp).GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke);
@@ -327,7 +329,9 @@ internal static class WindowsSettingsChecks
                 Click(menuButton); Wait(340);
             }
             IReadOnlyList<AdjustmentChoice> Choices() => window.AdjustmentChoices; // the list is replaced by every refresh
+            var alsoUpdate = (FrameworkElement)window.FindName("AlsoUpdateOffBox"); var restoreBox = (FrameworkElement)window.FindName("RestorePointBox");
             Bulk("ActionRecommendedButton");
+            Require(restoreBox.Visibility == Visibility.Visible && alsoUpdate.Visibility == Visibility.Collapsed, "Apply only recommended offers a restore point and never offers to turn Windows Update off");
             Require(overlay.Visibility == Visibility.Visible && store.Writes == before && !((Popup)window.FindName("ActionsPopup")).IsOpen
                 && Choices().Where(choice => !choice.Advanced && choice.TakesEffect && choice.CanEdit).All(choice => choice.Selected)
                 && Choices().Where(choice => choice.Advanced).All(choice => !choice.Selected), "Apply only recommended settings stages the green choices and asks for confirmation");
@@ -339,7 +343,13 @@ internal static class WindowsSettingsChecks
                 && Choices().Where(choice => !choice.TakesEffect && choice.CanEdit).All(choice => !choice.Selected), "Recommended and somewhat recommended stages both levels but skips choices this edition ignores");
             Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
             Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));
+            Bulk("ActionSomewhatButton");
+            Require(alsoUpdate.Visibility == Visibility.Collapsed, "The amber action never offers Windows Update either");
+            Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
+            Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));
             Bulk("ActionAllButton");
+            Require(alsoUpdate.Visibility == Visibility.Visible && ((CheckBox)alsoUpdate).IsChecked == false && ((CheckBox)alsoUpdate).Tag is SolidColorBrush clean && clean.Color == ((SolidColorBrush)Application.Current.Resources["CleanTextBrush"]).Color,
+                "Apply all settings adds its own red, unticked checkbox for turning Windows Update off");
             Require(overlay.Visibility == Visibility.Visible && Choices().Where(choice => choice.CanEdit).All(choice => choice.Selected) && store.Writes == before, "Apply all settings stages every available choice and still only asks");
             Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
             Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));

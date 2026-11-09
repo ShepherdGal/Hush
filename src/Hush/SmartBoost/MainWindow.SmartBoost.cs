@@ -221,6 +221,7 @@ public partial class MainWindow
     private void StopResourceIndicators() => resourceTimer?.Stop();
 
     private ResourceSnapshot lastSample;
+    private int processTick;
 
     private void ResourceTick(object? sender, EventArgs e)
     {
@@ -231,6 +232,7 @@ public partial class MainWindow
         ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{sample.DiskUsedPercent:0}%", ResourceSnapshot.Full);
         DiskText.ToolTip = $"{Sizes.Format(sample.DiskFree)} free of {Sizes.Format(sample.DiskTotal)} on the system drive";
         lastSample = sample;
+        if (++processTick % 3 == 0) RefreshProcesses(rebuildList: false); // the app count follows along while Settings is open
         if (DateTime.UtcNow >= infoNoteUntilUtc)
         {
             InfoSummary.Text = sample.Headline;

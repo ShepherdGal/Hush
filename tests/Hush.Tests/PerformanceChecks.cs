@@ -38,6 +38,25 @@ internal static class PerformanceChecks
         return 0;
     }
 
+    // Read-only: the apps the Process card would list on this PC (never ends anything).
+    internal static int ProcessReport()
+    {
+        var clock = Stopwatch.StartNew();
+        var apps = new WindowsProcessManager().List();
+        Console.WriteLine($"{apps.Count} apps with a window, {Sizes.Format(apps.Sum(app => app.MemoryBytes))} together, listed in {clock.ElapsedMilliseconds} ms");
+        foreach (var app in apps) Console.WriteLine($"   {app.Name,-34} {Sizes.Format(app.MemoryBytes),10}  {app.ProcessCount,3} processes  {app.Path}");
+        return 0;
+    }
+
+    // Read-only: what the Info card's Temporary files meter and each Temporary files limit find on this PC right now.
+    internal static int MeterReport()
+    {
+        var controller = new SmartBoostController(new CleanupEngine());
+        var reading = controller.Measure(CancellationToken.None);
+        Console.WriteLine($"Meter: {Sizes.Format(reading.Bytes)} in {reading.Files:N0} files ready (Temp category, any age)");
+        return 0;
+    }
+
     internal static int ScanReport()
     {
         var engine = new CleanupEngine();

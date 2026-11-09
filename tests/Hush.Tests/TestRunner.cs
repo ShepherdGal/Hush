@@ -2,6 +2,10 @@ internal static class TestRunner
 {
     internal static int Run(string[] args, Action checks)
     {
+        // Most layout checks inspect every category card at once, so test windows show the whole list; ReviewGroupChecks switches the groups back on.
+        Hush.MainWindow.ReviewShowsAllByDefault = true;
+        // No test may ever make a real restore point: every window uses the fake unless a check swaps in its own.
+        Hush.MainWindow.RestorePoints = new FakeRestorePoints();
         try
         {
             if (args.Length == 0) checks();
@@ -20,6 +24,8 @@ internal static class TestRunner
             else if (args is ["--scan-report"]) return PerformanceChecks.ScanReport();
             else if (args is ["--windows-report"]) return PerformanceChecks.WindowsReport();
             else if (args is ["--target-report"]) return PerformanceChecks.TargetReport();
+            else if (args is ["--process-report"]) return PerformanceChecks.ProcessReport();
+            else if (args is ["--meter-report"]) return PerformanceChecks.MeterReport();
             else throw new ArgumentException("Unknown test arguments.");
             return 0;
         }
