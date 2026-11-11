@@ -225,7 +225,7 @@ internal static class ServiceChecks
             var headers = TopicHeaders((DependencyObject)bigWindow.FindName("ServicesList")).ToList();
             check(headers.Count >= 8 && headers.All(header => header.IsChecked != true), "Opening the Services card opens nothing inside it: every sub-category starts closed");
             var topicRanks = bigWindow.ServiceChoices.Select(choice => ServiceTuning.TopicRank(choice.Candidate.Topic)).ToList();
-            check(topicRanks.SequenceEqual(topicRanks.Order()) && bigWindow.ServiceChoices.All(choice => choice.On),
+            check(topicRanks.SequenceEqual(topicRanks.Order()) && bigWindow.ServiceChoices.All(choice => !choice.On),
                 "The services are in order (topics in their fixed order, left-behind last) and every switch starts ON, because every service is enabled right now");
             // Opening a sub-category, closing the card and opening it again shows everything closed again.
             headers[0].IsChecked = true; UiLayoutChecks.Wait(100);
@@ -245,6 +245,12 @@ internal static class ServiceChecks
             var root = (FrameworkElement)window.Content;
             void Click(string name) => ((Button)window.FindName(name)).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             string Text(string name) => ((TextBlock)window.FindName(name)).Text;
+            // After the one review is confirmed, the same popup reports what happened; this closes it with OK.
+            void DismissResult()
+            {
+                UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible && Text("ConsentTitle") is "Changes applied" or "Some changes were not made"); UiLayoutChecks.Wait(340);
+                Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Collapsed);
+            }
             Click("SettingsButton"); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning);
             check(Text("ServicesSummary").StartsWith("Open to see"), "Before its card is opened the Services summary says so instead of scanning");
             ((Expander)window.FindName("SettingsServicesSection")).IsExpanded = true;
@@ -256,16 +262,17 @@ internal static class ServiceChecks
             double Bottom(FrameworkElement e) => e.TransformToAncestor(root).TransformBounds(new Rect(e.RenderSize)).Bottom;
             check(Text("ServicesSummary").StartsWith("5 services you can turn off") && window.ServiceChoices.Select(choice => choice.Title).Contains("Fax"),
                 "The Services card reads the PC and says how many services start with Windows and are rarely needed (no speed claim)");
-            check(services.IsDescendantOf(right) && Top(services) >= Bottom(browser) - 0.5 && !update.IsDescendantOf(left) && !update.IsDescendantOf(right) && Math.Abs(Bottom(left) - Bottom(right)) < 30 && Top(update) >= Bottom(left),
-                "Services sits under Browser data, so the two columns have three cards each and end at the same height (no empty space)");
+            check(!services.IsDescendantOf(left) && !services.IsDescendantOf(right) && Top(services) >= Math.Max(Bottom(left), Bottom(right)) - 0.5 && !update.IsDescendantOf(left) && !update.IsDescendantOf(right)
+                && Math.Abs(Bottom(left) - Bottom(right)) < 30 && Top(update) >= Bottom(services),
+                "Services is a big, full-width card under the two columns (two cards each, ending at the same height: no empty space), before Windows Update");
             ((Expander)services).IsExpanded = true; UiLayoutChecks.Wait(360); UiLayoutChecks.Layout(root, new Size(920, 820));
-            var review = (Button)window.FindName("ServicesReviewButton");
+            var review = (Button)window.FindName("ApplyWindowsSettingsButton"); // the ONE Review changes button at the bottom of Settings
             check(!review.IsEnabled && window.ServiceChoices.All(choice => !choice.Selected), "Nothing is selected by default, so nothing can be changed yet");
             var fax = window.ServiceChoices.Single(choice => choice.Name == "Fax");
-            check(fax.On && fax.Status.StartsWith("Starts with Windows"), "A service that is enabled shows its switch ON and when it starts");
-            fax.On = false; // the person switches it OFF
-            check(fax.Selected && !fax.On && fax.Status.StartsWith("Will be turned off after you review"), "Switching a service OFF stages a change and says what will happen to it");
-            check(review.IsEnabled && review.Content?.ToString() == "Review 1 change…", "Choosing a service enables Review");
+            check(!fax.On && fax.Status.StartsWith("Starts with Windows"), "A service nobody has chosen shows its switch OFF and when it starts");
+            fax.On = true; // the person switches it ON (= turn this service off, like ShutUp10)
+            check(fax.Selected && fax.On && fax.Status.StartsWith("Will be turned off after you review"), "Switching a service ON stages a change and says what will happen to it");
+            check(review.IsEnabled && review.Content?.ToString() == "Review 1 change", "Choosing a service enables the one Review changes button and counts it");
             if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string shots) { Directory.CreateDirectory(shots); UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, "services-card-dark.png")); }
             // Without administrator rights the same button asks to restart as administrator, and nothing is changed until then.
             pc.Admin = false;
@@ -273,25 +280,43 @@ internal static class ServiceChecks
             MainWindow.ElevatedLauncher = argument => { launched.Add(argument); return true; }; MainWindow.ExitForRestart = () => launched.Add("exit");
             try
             {
-                Click("ServicesReviewButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
-                check(Text("ConsentTitle") == "Change 1 service?" && Text("ConsentText").Contains("Fax") && ((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Restart as administrator"
+                Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+                check(Text("ConsentTitle") == "Apply 1 change?" && Text("ConsentText").Contains("Services to turn off (1)") && Text("ConsentText").Contains("Fax") && ((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Restart as administrator"
                     && pc.Calls.Count == 0, "Review lists exactly what will change and, without administrator rights, offers Restart as administrator");
                 Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => launched.Count == 2);
-                check(launched.SequenceEqual(["--services", "exit"]) && pc.Calls.Count == 0, "Restart as administrator relaunches Hush for the Services card and changes nothing itself");
+                check(launched.Count == 2 && launched[0].StartsWith("--review-all ") && System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(launched[0]["--review-all ".Length..])).Contains("Fax") && launched[1] == "exit" && pc.Calls.Count == 0,
+                    "Restart as administrator relaunches Hush for the one review with the same choices and changes nothing itself");
             }
             finally { MainWindow.ElevatedLauncher = oldLauncher; MainWindow.ExitForRestart = oldExit; }
             // With administrator rights: confirm, change, report, Undo.
             pc.Admin = true;
-            Click("ServicesReviewButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
-            check(((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Change them", "With administrator rights the action is Change them");
+            Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+            check(((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Apply changes", "With administrator rights the action is Apply changes");
             Click("ConsentCancelButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Collapsed);
             check(pc.Calls.Count == 0 && pc.Read("Fax")!.Start == 2, "Cancel changes nothing");
-            Click("ServicesReviewButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+            Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
             Click("ConsentConfirmButton");
+            DismissResult();
             UiLayoutChecks.PumpUntil(() => pc.Read("Fax")!.Start == 4 && ((TextBlock)window.FindName("ServicesStatus")).Visibility == Visibility.Visible && window.Services.HasChanges);
             UiLayoutChecks.PumpUntil(() => ((Button)window.FindName("ServicesUndoButton")).Visibility == Visibility.Visible);
-            check(Text("ServicesStatus").Contains("1 service changed and checked") && Text("ServicesStatus").Contains("Undo puts them back") && Text("ServicesSummary").Contains("1 changed by Hush")
-                && window.ServiceChoices.All(choice => choice.Name != "Fax"), "The result is reported exactly and the card now says how many Hush changed");
+            var disabledFax = window.ServiceChoices.Single(choice => choice.Name == "Fax");
+            check(Text("ServicesStatus").Contains("1 service changed and checked") && Text("ServicesSummary").Contains("1 changed by Hush")
+                && disabledFax.WasOff && disabledFax.On && !disabledFax.Selected && disabledFax.Status.StartsWith("Turned off by Hush · was Starts with Windows"),
+                "The result is reported exactly; the service stays in the list with its switch ON (turned off by Hush) and the card says how many Hush changed");
+            // One by one: switching a line Hush turned off back OFF stages "turn it back on" and the one Review button restores just that service.
+            disabledFax.On = false;
+            check(disabledFax.Selected && !disabledFax.On && disabledFax.Status.StartsWith("Will be turned back on after you review") && review.Content?.ToString() == "Review 1 change", "Switching a line Hush turned off back OFF stages turning it back on");
+            Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+            check(Text("ConsentText").Contains("Services to turn back on (1)"), "The review names what will be turned back on");
+            Click("ConsentConfirmButton"); DismissResult();
+            UiLayoutChecks.PumpUntil(() => pc.Read("Fax")!.Start == 2 && !window.Services.HasChanges);
+            check(!window.ServiceChoices.Single(choice => choice.Name == "Fax").WasOff && !window.Services.HasChanges, "Turning it back on restores the saved setting and clears the history");
+            // And again, so Undo-all can be tested.
+            window.ServiceChoices.Single(choice => choice.Name == "Fax").On = true;
+            Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+            Click("ConsentConfirmButton"); DismissResult();
+            UiLayoutChecks.PumpUntil(() => pc.Read("Fax")!.Start == 4 && window.Services.HasChanges);
+            UiLayoutChecks.PumpUntil(() => ((Button)window.FindName("ServicesUndoButton")).Visibility == Visibility.Visible);
             Click("ServicesUndoButton");
             UiLayoutChecks.PumpUntil(() => pc.Read("Fax")!.Start == 2 && !window.Services.HasChanges);
             UiLayoutChecks.PumpUntil(() => ((Button)window.FindName("ServicesUndoButton")).Visibility == Visibility.Collapsed);

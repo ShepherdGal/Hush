@@ -13,21 +13,21 @@
     <SolidColorBrush x:Key="MutedBrush" Color="#9BA8BA"/>
     <SolidColorBrush x:Key="FaintBrush" Color="#8794A8"/>
     <SolidColorBrush x:Key="HeadingBrush" Color="#D8DFE9"/>
-    <Color x:Key="PrimaryAccentColor">#38CFC8</Color>
+    <Color x:Key="PrimaryAccentColor">#3FC3EE</Color>
     <SolidColorBrush x:Key="TealBrush" Color="{DynamicResource PrimaryAccentColor}"/>
-    <SolidColorBrush x:Key="TealTextBrush" Color="#38CFC8"/>
+    <SolidColorBrush x:Key="TealTextBrush" Color="#3FC3EE"/>
     <!-- Hover state of the one primary Cyan: lighter in Dark, deeper in Light. Set per theme in ApplyTheme. -->
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#7FE3DD"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#8EDDF7"/>
     <SolidColorBrush x:Key="ActionFillBrush" Color="#252C38"/>
     <SolidColorBrush x:Key="ModalShadeBrush" Color="#A00C1016"/>
-    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#38CFC8"/>
+    <SolidColorBrush x:Key="SafetyGreenBrush" Color="#3FC3EE"/>
     <!-- The calm green for good news and Safe items (SafetyPalette.Good); themed in MainWindow.ApplyTheme. -->
     <SolidColorBrush x:Key="GoodBrush" Color="#5CC98F"/>
     <!-- Resource meters turn Review-orange (never red) when a reading is high. -->
     <SolidColorBrush x:Key="MeterWarnBrush" Color="#FFA24D"/>
     <SolidColorBrush x:Key="CleanFillBrush" Color="#08FF795C"/>
     <!-- Nearly transparent fill of the accent outline button (scan complete); themed in MainWindow.ApplyTheme. -->
-    <SolidColorBrush x:Key="AccentFillBrush" Color="#0838CFC8"/>
+    <SolidColorBrush x:Key="AccentFillBrush" Color="#083FC3EE"/>
     <SolidColorBrush x:Key="CleanTextBrush" Color="#FF795C"/>
     <Style TargetType="Window">
       <Setter Property="FontFamily" Value="Inter, Segoe UI"/>
@@ -162,6 +162,26 @@
       <Setter Property="StrokeStartLineCap" Value="Round"/>
       <Setter Property="StrokeEndLineCap" Value="Round"/>
       <Setter Property="StrokeLineJoin" Value="Round"/>
+    </Style>
+    <!-- Header mode toggle ("Pro"): the plain caption look while off; while on (Tag="On") it takes the shared accent highlight, the same outline, fill and outer
+         glow as AccentOutlineButton (Take a look, Actions), so an ON header toggle always looks like a highlighted Hush button. -->
+    <Style x:Key="ProModeButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="MinWidth" Value="54"/>
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="FontSize" Value="{DynamicResource CompactFontSize}"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Style.Triggers>
+        <Trigger Property="Tag" Value="On">
+          <Setter Property="Background" Value="{DynamicResource AccentFillBrush}"/>
+          <Setter Property="Foreground" Value="{DynamicResource TealTextBrush}"/>
+          <Setter Property="BorderBrush" Value="{DynamicResource TealTextBrush}"/>
+          <Setter Property="BorderThickness" Value="1"/>
+          <Setter Property="local:Motion.HoverForeground" Value="{DynamicResource AccentHoverBrush}"/>
+          <Setter Property="local:Motion.Glow" Value="0.13"/>
+          <Setter Property="local:Motion.OuterGlow" Value="True"/>
+        </Trigger>
+      </Style.Triggers>
     </Style>
     <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Background" Value="{DynamicResource CleanFillBrush}"/>
@@ -431,6 +451,27 @@
         </ControlTemplate>
       </Setter.Value></Setter>
     </Style>
+    <!-- Color swatch (Settings > Appearance): one round color to pick. The chosen one carries a ring; hover shows a fainter ring. Never scales. -->
+    <Style x:Key="AccentSwatch" TargetType="RadioButton">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Width" Value="32"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Grid Background="Transparent">
+            <Ellipse x:Name="Ring" StrokeThickness="2" Stroke="{DynamicResource TextBrush}" Opacity="0"/>
+            <Ellipse x:Name="Dot" Margin="5" Fill="{TemplateBinding Background}"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Ring" Property="Opacity" Value="0.4"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Ring" Property="Opacity" Value="0.4"/></Trigger>
+            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Ring" Property="Opacity" Value="1"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
     <Style x:Key="CandidateCheckBox" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
       <Setter Property="IsEnabled" Value="{Binding CanSelectCandidates, RelativeSource={RelativeSource AncestorType=Window}}"/>
     </Style>
@@ -469,6 +510,66 @@
             <Track.Thumb><Thumb MinHeight="24"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="ThumbFill" Margin="2,0" CornerRadius="2" Background="{DynamicResource FaintBrush}" Opacity="0.45"/><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Trigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="ThumbFill" Storyboard.TargetProperty="Opacity" To="0.75" Duration="0:0:0.28"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation></Storyboard></BeginStoryboard></Trigger.EnterActions><Trigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="ThumbFill" Storyboard.TargetProperty="Opacity" To="0.45" Duration="0:0:0.28"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation></Storyboard></BeginStoryboard></Trigger.ExitActions></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
             <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
           </Track>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <!-- Chevron scroll bar for the lists inside a category (owner, November 11, 2026): an up and a down chevron at the ends of the bar; every click moves the list by
+         exactly one item (see ScrollSteps), holding repeats. The thin thumb is the same as every other scroll bar. -->
+    <Style x:Key="StepChevron" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Height" Value="16"/>
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="RepeatButton">
+          <Grid Background="Transparent">
+            <ContentPresenter x:Name="Mark" TextElement.Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <Style x:Key="StepScrollBar" TargetType="ScrollBar">
+      <Setter Property="Width" Value="16"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="ScrollBar">
+          <Grid Background="Transparent">
+            <Grid.RowDefinitions><RowDefinition Height="16"/><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
+            <RepeatButton Style="{StaticResource StepChevron}" local:ScrollSteps.Direction="-1" AutomationProperties.Name="Previous item"><Path Data="M 0,5 L 5,0 L 10,5" Stroke="{Binding (TextElement.Foreground), RelativeSource={RelativeSource Self}}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/></RepeatButton>
+            <Track x:Name="PART_Track" Grid.Row="1" IsDirectionReversed="True" Orientation="Vertical" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}" ViewportSize="{TemplateBinding ViewportSize}">
+              <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
+              <Track.Thumb><Thumb MinHeight="24"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Margin="5,0" CornerRadius="2" Background="{DynamicResource FaintBrush}" Opacity="0.5"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+              <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
+            </Track>
+            <RepeatButton Grid.Row="2" Style="{StaticResource StepChevron}" local:ScrollSteps.Direction="1" AutomationProperties.Name="Next item"><Path Data="M 0,0 L 5,5 L 10,0" Stroke="{Binding (TextElement.Foreground), RelativeSource={RelativeSource Self}}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/></RepeatButton>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <Style x:Key="StepScroll" TargetType="ScrollViewer">
+      <Setter Property="PanningMode" Value="VerticalOnly"/>
+      <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+      <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="ScrollViewer">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Margin="{TemplateBinding Padding}" CanContentScroll="{TemplateBinding CanContentScroll}"/>
+            <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Style="{StaticResource StepScrollBar}" Orientation="Vertical" Cursor="Arrow" Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}" Value="{TemplateBinding VerticalOffset}" Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <Style x:Key="FileListBox" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="ListBox">
+          <ScrollViewer Style="{StaticResource StepScroll}" Focusable="False" Padding="{TemplateBinding Padding}"
+                        CanContentScroll="{Binding (ScrollViewer.CanContentScroll), RelativeSource={RelativeSource TemplatedParent}}">
+            <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+          </ScrollViewer>
         </ControlTemplate>
       </Setter.Value></Setter>
     </Style>

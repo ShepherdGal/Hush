@@ -35,7 +35,9 @@ internal sealed record ServiceCandidate(string Name, string Title, string Why, S
 {
     internal string Topic => ServiceTuning.TopicFor(Name, Level);
     internal string StartLabel => OriginalStart switch { 2 => OriginalDelayed ? "Starts with Windows (delayed)" : "Starts with Windows", 3 => "Starts only when needed", 4 => "Disabled", _ => "System" };
-    internal string Status => StartLabel + " · " + (Running ? "Running" + (MemoryBytes > 0 ? " · " + Sizes.Format(MemoryBytes) : "") : "Not running");
+    // True for a service Hush turned off earlier (it is Disabled now): the card still lists it, with its switch ON, so it can be turned back on.
+    internal bool ChangedByHush { get; init; }
+    internal string Status => ChangedByHush ? "Turned off by Hush · was " + StartLabel : StartLabel + " · " + (Running ? "Running" + (MemoryBytes > 0 ? " · " + Sizes.Format(MemoryBytes) : "") : "Not running");
 }
 
 internal sealed record ServiceReport(IReadOnlyList<string> Changed, IReadOnlyList<string> Failed, IReadOnlyList<string> StillRunning)
@@ -218,6 +220,26 @@ internal sealed class ServiceTuning(IServiceSystem system, string directory)
         return result.OrderByDescending(candidate => candidate.Running).ThenBy(candidate => candidate.OriginalStart).ThenBy(candidate => candidate.Level).ToList();
     }
 
+    // The services Hush turned off earlier and that are still disabled (read from the saved history, so Undo can put exactly these back). Read-only.
+    internal IReadOnlyList<ServiceCandidate> ScanChanged()
+    {
+        var result = new List<ServiceCandidate>();
+        History? history;
+        try { history = Load(); } catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException) { return result; }
+        if (history == null) return result;
+        foreach (var saved in history.Services)
+        {
+            var now = system.Read(saved.Name);
+            if (now == null || now.Start != Disabled) continue; // gone, or someone changed it since: nothing to show
+            var entry = Catalog.FirstOrDefault(item => item.Name.Equals(saved.Name, StringComparison.OrdinalIgnoreCase));
+            bool known = entry.Name != null;
+            string title = known ? entry.Title : now.Display.Length == 0 || now.Display.StartsWith('@') ? now.Name : now.Display;
+            string why = known ? entry.Why : "Left behind by a program that was removed: its file no longer exists, so this service could only fail to start.";
+            result.Add(new(saved.Name, title, why, known ? entry.Level : ServiceLevel.LeftBehind, false, 0, saved.Start, saved.Delayed, Disabled) { ChangedByHush = true });
+        }
+        return result.OrderBy(candidate => candidate.Level).ThenBy(candidate => candidate.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
     // The program file named by a service's ImagePath (quoted or not, arguments dropped, variables expanded); null when it is not an ordinary local file path.
     internal static string? ExecutablePath(string imagePath)
     {
@@ -272,15 +294,17 @@ internal sealed class ServiceTuning(IServiceSystem system, string directory)
         if (savedNow.Contains(name)) history.Services.RemoveAll(saved => saved.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 
-    internal ServiceReport Undo()
+    // only = null puts every changed service back; otherwise only the named ones (the person switched them back on one by one).
+    internal ServiceReport Undo(IReadOnlyCollection<string>? only = null)
     {
         if (!system.IsAdministrator) throw new IOException("Administrator rights are needed to put services back. Nothing was changed.");
         var dropped = new List<string>();
         var history = Load(dropped) ?? throw new IOException("Hush has not changed any service, so there is nothing to put back.");
         var changed = new List<string>(); var failed = new List<string>(); var running = new List<string>();
-        foreach (string name in dropped) failed.Add($"{name} (left as it is: Hush could not confirm that it changed this service)");
+        if (only == null) foreach (string name in dropped) failed.Add($"{name} (left as it is: Hush could not confirm that it changed this service)");
         foreach (var saved in history.Services.ToList())
         {
+            if (only != null && !only.Contains(saved.Name, StringComparer.OrdinalIgnoreCase)) continue;
             var now = system.Read(saved.Name);
             if (now == null) { history.Services.Remove(saved); continue; } // the service no longer exists
             string title = Catalog.FirstOrDefault(item => item.Name.Equals(saved.Name, StringComparison.OrdinalIgnoreCase)).Title ?? saved.Name;

@@ -5,7 +5,7 @@ namespace Hush;
 public partial class App : Application
 {
     // Smooth wheel scrolling for every ScrollViewer in the app (one class handler; see SmoothScroll).
-    static App() => SmoothScroll.Install();
+    static App() { SmoothScroll.Install(); ScrollSteps.Install(); }
 
     // One Hush at a time: held for the life of the process, released only to hand over to an elevated copy of ourselves.
     private static SingleInstance? singleInstance;
@@ -72,7 +72,9 @@ public partial class App : Application
             return;
         }
         // ----- One Hush at a time, and administrator mode -----
-        if (!ReacquireSingleInstance()) { SingleInstance.AskRunningToShow(); Shutdown(); return; }
+        bool startup = e.Args is [RunKeyStartup.Argument];
+        // A start from the Windows sign-in must not pop the window of a Hush that is already running (it may sit in the tray on purpose).
+        if (!ReacquireSingleInstance()) { if (!startup) SingleInstance.AskRunningToShow(); Shutdown(); return; }
         bool? runAsAdmin = Preferences.Load(System.IO.Path.Combine(CleanupEngine.DataDirectory, "settings.json")).RunAsAdmin;
         bool elevated = AdminMode.Elevation.IsElevated;
         // The task is only looked up when the answer can matter (a normal start of Hush with administrator mode on): asking the Task Scheduler launches schtasks.exe.
@@ -83,7 +85,8 @@ public partial class App : Application
         if (ReceiptBeforeHandOver(action, e.Args) is { } updateReceipt) { try { UpdateInstaller.ConfirmStartup(updateReceipt); } catch { } }
         switch (action)
         {
-            case StartAction.RunTask when HandOver(AdminMode.Scheduler.Run): Shutdown(); return;
+            // The task cannot carry --startup, so the elevated copy is told through a short-lived note in Hush's own data folder (see StartupHint).
+            case StartAction.RunTask when HandOver(() => { if (startup) StartupHint.Leave(CleanupEngine.DataDirectory); return AdminMode.Scheduler.Run(); }): Shutdown(); return;
             case StartAction.RunTask or StartAction.Relaunch when self != null && HandOver(() => AdminMode.Elevation.Launch(self, QuoteArguments(e.Args), false, out _)):
                 Shutdown(); return;
         }
@@ -105,10 +108,14 @@ public partial class App : Application
             window.Loaded += (_, _) => window.ResumeServices(e.Args[0] == "--services-undo");
         if (e.Args is ["--tasks"] or ["--tasks-undo"])
             window.Loaded += (_, _) => window.ResumeTasks(e.Args[0] == "--tasks-undo");
+        if (e.Args is [Hush.MainWindow.ReviewAllArgument, var reviewPayload])
+            window.Loaded += (_, _) => window.ResumeReviewAll(reviewPayload);
         if (e.Args is ["--windows-update-off"] or ["--windows-update-on"])
             window.Loaded += (_, _) => window.ResumeWindowsUpdate(e.Args[0] == "--windows-update-off");
         MainWindow = window;
         SingleInstance.ListenForActivation(window);
+        // Opened by Windows at sign-in (directly, or through the administrator task): open quietly, minimized or in the tray, never in front of what the person is doing.
+        if (startup || (elevated && e.Args.Length == 0 && StartupHint.Take(CleanupEngine.DataDirectory))) window.StartInBackground();
         window.Show();
     }
 

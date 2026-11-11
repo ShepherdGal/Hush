@@ -81,7 +81,7 @@ public partial class SetupWindow : Window
             result = await Task.Run(() => HushSetup.Install(sourceExe ?? Environment.ProcessPath ?? "", option, locations));
         else
         {
-            result = await Task.Run(() => HushSetup.Uninstall(locations, option, runningExe, HushSetup.IsAdminCopy(runningExe, locations) ? AdminMode.Scheduler : null));
+            result = await Task.Run(() => HushSetup.Uninstall(locations, option, runningExe, HushSetup.IsAdminCopy(runningExe, locations) ? AdminMode.Scheduler : null, new RunKeyStartup()));
             if (result is { Success: true, Deferred: true })
             {
                 try { HushSetup.StartDeferredRemoval(locations, runningExe); }

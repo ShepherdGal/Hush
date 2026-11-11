@@ -41,7 +41,7 @@ public partial class MainWindow
     private void ShowTempFiles(JunkReading reading, int milliseconds = 400)
     {
         // The bar is full when the Safe junk reaches the cleanup threshold chosen in Smart Boost.
-        ShowMeter(TempFill, TempText, TempFraction(reading.Bytes) * 100, reading.Files == 0 ? "0 B" : Sizes.Format(reading.Bytes), 100, milliseconds);
+        ShowMeter(TempFill, TempText, TempFraction(reading.Bytes) * 100, reading.Files == 0 ? "0 B" : Sizes.Format(reading.Bytes), ResourceSnapshot.TempAmber, ResourceSnapshot.TempRed, milliseconds);
         TempText.ToolTip = (reading.Files == 0 ? "No Safe temporary files are ready to clean." : $"{reading.Files:N0} Safe temporary files ({Sizes.Format(reading.Bytes)}) are ready to clean.");
     }
 
@@ -51,7 +51,7 @@ public partial class MainWindow
     {
         infoNoteUntilUtc = DateTime.UtcNow.AddSeconds(12);
         infoNoteDetail = detail;
-        InfoSummary.Text = text;
+        InfoSummary.Text = text; InfoSummary.Tag = null; InfoSummary.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
         InfoSummary.ToolTip = detail.Length == 0 ? null : detail;
     }
 
@@ -107,7 +107,7 @@ public partial class MainWindow
             double total = lastSample.MemoryTotal > 0 ? lastSample.MemoryTotal : new ResourceMonitor().Sample().MemoryTotal;
             double beforePercent = total <= 0 ? 0 : 100.0 * memory.UsedBefore / total, afterPercent = total <= 0 ? 0 : 100.0 * memory.UsedAfter / total;
             var memoryText = new NumberTween { ValueChanged = value => MemoryText.Text = $"{value:0}%" };
-            ShowMeter(MemoryFill, MemoryText, afterPercent, $"{afterPercent:0}%", ResourceSnapshot.Busy, (int)drain);
+            ShowMeter(MemoryFill, MemoryText, afterPercent, $"{afterPercent:0}%", ResourceSnapshot.MemoryAmber, ResourceSnapshot.MemoryRed, (int)drain);
             await memoryText.RunAsync(beforePercent, afterPercent, (int)drain);
             MemoryText.Text = $"{afterPercent:0}%";
 

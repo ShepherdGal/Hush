@@ -234,7 +234,7 @@ internal static class TaskChecks
             var headers = TopicHeaders((DependencyObject)bigWindow.FindName("TasksList")).ToList();
             check(headers.Count >= 4 && headers.All(header => header.IsChecked != true), "Opening the Scheduled tasks card opens nothing inside it: every sub-category starts closed");
             var ranks = bigWindow.TaskChoices.Select(choice => TaskTuning.TopicRank(choice.Candidate.Topic)).ToList();
-            check(ranks.SequenceEqual(ranks.Order()) && bigWindow.TaskChoices.All(choice => choice.On && choice.Topic.Length > 0) && bigWindow.TaskChoices.Last().Candidate.Level == TaskLevel.LeftBehind,
+            check(ranks.SequenceEqual(ranks.Order()) && bigWindow.TaskChoices.All(choice => !choice.On && choice.Topic.Length > 0) && bigWindow.TaskChoices.Last().Candidate.Level == TaskLevel.LeftBehind,
                 "The tasks are in order (topics in their fixed order, left-behind last) and every switch starts ON, because every task is enabled right now");
             var view = (System.Windows.Data.ListCollectionView)((ItemsControl)bigWindow.FindName("TasksList")).ItemsSource;
             check(view.Groups.OfType<System.Windows.Data.CollectionViewGroup>().All(group => group.ItemCount <= ListGrouping.GroupLimit), $"The Scheduled tasks card shows {bigWindow.TaskChoices.Count} tasks under {view.Groups.Count} sub-category headings (none longer than {ListGrouping.GroupLimit})");
@@ -245,10 +245,10 @@ internal static class TaskChecks
                 UiLayoutChecks.Layout(root, new Size(920, 820)); card.BringIntoView(); UiLayoutChecks.Wait(200); UiLayoutChecks.Layout(root, new Size(920, 820));
                 UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, "tasks-card-dark-920.png"));
                 headers[0].IsChecked = false; headers[^1].IsChecked = true; UiLayoutChecks.Wait(400);
-                bigWindow.TaskChoices.First(choice => choice.Candidate.Level == TaskLevel.LeftBehind).On = false; UiLayoutChecks.Wait(100);
-                UiLayoutChecks.Layout(root, new Size(920, 820)); ((FrameworkElement)bigWindow.FindName("TasksReviewButton")).BringIntoView(); UiLayoutChecks.Wait(200); UiLayoutChecks.Layout(root, new Size(920, 820));
+                bigWindow.TaskChoices.First(choice => choice.Candidate.Level == TaskLevel.LeftBehind).On = true; UiLayoutChecks.Wait(100);
+                UiLayoutChecks.Layout(root, new Size(920, 820)); ((FrameworkElement)bigWindow.FindName("RefreshTasksButton")).BringIntoView(); UiLayoutChecks.Wait(200); UiLayoutChecks.Layout(root, new Size(920, 820));
                 UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, "tasks-card-footer-dark-920.png"));
-                bigWindow.TaskChoices.First(choice => choice.Candidate.Level == TaskLevel.LeftBehind).On = true; headers[^1].IsChecked = false; headers[0].IsChecked = true; UiLayoutChecks.Wait(400);
+                bigWindow.TaskChoices.First(choice => choice.Candidate.Level == TaskLevel.LeftBehind).On = false; headers[^1].IsChecked = false; headers[0].IsChecked = true; UiLayoutChecks.Wait(400);
                 bigWindow.ToggleTheme(); UiLayoutChecks.Wait(400); UiLayoutChecks.Layout(root, new Size(920, 820)); card.BringIntoView(); UiLayoutChecks.Wait(200); UiLayoutChecks.Layout(root, new Size(920, 820));
                 UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, "tasks-card-light-920.png"));
                 bigWindow.ToggleTheme(); UiLayoutChecks.Wait(400);
@@ -281,10 +281,10 @@ internal static class TaskChecks
             var privacy = (FrameworkElement)window.FindName("SettingsPrivacySection");
             Rect Bounds(FrameworkElement e) => e.TransformToAncestor(root).TransformBounds(new Rect(e.RenderSize));
             card.IsExpanded = false; UiLayoutChecks.Wait(400); UiLayoutChecks.Layout(root, new Size(920, 820));
-            check(!card.IsDescendantOf(leftColumn) && !card.IsDescendantOf(rightColumn) && ((Panel)leftColumn).Children.Count == 3 && ((Panel)rightColumn).Children.Count == 3
+            check(!card.IsDescendantOf(leftColumn) && !card.IsDescendantOf(rightColumn) && ((Panel)leftColumn).Children.Count == 2 && ((Panel)rightColumn).Children.Count == 2
                 && Math.Abs(Bounds(leftColumn).Bottom - Bounds(rightColumn).Bottom) < 30 && Bounds(card).Top >= Math.Max(Bounds(leftColumn).Bottom, Bounds(rightColumn).Bottom) - 0.5
                 && Math.Abs(Bounds(card).Left - Bounds(leftColumn).Left) < 1 && Math.Abs(Bounds(card).Right - Bounds(rightColumn).Right) < 1 && Bounds(privacy).Top >= Bounds(card).Bottom,
-                "Scheduled tasks sits full width under the two balanced columns (three cards each) and before Privacy & telemetry");
+                "Scheduled tasks sits full width under the two balanced columns (two cards each) and before Privacy & telemetry");
             if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string placementShots)
             {
                 Directory.CreateDirectory(placementShots);
@@ -292,11 +292,11 @@ internal static class TaskChecks
                 UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(placementShots, "tasks-placement-dark-920.png"));
             }
             card.IsExpanded = true; UiLayoutChecks.Wait(400); UiLayoutChecks.Layout(root, new Size(920, 820));
-            var review = (Button)window.FindName("TasksReviewButton");
-            check(!review.IsEnabled && window.TaskChoices.All(choice => !choice.Selected && choice.On), "No task is selected by default: every switch is ON and nothing can be changed yet");
+            var review = (Button)window.FindName("ApplyWindowsSettingsButton"); // the ONE Review changes button at the bottom of Settings
+            check(!review.IsEnabled && window.TaskChoices.All(choice => !choice.Selected && !choice.On), "No task is selected by default: every switch is OFF and nothing can be changed yet");
             var program = window.TaskChoices.Single(choice => choice.Path == ProgramData);
-            program.On = false;
-            check(program.Selected && program.Status.StartsWith("Will be turned off after you review") && review.IsEnabled && review.Content?.ToString() == "Review 1 change…",
+            program.On = true;
+            check(program.Selected && program.Status.StartsWith("Will be turned off after you review") && review.IsEnabled && review.Content?.ToString() == "Review 1 change",
                 "Switching a task OFF stages a change, says what will happen and enables Review");
             // Without administrator rights the same button asks to restart as administrator, and nothing is changed until then.
             pc.Admin = false;
@@ -304,26 +304,29 @@ internal static class TaskChecks
             MainWindow.ElevatedLauncher = argument => { launched.Add(argument); return true; }; MainWindow.ExitForRestart = () => launched.Add("exit");
             try
             {
-                Click("TasksReviewButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
-                check(Text("ConsentTitle") == "Turn off 1 scheduled task?" && Text("ConsentText").Contains("Program data collector") && Text("ConsentText").Contains("Nothing is deleted")
+                Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+                check(Text("ConsentTitle") == "Apply 1 change?" && Text("ConsentText").Contains("Scheduled tasks to turn off (1)") && Text("ConsentText").Contains("Program data collector") && Text("ConsentText").Contains("Nothing is uninstalled or deleted")
                     && ((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Restart as administrator" && pc.Calls.Count == 0,
                     "Review lists exactly which tasks will be turned off and, without administrator rights, offers Restart as administrator");
                 Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => launched.Count == 2);
-                check(launched.SequenceEqual(["--tasks", "exit"]) && pc.Calls.Count == 0, "Restart as administrator relaunches Hush for the Scheduled tasks card and changes nothing itself");
+                check(launched.Count == 2 && launched[0].StartsWith("--review-all ") && System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(launched[0]["--review-all ".Length..])).Contains(System.Text.Json.JsonSerializer.Serialize(ProgramData).Trim((char)34)) && launched[1] == "exit" && pc.Calls.Count == 0,
+                    "Restart as administrator relaunches Hush for the one review with the same choices and changes nothing itself");
             }
             finally { MainWindow.ElevatedLauncher = oldLauncher; MainWindow.ExitForRestart = oldExit; }
             // With administrator rights: cancel changes nothing; confirm changes, reports, Undo puts it back.
             pc.Admin = true;
-            Click("TasksReviewButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
-            check(((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Turn them off", "With administrator rights the action is Turn them off");
+            Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+            check(((Button)window.FindName("ConsentConfirmButton")).Content?.ToString() == "Apply changes", "With administrator rights the action is Apply changes");
             Click("ConsentCancelButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Collapsed);
             check(pc.Calls.Count == 0 && pc.Read(ProgramData)!.Enabled, "Cancel changes no task");
-            Click("TasksReviewButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
+            Click("ApplyWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible); UiLayoutChecks.Wait(340);
             Click("ConsentConfirmButton");
+            UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Visible && Text("ConsentTitle") is "Changes applied" or "Some changes were not made"); UiLayoutChecks.Wait(340);
+            Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => ((FrameworkElement)window.FindName("ConsentOverlay")).Visibility == Visibility.Collapsed);
             UiLayoutChecks.PumpUntil(() => !pc.Read(ProgramData)!.Enabled && ((TextBlock)window.FindName("TasksStatus")).Visibility == Visibility.Visible && window.Tasks.HasChanges);
             UiLayoutChecks.PumpUntil(() => ((Button)window.FindName("TasksUndoButton")).Visibility == Visibility.Visible);
-            check(Text("TasksStatus").Contains("1 scheduled task turned off and checked") && Text("TasksStatus").Contains("Undo turns them back on") && Text("TasksSummary").Contains("1 changed by Hush")
-                && window.TaskChoices.All(choice => choice.Path != ProgramData), "The result is reported exactly and the card says how many Hush changed");
+            check(Text("TasksStatus").Contains("1 scheduled task turned off and checked") && Text("TasksSummary").Contains("1 changed by Hush")
+                && window.TaskChoices.Single(choice => choice.Path == ProgramData) is { WasOff: true, On: true, Selected: false }, "The result is reported exactly; the task stays in the list with its switch ON (turned off by Hush) and the card says how many Hush changed");
             // Undo without administrator rights restarts as administrator for the Undo and changes nothing itself.
             pc.Admin = false;
             var undoLaunched = new List<string>(); var keepLauncher = MainWindow.ElevatedLauncher; var keepExit = MainWindow.ExitForRestart;

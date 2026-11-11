@@ -69,18 +69,18 @@ internal static class ThemeMotionChecks
                     foreach (string role in roles)
                         Require(roleFrames[role].Distinct().Count() >= 4 && roleFrames[role].Any(color => color != roleStarts[role] && color != Resource(role)),
                             "Surfaces, headings, support text and accents share gradual palette motion");
-                    Color accent = (Color)ColorConverter.ConvertFromString(light ? "#4C7BC8" : "#38CFC8");
+                    Color accent = (Color)ColorConverter.ConvertFromString(light ? "#4C7BC8" : "#3FC3EE");
                     Require((Color)Application.Current.Resources["PrimaryAccentColor"] == accent
                         && Resource("TealTextBrush") == accent && Resource("SafetyGreenBrush") == accent
                         && ((SolidColorBrush)Application.Current.Resources["TealBrush"]).Color == accent,
-                        $"Primary accent text, Safe accents and the gauge share one accent per theme: soft blue in Light, Cyan in Dark (light={light})");
+                        $"Primary accent text, Safe accents and the gauge share one accent per theme: soft blue in Light, the icon blue (default) in Dark (light={light})");
                     var reviewAction = (Button)window.FindName("ApplyWindowsSettingsButton");
                     if (page == "Settings")
                     {
                         var fill = (SolidColorBrush)((Border)reviewAction.Template.FindName("Surface", reviewAction)).Background;
                         var ink = (SolidColorBrush)((ContentPresenter)reviewAction.Template.FindName("ButtonContent", reviewAction)).GetValue(System.Windows.Documents.TextElement.ForegroundProperty);
-                        Require(SamePixelColor(fill.Color, Resource("ActionFillBrush")) && SamePixelColor(ink.Color, Resource("TealTextBrush")),
-                            $"Button wrappers reach exact colors without restarting (fill {fill.Color}/{Resource("ActionFillBrush")}, ink {ink.Color}/{Resource("TealTextBrush")})");
+                        Require(SamePixelColor(fill.Color, Resource("AccentFillBrush")) && SamePixelColor(ink.Color, Resource("TealTextBrush")),
+                            $"Button wrappers reach exact colors without restarting (fill {fill.Color}/{Resource("AccentFillBrush")}, ink {ink.Color}/{Resource("TealTextBrush")})");
                         Capture(root, light ? "theme-settings-light" : "theme-settings-dark");
                     }
                     Require(window.FindName("ThemeSnapshot") == null && window.FindName("PageSnapshot") == null
@@ -105,7 +105,7 @@ internal static class ThemeMotionChecks
         }
         finally { window.Close(); }
     }
-    private static void Capture(FrameworkElement root, string name)
+    internal static void Capture(FrameworkElement root, string name)
     {
         if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is not string directory) return;
         Directory.CreateDirectory(directory); root.UpdateLayout();

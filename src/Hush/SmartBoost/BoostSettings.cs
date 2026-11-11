@@ -37,8 +37,15 @@ public sealed class Preferences
     public string TermsAccepted { get; set; } = "";
     // Interface size: "smart" (fits the screen), "75", "100" or "120" (percent). Anything else reads as smart.
     public string UiSize { get; set; } = UiScale.Smart;
+    // Pro mode (owner, November 11, 2026): off = Simple mode (the default for everyone, old and new users): Safe items only and a short Settings page; on = everything.
+    public bool ProMode { get; set; }
+    // The main color of both themes (an id from AccentPalette; anything else reads as the default, the icon's blue).
+    public string Accent { get; set; } = AccentPalette.DefaultId;
     // Administrator mode (0.9): null until the person has been asked once; true = Hush always runs elevated, false = never ask again.
     public bool? RunAsAdmin { get; set; }
+    // Settings > Administrator (0.9, user request): minimizing hides Hush in the notification area instead of the taskbar, and Hush may open when Windows starts.
+    public bool MinimizeToTray { get; set; }
+    public bool StartWithWindows { get; set; }
     public BoostSettings Boost { get; set; } = new();
 
     public static Preferences Load(string path)
@@ -48,7 +55,7 @@ public sealed class Preferences
             if (File.Exists(path))
             {
                 var loaded = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path));
-                if (loaded != null) { loaded.Boost = (loaded.Boost ?? new()).Normalized(); loaded.UiSize = UiScale.Normalize(loaded.UiSize); return loaded; }
+                if (loaded != null) { loaded.Boost = (loaded.Boost ?? new()).Normalized(); loaded.UiSize = UiScale.Normalize(loaded.UiSize); loaded.Accent = AccentPalette.Normalize(loaded.Accent); return loaded; }
             }
         }
         catch { }

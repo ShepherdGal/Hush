@@ -33,7 +33,9 @@ internal enum TaskLevel { Recommended, Somewhat, LeftBehind }
 internal sealed record TaskCandidate(string Path, string Title, string Why, TaskLevel Level, string Topic, bool AtLogon, bool AtBoot)
 {
     // The folder and name as Task Scheduler shows them, plus when it runs if that was cheap to read.
-    internal string Status => (AtLogon ? "Runs at sign-in · " : AtBoot ? "Runs when Windows starts · " : "") + Path;
+    // True for a task Hush turned off earlier (still disabled): the card keeps listing it, with its switch ON, so it can be turned back on.
+    internal bool ChangedByHush { get; init; }
+    internal string Status => ChangedByHush ? "Turned off by Hush · " + Path : (AtLogon ? "Runs at sign-in · " : AtBoot ? "Runs when Windows starts · " : "") + Path;
 }
 
 internal sealed record TaskReport(IReadOnlyList<string> Changed, IReadOnlyList<string> Failed)
@@ -160,6 +162,23 @@ internal sealed class TaskTuning(ITaskSystem system, string directory)
         return result.OrderBy(c => TopicRank(c.Topic)).ThenBy(c => c.Level).ThenBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(c => c.Path, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    // The tasks Hush turned off earlier and that are still disabled (from the saved history, so Undo can put exactly these back). Read-only.
+    internal IReadOnlyList<TaskCandidate> ScanChanged()
+    {
+        var result = new List<TaskCandidate>();
+        History? history;
+        try { history = Load(); } catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException) { return result; }
+        if (history == null) return result;
+        foreach (var saved in history.Tasks)
+        {
+            var now = system.Read(saved.Path);
+            if (now == null || now.Enabled) continue; // gone, or enabled again by someone: nothing to show
+            if (CatalogEntry(saved.Path) is { } entry) result.Add(new(saved.Path, entry.Title, entry.Why, entry.Level, entry.Topic, now.AtLogon, now.AtBoot) { ChangedByHush = true });
+            else result.Add(new(saved.Path, NameOf(saved.Path), "Left behind by a program that was removed: its file no longer exists, so this task could only fail when it runs.", TaskLevel.LeftBehind, LeftBehindTopic, now.AtLogon, now.AtBoot) { ChangedByHush = true });
+        }
+        return result.OrderBy(c => TopicRank(c.Topic)).ThenBy(c => c.Level).ThenBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(c => c.Path, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     internal static string NameOf(string path) { int slash = path.LastIndexOf('\\'); return slash >= 0 && slash < path.Length - 1 ? path[(slash + 1)..] : path; }
 
     // Machine-wide variables only: a per-user one (%LOCALAPPDATA%, %APPDATA%, %USERPROFILE%, %TEMP%...) would expand to whoever runs Hush, not to the task's user,
@@ -211,15 +230,17 @@ internal sealed class TaskTuning(ITaskSystem system, string directory)
         if (savedNow.Contains(path)) history.Tasks.RemoveAll(saved => saved.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
     }
 
-    internal TaskReport Undo()
+    // only = null turns every changed task back on; otherwise only the named ones (the person switched them back on one by one).
+    internal TaskReport Undo(IReadOnlyCollection<string>? only = null)
     {
         if (!system.IsAdministrator) throw new IOException("Administrator rights are needed to turn scheduled tasks back on. Nothing was changed.");
         var dropped = new List<string>();
         var history = Load(dropped) ?? throw new IOException("Hush has not changed any scheduled task, so there is nothing to put back.");
         var changed = new List<string>(); var failed = new List<string>();
-        foreach (string path in dropped) failed.Add($"{path} (left as it is: Hush could not confirm that it changed this task)");
+        if (only == null) foreach (string path in dropped) failed.Add($"{path} (left as it is: Hush could not confirm that it changed this task)");
         foreach (var saved in history.Tasks.ToList())
         {
+            if (only != null && !only.Contains(saved.Path, StringComparer.OrdinalIgnoreCase)) continue;
             var now = system.Read(saved.Path);
             if (now == null) { history.Tasks.Remove(saved); continue; } // the task no longer exists
             string title = CatalogEntry(saved.Path)?.Title ?? NameOf(saved.Path);

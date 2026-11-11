@@ -3,6 +3,8 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="CanResize" Closing="Window_Closing" Loaded="Window_Loaded">
   <Window.Resources>
     <local:ReviewRowWidthConverter x:Key="ReviewRowWidth"/>
+    <!-- The soft glow of the "100%" in the finished gauge (attached to GaugeValue only while a finished clean is on screen; see CompleteGauge). -->
+    <DropShadowEffect x:Key="GaugeValueGlowEffect" Color="{DynamicResource PrimaryAccentColor}" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
     <DataTemplate x:Key="NeutralFileTemplate">
       <Border Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollContentPresenter}, Converter={StaticResource ReviewRowWidth}, ConverterParameter=6}" Background="{DynamicResource RaisedBrush}" CornerRadius="10" Padding="14,12" Margin="0,0,0,7" ToolTip="{Binding Path}">
         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="22"/><ColumnDefinition Width="13"/><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="108"/></Grid.ColumnDefinitions>
@@ -20,6 +22,18 @@
       </Border>
       <DataTemplate.Triggers><DataTrigger Binding="{Binding Selected}" Value="True"><Setter TargetName="FileName" Property="local:Motion.Ink" Value="{Binding SelectionAccent}"/></DataTrigger></DataTemplate.Triggers>
     </DataTemplate>
+    <!-- A sub-heading inside a category's list: the app's name and what it holds, a short colored line in the category's color (same line as the card's). -->
+    <DataTemplate x:Key="SubHeadingTemplate">
+      <Grid Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollContentPresenter}, Converter={StaticResource ReviewRowWidth}, ConverterParameter=6}" Margin="0,4,0,9" IsHitTestVisible="False">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="4"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border Background="{Binding Category.TextAccent}" Width="4" CornerRadius="2" Margin="0,1"/>
+        <StackPanel Grid.Column="2" Orientation="Horizontal">
+          <TextBlock Text="{Binding Title}" Foreground="{DynamicResource HeadingBrush}" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource MutedBrush}" FontSize="{DynamicResource SupportFontSize}" Margin="12,2,0,0" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+    </DataTemplate>
+    <local:ReviewRowTemplateSelector x:Key="ReviewRows" File="{StaticResource NeutralFileTemplate}" Heading="{StaticResource SubHeadingTemplate}"/>
     <DataTemplate x:Key="CategoryHeaderTemplate">
         <Grid x:Name="HeaderRoot" Background="Transparent"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="118"/><ColumnDefinition Width="27"/></Grid.ColumnDefinitions>
           <StackPanel VerticalAlignment="Center">
@@ -88,6 +102,7 @@
         <!-- 0.9: a quiet green line beside the wordmark when a newer version exists (found by one silent check at start). Clicking opens the update popup. -->
         <Button x:Name="UpdateNoticeButton" Content="There is a new update!" Click="UpdateNotice_Click" Style="{StaticResource TextButton}" Foreground="{DynamicResource GoodBrush}" local:Motion.HoverForeground="{DynamicResource HeadingBrush}" local:Motion.MouseOnly="True" FontSize="{DynamicResource CompactFontSize}" FontWeight="Medium" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="92,3,0,0" Padding="10,8" Visibility="Collapsed" Opacity="0" AutomationProperties.Name="A new update is available: open the update window"/>
         <StackPanel x:Name="CaptionControls" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <Button x:Name="ProModeButton" Content="Pro" Style="{StaticResource ProModeButton}" Tag="Off" Click="ProMode_Click" Margin="0,0,8,0" ToolTip="Pro mode is off. Turn it on to see everything Hush can do." AutomationProperties.Name="Pro mode, off"/>
           <Button x:Name="SettingsButton" Style="{StaticResource CaptionButton}" Click="Settings_Click" Margin="0,0,4,0" ToolTip="Settings" AutomationProperties.Name="Settings">
             <Path Style="{StaticResource CaptionIcon}" Data="M8,1 L10,1 L10.6,3.2 L12.1,4.1 L14.3,3.5 L15.3,5.3 L13.8,6.9 L13.8,8.9 L15.3,10.5 L14.3,12.3 L12.1,11.7 L10.6,12.6 L10,14.8 L8,14.8 L7.4,12.6 L5.9,11.7 L3.7,12.3 L2.7,10.5 L4.2,8.9 L4.2,6.9 L2.7,5.3 L3.7,3.5 L5.9,4.1 L7.4,3.2 Z M11.4,7.9 A2.4,2.4 0 1 1 6.6,7.9 A2.4,2.4 0 1 1 11.4,7.9"/>
           </Button>
@@ -127,6 +142,8 @@
                   <Path.Effect><DropShadowEffect x:Name="GaugeFinishGlow" Color="{DynamicResource PrimaryAccentColor}" BlurRadius="12" ShadowDepth="0" Opacity="0.22"/></Path.Effect>
                 </Path>
               </Grid></Viewbox>
+              <!-- The hover on the gauge (see GaugeHoverCue): one style before a scan, another after it. Pre-built shapes, transform and opacity only. -->
+              <local:GaugeHoverCue x:Name="GaugeHover"/>
               <!-- While files are being cleaned: a futuristic scan fills the whole inside of the gauge (see ScanActivity); the percentage stays on top of it. -->
               <local:ScanActivity x:Name="FileScanActivity" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Center"/>
               <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="230">
@@ -179,8 +196,8 @@
               <ItemsControl.ItemTemplate><DataTemplate>
                 <Expander Style="{StaticResource CategoryAccordion}" IsExpanded="{Binding Expanded, Mode=TwoWay}" Header="{Binding}" HeaderTemplate="{StaticResource CategoryHeaderTemplate}">
                   <Grid>
-                    <ListBox ItemsSource="{Binding Files}" ItemTemplate="{StaticResource NeutralFileTemplate}" MaxHeight="280" Background="Transparent" BorderThickness="0" Padding="0" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" PreviewMouseWheel="CategoryFiles_PreviewMouseWheel" AutomationProperties.Name="{Binding Title}">
-                      <ListBox.Style><Style TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}"><Style.Triggers><DataTrigger Binding="{Binding Files.Count}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></ListBox.Style>
+                    <ListBox ItemsSource="{Binding Rows}" ItemTemplateSelector="{StaticResource ReviewRows}" MaxHeight="280" Background="Transparent" BorderThickness="0" Padding="0" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" PreviewMouseWheel="CategoryFiles_PreviewMouseWheel" AutomationProperties.Name="{Binding Title}">
+                      <ListBox.Style><Style TargetType="ListBox" BasedOn="{StaticResource FileListBox}"><Style.Triggers><DataTrigger Binding="{Binding Files.Count}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></ListBox.Style>
                     </ListBox>
                   </Grid>
                 </Expander>
@@ -196,6 +213,7 @@
                 <StackPanel>
                   <!-- The same soft hairline as between the category cards inside a group (36 DIP in from each side, opacity 0.45); the first group has none above it because the bar's own divider sits there. -->
                   <Border x:Name="GroupDivider" Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.45" Margin="36,0"/>
+                  <Grid>
                   <Button Click="ReviewGroup_Click" Tag="{Binding}" Style="{StaticResource TextButton}" Padding="0" Height="NaN" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding AutomationName}">
                     <Grid Margin="39,22,33,22" Background="Transparent">
                       <Grid.ColumnDefinitions><ColumnDefinition Width="6"/><ColumnDefinition Width="15"/><ColumnDefinition Width="22"/><ColumnDefinition Width="13"/><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="118"/><ColumnDefinition Width="27"/></Grid.ColumnDefinitions>
@@ -213,9 +231,13 @@
                       <Path Grid.Column="7" Data="M 0,0 L 5,5 L 0,10" Stroke="{DynamicResource MutedBrush}" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                   </Button>
+                  <!-- A fully selected group gets an outline in its own color (green Safe, amber Review, red Advanced), the same overlay as a selected category card: never covers or shifts content. -->
+                  <Border x:Name="GroupOutline" Margin="22,3" CornerRadius="10" BorderThickness="1" Opacity="0.7" IsHitTestVisible="False" SnapsToDevicePixels="False" local:Motion.Ink="Transparent"/>
+                  </Grid>
                 </StackPanel>
                 <DataTemplate.Triggers>
                   <DataTrigger Binding="{Binding DividerAbove}" Value="False"><Setter TargetName="GroupDivider" Property="Visibility" Value="Collapsed"/></DataTrigger>
+                  <DataTrigger Binding="{Binding SelectionState}" Value="True"><Setter TargetName="GroupOutline" Property="local:Motion.Ink" Value="{Binding Accent}"/></DataTrigger>
                 </DataTemplate.Triggers>
               </DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -355,9 +377,9 @@
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="Info" Style="{StaticResource CardTitle}"/>
-                    <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="InfoSummary" Text="Reading this PC…" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
-                  <Button x:Name="BoostButton" Grid.Column="2" Content="Boost" Click="Boost_Click" Height="42" MinWidth="124" Padding="26,0" VerticalAlignment="Center" AutomationProperties.Name="Boost" ToolTip="Clean Safe temporary files and release idle memory"/>
+                  <Button x:Name="BoostButton" Style="{StaticResource AccentOutlineButton}" Grid.Column="2" Content="Boost" Click="Boost_Click" Height="42" MinWidth="124" Padding="26,0" VerticalAlignment="Center" AutomationProperties.Name="Boost" ToolTip="Clean Safe temporary files and release idle memory"/>
                 </Grid>
                 <Grid Height="5" Margin="0,20,0,20">
                   <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7" VerticalAlignment="Center"/>
@@ -366,8 +388,8 @@
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                   <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="CpuFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    <Border Width="12" Height="46" CornerRadius="6" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="CpuFill" Height="46" CornerRadius="6" Background="{DynamicResource GoodBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
                     </Border>
                     <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                       <TextBlock x:Name="CpuText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
@@ -375,8 +397,8 @@
                     </StackPanel>
                   </StackPanel>
                   <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="MemoryFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    <Border Width="12" Height="46" CornerRadius="6" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="MemoryFill" Height="46" CornerRadius="6" Background="{DynamicResource GoodBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
                     </Border>
                     <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                       <TextBlock x:Name="MemoryText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
@@ -384,8 +406,8 @@
                     </StackPanel>
                   </StackPanel>
                   <StackPanel Grid.Column="3" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="TempFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    <Border Width="12" Height="46" CornerRadius="6" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="TempFill" Height="46" CornerRadius="6" Background="{DynamicResource GoodBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
                     </Border>
                     <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                       <TextBlock x:Name="TempText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
@@ -393,8 +415,8 @@
                     </StackPanel>
                   </StackPanel>
                   <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Border Width="10" Height="46" CornerRadius="5" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
-                      <Border x:Name="DiskFill" Height="46" CornerRadius="5" Background="{DynamicResource TealBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
+                    <Border Width="12" Height="46" CornerRadius="6" Background="{DynamicResource RaisedBrush}" VerticalAlignment="Center">
+                      <Border x:Name="DiskFill" Height="46" CornerRadius="6" Background="{DynamicResource GoodBrush}" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1"><Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform></Border>
                     </Border>
                     <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                       <TextBlock x:Name="DiskText" Text="…" FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}"/>
@@ -433,33 +455,36 @@
                   <TextBlock x:Name="AdminSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
               </Expander.Header>
-              <Grid Margin="0,16,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Run Hush as administrator" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Center"/>
-                    <local:HelpMark Style="{StaticResource HelpMark}" Margin="8,0,0,0" AutomationProperties.Name="More about administrator mode" HelpText="System Temp, Prefetch, Windows logs and Windows Update files can only be cleaned as administrator. Hush still shows everything first and asks before cleaning. The installed copy moves to Program Files and starts through one task, so there is no permission prompt on each start; a portable copy asks each time."/>
+              <StackPanel Margin="0,10,0,6">
+                <Grid Margin="0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="Run Hush as administrator" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Center"/>
+                      <local:HelpMark Style="{StaticResource HelpMark}" Margin="8,0,0,0" AutomationProperties.Name="More about administrator mode" HelpText="System Temp, Prefetch, Windows logs and Windows Update files can only be cleaned as administrator. Hush still shows everything first and asks before cleaning. The installed copy moves to Program Files and starts through one task, so there is no permission prompt on each start; a portable copy asks each time."/>
+                    </StackPanel>
                   </StackPanel>
-                </StackPanel>
-                <CheckBox x:Name="AdminModeBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="AdminMode_Click" VerticalAlignment="Center" AutomationProperties.Name="Run Hush as administrator"/>
-              </Grid>
-            </Expander>
-            <!-- Interface size: scales the whole window content together (see UiScale) so nobody has to resize the window to read it. -->
-            <Expander x:Name="SettingsSizeSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Interface size">
-              <Expander.Header>
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal"><TextBlock Text="Interface size" Style="{StaticResource CardTitle}"/><local:HelpMark Style="{StaticResource HelpMark}" HelpText="Makes everything in Hush bigger or smaller together, so you never have to resize the window just to read it. Smart fits the size of your screen." AutomationProperties.Name="More about Interface size"/></StackPanel>
-                  <TextBlock x:Name="UiSizeSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
-                </StackPanel>
-              </Expander.Header>
-              <StackPanel Margin="0,16,0,8">
-                
-                <StackPanel Orientation="Horizontal" Margin="-13,10,0,0">
-                  <RadioButton x:Name="UiSizeSmart" GroupName="UiSize" Content="Smart" Tag="smart" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="Smart size"/>
-                  <RadioButton x:Name="UiSize75" GroupName="UiSize" Content="75%" Tag="75" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="75 percent"/>
-                  <RadioButton x:Name="UiSize100" GroupName="UiSize" Content="100%" Tag="100" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="100 percent"/>
-                  <RadioButton x:Name="UiSize120" GroupName="UiSize" Content="120%" Tag="120" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="120 percent"/>
-                </StackPanel>
-                <TextBlock x:Name="UiSizeNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,4,0,0"/>
+                  <CheckBox x:Name="AdminModeBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="AdminMode_Click" VerticalAlignment="Center" AutomationProperties.Name="Run Hush as administrator"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="Minimize to tray" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Center"/>
+                      <local:HelpMark Style="{StaticResource HelpMark}" Margin="8,0,0,0" AutomationProperties.Name="More about Minimize to tray" HelpText="When you minimize Hush it hides next to the clock (the notification area) instead of staying in the taskbar. Click its icon to open it again, or right-click it for Open and Quit. The close button still closes Hush."/>
+                    </StackPanel>
+                  </StackPanel>
+                  <CheckBox x:Name="MinimizeToTrayBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="MinimizeToTray_Click" VerticalAlignment="Center" AutomationProperties.Name="Minimize to tray"/>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
+                <Grid Margin="0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="Start with Windows" FontSize="{DynamicResource BodyFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource HeadingBrush}" VerticalAlignment="Center"/>
+                      <local:HelpMark Style="{StaticResource HelpMark}" Margin="8,0,0,0" AutomationProperties.Name="More about Start with Windows" HelpText="Opens Hush when you sign in to Windows, quietly: minimized, or in the tray when Minimize to tray is on. It never starts in front of what you are doing. With administrator mode on, the installed copy starts without a permission prompt; a portable copy would ask Windows' permission at every sign-in, so install Hush if you want both."/>
+                    </StackPanel>
+                  </StackPanel>
+                  <CheckBox x:Name="StartWithWindowsBox" Grid.Column="2" Style="{StaticResource SwitchCheckBox}" Click="StartWithWindows_Click" VerticalAlignment="Center" AutomationProperties.Name="Start with Windows"/>
+                </Grid>
               </StackPanel>
             </Expander>
               </StackPanel>
@@ -583,8 +608,32 @@
                 <Border Height="1" Background="{DynamicResource BorderBrush}" Opacity="0.7"/>
                 <Grid Margin="0,16,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <TextBlock x:Name="BrowserStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" VerticalAlignment="Center"/>
-                  <Button x:Name="BrowserCleanButton" Grid.Column="2" Content="Review and clean…" Click="BrowserClean_Click" IsEnabled="False" Padding="18,8" AutomationProperties.Name="Review and clean browser data"/>
+                  <Button x:Name="BrowserCleanButton" Style="{StaticResource AccentOutlineButton}" Grid.Column="2" Content="Review and clean…" Click="BrowserClean_Click" IsEnabled="False" Padding="18,8" AutomationProperties.Name="Review and clean browser data"/>
                 </Grid>
+              </StackPanel>
+            </Expander>
+              </StackPanel>
+            </Grid>
+            <!-- Interface size: scales the whole window content together (see UiScale) so nobody has to resize the window to read it. -->
+            <Expander x:Name="SettingsSizeSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Appearance">
+              <Expander.Header>
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal"><TextBlock Text="Appearance" Style="{StaticResource CardTitle}"/><local:HelpMark Style="{StaticResource HelpMark}" HelpText="Interface size makes everything in Hush bigger or smaller together, so you never have to resize the window just to read it. Smart fits the size of your screen. Main color is the color of the gauge, links, switches and glows. The Light theme uses a slightly darker shade of the same color so it stays easy to read. It does not change the green, amber and red that mark how safe something is." AutomationProperties.Name="More about Appearance"/></StackPanel>
+                  <TextBlock x:Name="UiSizeSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel Margin="0,16,0,8">
+                
+                <StackPanel Orientation="Horizontal" Margin="-13,10,0,0">
+                  <RadioButton x:Name="UiSizeSmart" GroupName="UiSize" Content="Smart" Tag="smart" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="Smart size"/>
+                  <RadioButton x:Name="UiSize75" GroupName="UiSize" Content="75%" Tag="75" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="75 percent"/>
+                  <RadioButton x:Name="UiSize100" GroupName="UiSize" Content="100%" Tag="100" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="100 percent"/>
+                  <RadioButton x:Name="UiSize120" GroupName="UiSize" Content="120%" Tag="120" Style="{StaticResource ChoiceChip}" Click="UiSize_Click" AutomationProperties.Name="120 percent"/>
+                </StackPanel>
+                <TextBlock x:Name="UiSizeNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,4,0,0"/>
+                <TextBlock Text="Main color" Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource SupportFontSize}" Margin="0,18,0,0"/>
+                <TextBlock x:Name="AccentSummary" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0"/>
+                <WrapPanel x:Name="AccentPanel" Margin="0,10,0,0"/>
               </StackPanel>
             </Expander>
             <!-- Services (0.9): services that start with Windows but that most people do not need, and ones left behind by removed programs. Nothing is claimed
@@ -597,20 +646,43 @@
                 </StackPanel>
               </Expander.Header>
               <StackPanel Margin="0,6,0,8">
-                <!-- What the switches mean, once, where the list starts (the "?" on each line says more): ON = enabled as it is now, OFF = a change waiting for Review. -->
-                <TextBlock x:Name="ServicesHint" Text="Switch a service off to disable it. Nothing changes until you press “Review changes”." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8"/>
+                <!-- What the switches mean, once, where the list starts (the "?" on each line says more): ON = turn this off (a change waiting for Review), OFF = left as it is, like O&O ShutUp10++. -->
+                <TextBlock x:Name="ServicesHint" Text="Switch a service on to disable it, or switch one Hush turned off back off to restore it. Nothing changes until you press “Review changes” at the bottom of this page." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8"/>
                 <ItemsControl x:Name="ServicesList" AlternationCount="200" ItemTemplate="{StaticResource ServiceTemplate}"><ItemsControl.GroupStyle><StaticResource ResourceKey="AdjustmentGroups"/></ItemsControl.GroupStyle></ItemsControl>
                 <TextBlock x:Name="ServicesEmpty" Text="No service on this PC needs a second look." Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,0"/>
                 <TextBlock x:Name="ServicesStatus" Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
-                <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                  <Button x:Name="RefreshServicesButton" Content="Refresh" Click="RefreshServices_Click" Style="{StaticResource TextButton}" local:Motion.MouseOnly="True" Margin="-14,0,0,0"/>
-                  <Button x:Name="ServicesUndoButton" Grid.Column="1" Content="Undo changes" Click="ServicesUndo_Click" Style="{StaticResource TextButton}" Visibility="Collapsed" AutomationProperties.Name="Put the changed services back"/>
-                  <Button x:Name="ServicesReviewButton" Grid.Column="3" Content="Review changes…" Click="ServicesReview_Click" IsEnabled="False" Padding="18,8" AutomationProperties.Name="Review service changes"/>
+                <!-- Footer like the Windows choices: Refresh and the Actions menu at the left, Undo and Review at the right. Every action only switches the matching
+                     services ON and opens the usual review (nothing is written before it is confirmed). -->
+                <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="RefreshServicesButton" Content="Refresh" Click="RefreshServices_Click" Style="{StaticResource TextButton}" local:Motion.MouseOnly="True" Margin="-14,0,0,0"/>
+                    <Button x:Name="ServicesActionsButton" Click="ServicesActions_Click" Style="{StaticResource AccentOutlineButton}" Padding="18,9" AutomationProperties.Name="Actions: choose services" Margin="10,0,0,0">
+                      <StackPanel Orientation="Horizontal"><TextBlock Text="Actions"/><Path Data="M 0,0 L 4,4 L 8,0" Stroke="{Binding (TextElement.Foreground), RelativeSource={RelativeSource Self}}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" VerticalAlignment="Center" Margin="9,2,0,0" RenderTransformOrigin="0.5,0.5">
+                        <Path.RenderTransform><RotateTransform Angle="0"/></Path.RenderTransform>
+                        <Path.Style><Style TargetType="Path"><Style.Triggers><DataTrigger Binding="{Binding IsOpen, ElementName=ServicesActionsPopup}" Value="True">
+                          <DataTrigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" To="180" Duration="0:0:0.28"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation></Storyboard></BeginStoryboard></DataTrigger.EnterActions>
+                          <DataTrigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" To="0" Duration="0:0:0.28"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation></Storyboard></BeginStoryboard></DataTrigger.ExitActions>
+                        </DataTrigger></Style.Triggers></Style></Path.Style>
+                      </Path></StackPanel>
+                    </Button>
+                    <Popup x:Name="ServicesActionsPopup" PlacementTarget="{Binding ElementName=ServicesActionsButton}" Placement="Top" StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade" VerticalOffset="-4">
+                      <Border Background="{DynamicResource RaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="6" Margin="14,14,14,18">
+                        <Border.Effect><DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.35" Color="#000000"/></Border.Effect>
+                        <StackPanel MinWidth="380">
+                          <Button x:Name="ServicesActionRareButton" Style="{StaticResource MenuAction}" Click="ServicesActionRare_Click"><StackPanel Orientation="Horizontal"><Ellipse Width="11" Height="11" Fill="{DynamicResource GoodBrush}" Margin="0,0,14,0"/><TextBlock Text="Turn off only the rarely needed services"/></StackPanel></Button>
+                          <Button x:Name="ServicesActionReadFirstButton" Style="{StaticResource MenuAction}" Click="ServicesActionReadFirst_Click"><StackPanel Orientation="Horizontal"><Ellipse Width="11" Height="11" Fill="{DynamicResource MeterWarnBrush}" Margin="0,0,14,0"/><TextBlock Text="Rarely needed and read-first services"/></StackPanel></Button>
+                          <Button x:Name="ServicesActionAllButton" Style="{StaticResource MenuAction}" Click="ServicesActionAll_Click"><StackPanel Orientation="Horizontal"><Ellipse Width="11" Height="11" Fill="{DynamicResource CleanTextBrush}" Margin="0,0,14,0"/><TextBlock Text="Turn off every service in the list"/></StackPanel></Button>
+                          <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="8,5"/>
+                          <Button x:Name="ServicesActionClearButton" Style="{StaticResource MenuAction}" Click="ServicesActionClear_Click"><TextBlock Text="Clear my choices"/></Button>
+                          <Button x:Name="ServicesActionUndoButton" Style="{StaticResource MenuAction}" Click="ServicesActionUndo_Click"><TextBlock Text="Undo all changes"/></Button>
+                        </StackPanel>
+                      </Border>
+                    </Popup>
+                  </StackPanel>
+                  <Button x:Name="ServicesUndoButton" Grid.Column="2" Content="Undo changes" Click="ServicesUndo_Click" Style="{StaticResource TextButton}" Visibility="Collapsed" AutomationProperties.Name="Put the changed services back"/>
                 </Grid>
               </StackPanel>
             </Expander>
-              </StackPanel>
-            </Grid>
             <!-- Scheduled tasks (0.9): the sibling of Services, full width under the two balanced columns. Tasks most home PCs do not need (telemetry, app updaters)
                  and ones left behind by removed programs. Read when the card is opened; turning one off disables it (never deletes it), with the original saved first and Undo. -->
             <Expander x:Name="SettingsTasksSection" Style="{StaticResource SettingsSection}" AutomationProperties.Name="Scheduled tasks" Expanded="Tasks_Expanded" Collapsed="TopicCard_Collapsed">
@@ -621,14 +693,13 @@
                 </StackPanel>
               </Expander.Header>
               <StackPanel Margin="0,6,0,8">
-                <TextBlock x:Name="TasksHint" Text="Switch a task off to disable it. Nothing changes until you press “Review changes”." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8"/>
+                <TextBlock x:Name="TasksHint" Text="Switch a task on to disable it, or switch one Hush turned off back off to restore it. Nothing changes until you press “Review changes” at the bottom of this page." FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8"/>
                 <ItemsControl x:Name="TasksList" AlternationCount="200" ItemTemplate="{StaticResource ServiceTemplate}"><ItemsControl.GroupStyle><StaticResource ResourceKey="AdjustmentGroups"/></ItemsControl.GroupStyle></ItemsControl>
                 <TextBlock x:Name="TasksEmpty" Text="No scheduled task on this PC needs a second look." Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,0"/>
                 <TextBlock x:Name="TasksStatus" Visibility="Collapsed" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,12,0,0"/>
                 <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <Button x:Name="RefreshTasksButton" Content="Refresh" Click="RefreshTasks_Click" Style="{StaticResource TextButton}" local:Motion.MouseOnly="True" Margin="-14,0,0,0" AutomationProperties.Name="Read the scheduled tasks again"/>
                   <Button x:Name="TasksUndoButton" Grid.Column="1" Content="Undo changes" Click="TasksUndo_Click" Style="{StaticResource TextButton}" Visibility="Collapsed" AutomationProperties.Name="Turn the changed scheduled tasks back on"/>
-                  <Button x:Name="TasksReviewButton" Grid.Column="3" Content="Review changes…" Click="TasksReview_Click" IsEnabled="False" Padding="18,8" AutomationProperties.Name="Review scheduled task changes"/>
                 </Grid>
               </StackPanel>
             </Expander>
@@ -672,12 +743,12 @@
                   <TextBlock Text="Advanced" FontSize="{DynamicResource SupportFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource CleanTextBrush}" Margin="10,1,0,0" VerticalAlignment="Center"/>
                   <local:HelpMark Style="{StaticResource HelpMark}" AutomationProperties.Name="More about turning off Windows Update" HelpText="Turns Windows Update off completely: its policies, the update services and the update scheduled tasks. Your PC then stops getting security fixes and Defender updates through Windows Update until you turn this back on. Every original value is saved first and Undo puts them all back. Needs administrator rights."/>
                 </StackPanel>
-                <Button x:Name="TurnOffUpdateButton" Grid.Column="2" Content="Turn off…" Click="TurnOffUpdate_Click" Padding="18,8" AutomationProperties.Name="Turn off Windows Update"/>
+                <Button x:Name="TurnOffUpdateButton" Style="{StaticResource AccentOutlineButton}" Grid.Column="2" Content="Turn off…" Click="TurnOffUpdate_Click" Padding="18,8" AutomationProperties.Name="Turn off Windows Update"/>
               </Grid>
             </Expander>
             </StackPanel>
           </ScrollViewer>
-          <Grid Grid.Row="2" Margin="0,18,0,0">
+          <Grid x:Name="SettingsFooter" Grid.Row="2" Margin="0,18,0,0">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <TextBlock x:Name="WindowsSettingsStatus" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="22" Margin="0,0,0,10"/>
             <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -707,29 +778,31 @@
                 </Popup>
               </StackPanel>
               <Button x:Name="UndoWindowsSettingsButton" Grid.Column="2" Content="Undo Windows changes" Click="UndoWindowsSettings_Click" Style="{StaticResource TextButton}" IsEnabled="False"/>
-              <Button x:Name="ApplyWindowsSettingsButton" Grid.Column="4" Content="Review Windows changes" Click="ApplyWindowsSettings_Click" IsEnabled="False"/>
+              <Button x:Name="ApplyWindowsSettingsButton" Style="{StaticResource AccentOutlineButton}" Grid.Column="4" Content="Review changes" Click="ReviewChanges_Click" IsEnabled="False" AutomationProperties.Name="Review all staged changes"/>
             </Grid>
           </Grid>
         </Grid>
       </Grid>
       </Grid>
       <Border x:Name="ModalOverlay" Grid.RowSpan="2" Background="{DynamicResource ModalShadeBrush}" Visibility="Collapsed">
-        <Border Background="{DynamicResource PanelBrush}" CornerRadius="24" Width="510" Padding="34" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <!-- The Clean confirmation. Simple mode shows only the title (what will be freed), one calm line and the two buttons; Pro mode adds the breakdown by group and category and
+             the short list of what will happen (see ShowConfirmation). Left edges line up on one 34 DIP margin, the amounts share one right edge. -->
+        <Border x:Name="ConfirmCard" Background="{DynamicResource PanelBrush}" CornerRadius="24" Width="500" Padding="34,32,34,30" HorizontalAlignment="Center" VerticalAlignment="Center">
           <StackPanel>
-            <TextBlock Text="Confirm cleanup" FontSize="{DynamicResource CompactFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
-            <TextBlock Text="Are you sure?" Style="{StaticResource PopupTitle}" Margin="0,12,0,0"/>
-            <TextBlock x:Name="ConfirmSummary" Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource BodyFontSize}" TextWrapping="Wrap" Margin="0,18,0,0" LineHeight="23"/>
-            <TextBlock x:Name="ConfirmHomeNote" Visibility="Collapsed" Text="Cleans only the green, recommended items. Use Take a look to choose more." FontSize="{DynamicResource CompactFontSize}" Foreground="{DynamicResource GoodBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
-            <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,14,0,0">
-              <StackPanel Margin="0,0,10,0">
-                <StackPanel x:Name="ConfirmGroups"/>
-                <TextBlock x:Name="ConfirmDetail" FontSize="{DynamicResource CompactFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
+            <TextBlock x:Name="ConfirmTitle" Text="Are you sure?" Style="{StaticResource PopupTitle}"/>
+            <TextBlock x:Name="ConfirmSummary" Foreground="{DynamicResource MutedBrush}" FontSize="{DynamicResource BodyFontSize}" TextWrapping="Wrap" Margin="0,10,0,0" LineHeight="23"/>
+            <TextBlock x:Name="ConfirmHomeNote" Visibility="Collapsed" Text="Cleans only the green, recommended items. Use Take a look to choose more." FontSize="{DynamicResource CompactFontSize}" Foreground="{DynamicResource GoodBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,6,0,0"/>
+            <ScrollViewer x:Name="ConfirmScroll" MaxHeight="330" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,22,0,0">
+              <StackPanel Margin="0,0,8,0">
+                <Border Background="{DynamicResource RaisedBrush}" CornerRadius="14" Padding="18,16">
+                  <StackPanel x:Name="ConfirmGroups" Grid.IsSharedSizeScope="True"/>
+                </Border>
+                <TextBlock x:Name="ConfirmDetail" FontSize="{DynamicResource CompactFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="22" Margin="2,18,0,0"/>
               </StackPanel>
             </ScrollViewer>
             <!-- Advanced (red) cleanups are irreversible or touch recovery data: Clean stays off until this is ticked. -->
-            <CheckBox x:Name="AdvancedConsentBox" Visibility="Collapsed" Click="AdvancedConsent_Click" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" Margin="0,18,0,0" FontSize="{DynamicResource CompactFontSize}" Content="I understand some of this cannot be undone" IsEnabled="True" AutomationProperties.Name="I understand some of this cannot be undone"/>
-            <Border Height="28"/>
-            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <CheckBox x:Name="AdvancedConsentBox" Visibility="Collapsed" Click="AdvancedConsent_Click" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" Margin="0,20,0,0" FontSize="{DynamicResource CompactFontSize}" Content="I understand some of this cannot be undone" IsEnabled="True" AutomationProperties.Name="I understand some of this cannot be undone"/>
+            <Grid Margin="0,28,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
               <Button x:Name="ConfirmDeleteButton" Content="Clean selected" Click="ConfirmDelete_Click" Style="{StaticResource DangerButton}" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
               <Button x:Name="CancelDeleteButton" Grid.Column="2" Content="Keep my files" Click="CancelDelete_Click" Padding="12,9" FontSize="{DynamicResource ActionFontSize}"/>
             </Grid>
@@ -745,12 +818,14 @@
                 <TextBlock x:Name="WindowsConfirmSummary" FontSize="{DynamicResource BodyFontSize}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" LineHeight="25"/>
                 <TextBlock x:Name="WindowsConfirmDetail" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="23" Margin="0,20,0,0"/>
                 <TextBlock x:Name="WindowsConfirmNote" FontSize="{DynamicResource BodyFontSize}" FontWeight="Medium" Foreground="{DynamicResource MeterWarnBrush}" TextWrapping="Wrap" LineHeight="25" Margin="0,20,0,0" Visibility="Collapsed"/>
+                <!-- These boxes use the Review checkbox style, whose IsEnabled follows "a scan result can be selected" (CanSelectCandidates). Without a scan result that made the
+                     consent box dead (faded, impossible to tick), so the "Turn off Windows Update" button could never be enabled. They are always enabled here (local value). -->
                 <StackPanel x:Name="WindowsOptions" Margin="0,20,0,0" Visibility="Collapsed">
-                  <CheckBox x:Name="RestorePointBox" IsChecked="True" Content="Create a restore point first" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource TealTextBrush}" FontSize="{DynamicResource CompactFontSize}" AutomationProperties.Name="Create a restore point first"/>
+                  <CheckBox x:Name="RestorePointBox" IsEnabled="True" IsChecked="True" Content="Create a restore point first" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource TealTextBrush}" FontSize="{DynamicResource CompactFontSize}" AutomationProperties.Name="Create a restore point first"/>
                   <TextBlock x:Name="RestorePointNote" FontSize="{DynamicResource SupportFontSize}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="30,4,0,0" Visibility="Collapsed"/>
-                  <CheckBox x:Name="EnableProtectionBox" Content="Turn on System Protection for drive C: first" Visibility="Collapsed" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource TealTextBrush}" FontSize="{DynamicResource CompactFontSize}" Margin="0,12,0,0" AutomationProperties.Name="Turn on System Protection first"/>
-                  <CheckBox x:Name="AlsoUpdateOffBox" Content="Also turn off Windows Update (no security fixes through it)" Visibility="Collapsed" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" FontSize="{DynamicResource CompactFontSize}" Margin="0,14,0,0" AutomationProperties.Name="Also turn off Windows Update"/>
-                  <CheckBox x:Name="WindowsConsentBox" Content="I understand my PC gets no security fixes until I turn this back on" Visibility="Collapsed" Click="WindowsConsent_Click" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" FontSize="{DynamicResource CompactFontSize}" Margin="0,14,0,0" AutomationProperties.Name="I understand Windows Update is off until I turn it back on"/>
+                  <CheckBox x:Name="EnableProtectionBox" IsEnabled="True" Content="Turn on System Protection for drive C: first" Visibility="Collapsed" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource TealTextBrush}" FontSize="{DynamicResource CompactFontSize}" Margin="0,12,0,0" AutomationProperties.Name="Turn on System Protection first"/>
+                  <CheckBox x:Name="AlsoUpdateOffBox" IsEnabled="True" Content="Also turn off Windows Update (no security fixes through it)" Visibility="Collapsed" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" FontSize="{DynamicResource CompactFontSize}" Margin="0,14,0,0" AutomationProperties.Name="Also turn off Windows Update"/>
+                  <CheckBox x:Name="WindowsConsentBox" IsEnabled="True" Content="I understand my PC gets no security fixes until I turn this back on" Visibility="Collapsed" Click="WindowsConsent_Click" Style="{StaticResource CandidateCheckBox}" Tag="{DynamicResource CleanTextBrush}" FontSize="{DynamicResource CompactFontSize}" Margin="0,14,0,0" AutomationProperties.Name="I understand Windows Update is off until I turn it back on"/>
                 </StackPanel>
               </StackPanel>
             </ScrollViewer>

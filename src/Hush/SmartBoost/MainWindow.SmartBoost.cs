@@ -228,34 +228,44 @@ public partial class MainWindow
         if (WindowState == WindowState.Minimized) return; // nobody is looking: no reading, no redraw
         var sample = resourceMonitor.Sample();
         // A bar only moves for a change worth seeing (CPU jitters by a few points every reading): every redraw of this window costs real CPU, and much more on a weak PC.
-        ShowMeter(CpuFill, CpuText, sample.CpuPercent, $"{sample.CpuPercent:0}%", ResourceSnapshot.Busy, minChange: 4);
-        ShowMeter(MemoryFill, MemoryText, sample.MemoryPercent, $"{sample.MemoryPercent:0}%", ResourceSnapshot.Busy, minChange: 2);
+        ShowMeter(CpuFill, CpuText, sample.CpuPercent, $"{sample.CpuPercent:0}%", ResourceSnapshot.CpuAmber, ResourceSnapshot.CpuRed, minChange: 4);
+        ShowMeter(MemoryFill, MemoryText, sample.MemoryPercent, $"{sample.MemoryPercent:0}%", ResourceSnapshot.MemoryAmber, ResourceSnapshot.MemoryRed, minChange: 2);
         MemoryText.ToolTip = $"{Sizes.Format(sample.MemoryUsed)} of {Sizes.Format(sample.MemoryTotal)} in use";
-        ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{sample.DiskUsedPercent:0}%", ResourceSnapshot.Full);
+        ShowMeter(DiskFill, DiskText, sample.DiskUsedPercent, $"{sample.DiskUsedPercent:0}%", ResourceSnapshot.DiskAmber, ResourceSnapshot.DiskRed);
         DiskText.ToolTip = $"{Sizes.Format(sample.DiskFree)} free of {Sizes.Format(sample.DiskTotal)} on the system drive";
         lastSample = sample;
         if (++processTick % 10 == 0) RefreshProcesses(rebuildList: false); // the app count follows along (every 20 s) while Settings is open
         if (DateTime.UtcNow >= infoNoteUntilUtc)
         {
-            InfoSummary.Text = sample.Headline;
+            // The situation in one line, colored like the bars (green good, amber so-so, red bad); advice comes with the amber and red ones.
+            var reading = sample.Assess(lastReading is { } junk ? TempFraction(junk.Bytes) * 100 : -1);
+            string brush = BrushFor(reading.Level);
+            if (InfoSummary.Text != reading.Text || InfoSummary.Tag as string != brush)
+            {
+                InfoSummary.Text = reading.Text; InfoSummary.Tag = brush;
+                InfoSummary.SetResourceReference(TextBlock.ForegroundProperty, brush);
+            }
             InfoSummary.ToolTip = $"Figures come from Windows and update only while this page is open. Hush itself uses {Sizes.Format(sample.HushWorkingSet)} of memory.";
         }
     }
 
-    // A bar uses the theme accent and turns Review-orange (never red) once its reading is high.
-    private static void ShowMeter(Border fill, TextBlock text, double percent, string label, double warnAt, int milliseconds = 400, double minChange = 0)
+    // The three colors we already have: green (good), amber (so-so), red (bad: the Clean red, the only red in Hush).
+    private static string BrushFor(MeterLevel level) => level switch { MeterLevel.Red => "CleanTextBrush", MeterLevel.Amber => "MeterWarnBrush", _ => "GoodBrush" };
+
+    // A bar is green while its reading is good, amber in the middle and red when it is bad (the same three colors as the Safe/Review/Advanced levels).
+    private static void ShowMeter(Border fill, TextBlock text, double percent, string label, double amberAt, double redAt, int milliseconds = 400, double minChange = 0)
     {
         // Every redraw of this window costs real CPU, so a bar whose reading and color did not change (or moved by less than minChange points) is left alone.
-        bool warn = percent >= warnAt;
-        if (fill.Tag is bool shownWarn && shownWarn == warn)
+        var level = ResourceSnapshot.LevelOf(percent, amberAt, redAt);
+        if (fill.Tag is MeterLevel shownLevel && shownLevel == level)
         {
             if (text.Text == label) return;
             if (minChange > 0 && text.Tag is double shown && Math.Abs(shown - percent) < minChange) return;
         }
         text.Tag = percent; // the reading the bar currently shows
-        fill.Tag = warn;
+        fill.Tag = level;
         text.Text = label;
-        fill.SetResourceReference(Border.BackgroundProperty, warn ? "MeterWarnBrush" : "TealBrush");
+        fill.SetResourceReference(Border.BackgroundProperty, BrushFor(level));
         // The slim vertical bar fills from the bottom (transform animation, no layout work).
         var scale = (ScaleTransform)fill.RenderTransform;
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, Motion.Tween(scale.ScaleY, Math.Clamp(percent, 0, 100) / 100, milliseconds));

@@ -3,13 +3,15 @@ using System.Windows;
 
 namespace Hush;
 
-// One line of the Scheduled tasks card (same row as a service): ON = the task is enabled, as Windows has it now; switching it OFF stages "turn it off".
+// One line of the Scheduled tasks card (same row as a service): switching it ON stages "turn it off" (like O&O ShutUp10++).
 internal sealed class TaskChoice(TaskCandidate candidate) : OffSwitchChoice
 {
     internal TaskCandidate Candidate { get; } = candidate;
     public string Path => Candidate.Path;
     public override string Title => Candidate.Title;
-    public override string HelpText => Candidate.Why + " Switch it off to disable it: Windows no longer runs it, and the task itself stays. Nothing changes until you review and confirm, and Undo turns it back on.";
+    public override bool WasOff => Candidate.ChangedByHush;
+    public override string HelpText => Candidate.Why + (WasOff ? " Hush turned this off earlier. Switch it off to turn it back on." : " Switch it on to disable it: Windows no longer runs it, and the task itself stays.")
+        + " Nothing changes until you review and confirm, and Undo turns it back on.";
     protected override string CurrentStatus => Candidate.Status;
     public override string LevelLabel => Candidate.Level switch { TaskLevel.Recommended => "Rarely needed", TaskLevel.Somewhat => "Read first", _ => "Left behind" };
     public override bool Amber => Candidate.Level != TaskLevel.Recommended;
@@ -38,7 +40,8 @@ public partial class MainWindow
         if (tasksBusy) return;
         try
         {
-            var candidates = await Task.Run(taskTuning.Scan);
+            // What Hush offers, plus what it already turned off earlier (those lines start ON and can be switched back OFF).
+            var candidates = await Task.Run(() => taskTuning.Scan().Concat(taskTuning.ScanChanged()).ToList());
             foreach (var old in taskChoices) old.PropertyChanged -= TaskChoiceChanged;
             // In order: the topics in their fixed order (left-behind tasks last), and inside a topic the rarely-needed ones first, then by name.
             taskChoices = candidates.Select(candidate => new TaskChoice(candidate))
@@ -52,44 +55,18 @@ public partial class MainWindow
             TasksList.ItemsSource = view;
             int changed = taskTuning.ChangedCount;
             // Without administrator rights Windows hides some task files from Hush (the top folder cannot be listed), so the summary says more may show.
-            TasksSummary.Text = (taskChoices.Count == 0 ? "Nothing to suggest on this PC" : $"{taskChoices.Count} task{(taskChoices.Count == 1 ? "" : "s")} you can turn off")
+            int offeredTasks = taskChoices.Count(choice => !choice.WasOff);
+            TasksSummary.Text = (taskChoices.Count == 0 ? "Nothing to suggest on this PC" : offeredTasks == 0 ? "Nothing left to turn off" : $"{offeredTasks} task{(offeredTasks == 1 ? "" : "s")} you can turn off")
                 + (changed > 0 ? $" · {changed} changed by Hush" : "") + (taskTuning.CanChange ? "" : " · more may show as administrator");
             TasksEmpty.Visibility = taskChoices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             TasksUndoButton.Visibility = taskTuning.HasChanges ? Visibility.Visible : Visibility.Collapsed;
-            UpdateTasksReview();
+            UpdateReviewButton();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Security.SecurityException)
         { TasksSummary.Text = "Scheduled tasks can't be read right now"; }
     }
 
-    private void TaskChoiceChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => UpdateTasksReview();
-
-    private void UpdateTasksReview()
-    {
-        int count = taskChoices.Count(choice => choice.Selected);
-        TasksReviewButton.IsEnabled = count > 0 && !tasksBusy;
-        TasksReviewButton.Content = count > 0 ? $"Review {count} change{(count == 1 ? "" : "s")}…" : "Review changes…";
-    }
-
-    private async void TasksReview_Click(object sender, RoutedEventArgs e)
-    {
-        var chosen = taskChoices.Where(choice => choice.Selected).ToList();
-        if (chosen.Count == 0 || tasksBusy || busy) return;
-        bool admin = taskTuning.CanChange;
-        string lines = string.Join("\n", chosen.Select(choice => $"• {choice.Title}: {choice.Candidate.Why}"));
-        string body = $"Hush will turn off {(chosen.Count == 1 ? "this scheduled task" : "these scheduled tasks")}, so Windows no longer runs {(chosen.Count == 1 ? "it" : "them")}. Nothing is deleted; Undo turns every one back on.\n\n{lines}"
-            + (admin ? "" : "\n\nThis needs administrator rights. Hush restarts with Windows' own permission prompt and comes back to this card; nothing has been changed yet.");
-        bool agreed = await AskConsent($"Turn off {chosen.Count} scheduled task{(chosen.Count == 1 ? "" : "s")}?", body, admin ? "Turn them off" : "Restart as administrator", "Cancel");
-        if (!agreed) return;
-        if (!admin)
-        {
-            if (await Task.Run(() => ElevatedLauncher("--tasks"))) { ExitForRestart(); return; }
-            TasksStatus.Text = "Windows' permission prompt was declined or could not open, so nothing was changed.";
-            TasksStatus.Visibility = Visibility.Visible;
-            return;
-        }
-        await RunTasksAsync(() => taskTuning.Apply(chosen.Select(choice => choice.Path).ToList()), undo: false);
-    }
+    private void TaskChoiceChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => UpdateReviewButton();
 
     private async void TasksUndo_Click(object sender, RoutedEventArgs e)
     {
@@ -103,12 +80,12 @@ public partial class MainWindow
             TasksStatus.Visibility = Visibility.Visible;
             return;
         }
-        await RunTasksAsync(taskTuning.Undo, undo: true);
+        await RunTasksAsync(() => taskTuning.Undo(), undo: true);
     }
 
     private async Task RunTasksAsync(Func<TaskReport> work, bool undo)
     {
-        tasksBusy = true; UpdateTasksReview();
+        tasksBusy = true; UpdateReviewButton();
         TasksUndoButton.IsEnabled = RefreshTasksButton.IsEnabled = false;
         string message;
         try { message = (await Task.Run(work)).Text(undo); }

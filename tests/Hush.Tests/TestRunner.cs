@@ -14,6 +14,11 @@ internal static class TestRunner
         string taskHistory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Hush.Tests.Tasks." + Guid.NewGuid().ToString("N"), "Windows settings");
         Hush.MainWindow.TaskHistoryDirectory = taskHistory;
         Hush.MainWindow.CloseActionsOnDeactivate = false;
+        // The product starts everyone in Simple mode; the layout suites exercise every Settings card and the full scan, so test windows start in Pro mode (ProModeChecks switches it).
+        Hush.MainWindow.TestProMode = true;
+        // No test window may put an icon next to the clock or write the real "Start with Windows" entry.
+        Hush.MainWindow.TrayFactory = (_, _, _) => new TrayChecks.FakeTray();
+        Hush.MainWindow.StartupRegistration = new TrayChecks.FakeStartup();
         try
         {
             if (args.Length == 0) checks();

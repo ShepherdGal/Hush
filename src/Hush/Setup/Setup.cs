@@ -126,7 +126,7 @@ internal static class HushSetup
         catch { }
     }
 
-    internal static SetupResult Uninstall(SetupLocations locations, bool removeData, string? runningExe, IAdminTaskScheduler? adminScheduler = null)
+    internal static SetupResult Uninstall(SetupLocations locations, bool removeData, string? runningExe, IAdminTaskScheduler? adminScheduler = null, IStartupRegistration? startup = null)
     {
         try
         {
@@ -135,6 +135,8 @@ internal static class HushSetup
                 if (File.Exists(shortcut) && ShortcutTarget(shortcut) is { } target && (SamePath(target, locations.InstalledExe) || SamePath(target, locations.AdminExe))) File.Delete(shortcut);
             // The administrator task and the Program Files copy go too (removing the task needs administrator rights, which the admin copy has).
             if (adminScheduler != null) { try { adminScheduler.Remove(); } catch (IOException) { } }
+            // "Start with Windows" goes too (only the real uninstall passes the real Run key; tests pass nothing).
+            if (startup != null) { try { startup.Disable(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { } }
             Registry.CurrentUser.DeleteSubKeyTree(locations.RegistryKey, throwOnMissingSubKey: false);
             if (removeData) RemoveData(locations.DataDirectory);
             if (IsInstalledCopy(runningExe, locations)) return new(true, "Hush was removed. The last files are deleted when this window closes.", Deferred: true);

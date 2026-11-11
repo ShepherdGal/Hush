@@ -338,6 +338,16 @@ internal static class UiPerf
                         UiLayoutChecks.Save(root, size, Path.Combine(directory, light ? "cleaning-light.png" : "cleaning-dark.png"));
                         for (int extra = 2; extra <= 4; extra++) { Pump(430); UiLayoutChecks.Save(root, size, Path.Combine(directory, $"cleaning-{(light ? "light" : "dark")}-{extra}.png")); }
                     }
+                    // Every main color the person can choose, in both themes (the cue follows the accent and the muted text color by resource).
+                    foreach (var swatch in AccentPalette.All.Skip(1))
+                        foreach (bool light in new[] { false, true })
+                        {
+                            if (window.IsLightTheme != light) window.ToggleTheme();
+                            window.ChooseAccent(swatch.Id); Pump(1300);
+                            var size = new Size(920, 820);
+                            UiLayoutChecks.Layout(root, size);
+                            UiLayoutChecks.Save(root, size, Path.Combine(directory, $"cleaning-{swatch.Id}-{(light ? "light" : "dark")}.png"));
+                        }
                     window.Close();
                 }
                 finally { try { Directory.Delete(fixture, true); } catch { } }

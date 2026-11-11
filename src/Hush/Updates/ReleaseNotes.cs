@@ -5,7 +5,7 @@ namespace Hush;
 internal static class ReleaseNotes
 {
     // What is new in the installed version: at most about five one-line bullets, plain words, no technical detail. The long notes stay on the release page.
-    internal const string Current = "• Cleans more: temp files, caches and big app files\n• Switch off unneeded services and scheduled tasks\n• Smoother window, scrolling and cleaning animation\n• Optional administrator mode to clean system files\n• Review grouped by green, amber and red";
+    internal const string Current = "• Simple mode for everyone, Pro mode for full control\n• New icon and a main color you choose\n• New cleaning animation and a finished glow\n• Simpler clean popup and result\n• Fixed the Turn off Windows Update button";
 
     // The short list for a release found online: its "In brief" section (the release notes template has one), or else the first bullet lines.
     // At most five lines, each cut to one line's worth of text, with markdown marks removed.

@@ -271,12 +271,12 @@ internal sealed class CleanupEngine
         // Large downloads and installed-app files (Advanced, red, opt-in: owner request). Each folder is re-downloaded or reinstalled by its own app, but that can take a
         // long time, the app may not start until then, and (Unity Asset Store) the packages must be fetched again from the person's account. Only these exact folders,
         // only while the app is closed, never any project, document, setting or sign-in of the app.
-        AddFolders("AppDownloads", "Unity Asset Store downloads", CleanupKind.Cache, 0, Path.Combine(roaming, "Unity"), ["Asset Store-5.x"], ["Unity", "Unity Hub"]);
-        AddFolders("AppDownloads", "Fusion 360 app files (webdeploy)", CleanupKind.Cache, 0, Path.Combine(local, "Autodesk"), ["webdeploy"], ["Fusion360", "FusionLauncher"]);
-        AddFolders("AppDownloads", "CapCut app files", CleanupKind.Cache, 0, Path.Combine(local, "CapCut"), ["Apps"], ["CapCut"]);
-        AddFolders("AppDownloads", "Codex runtimes", CleanupKind.Cache, 0, Path.Combine(home, ".cache"), ["codex-runtimes"], ["codex", "Codex"]);
-        AddFolders("AppDownloads", "Zed downloaded tools", CleanupKind.Cache, 0, Path.Combine(local, "Zed"), ["copilot", "node"], ["Zed", "zed"]);
-        AddFolders("AppDownloads", "GitHub Desktop update packages", CleanupKind.Cache, 0, Path.Combine(local, "GitHubDesktop"), ["packages"], ["GitHubDesktop"]);
+        AddFolders("DownloadsUnity", "Unity Asset Store downloads", CleanupKind.Cache, 0, Path.Combine(roaming, "Unity"), ["Asset Store-5.x"], ["Unity", "Unity Hub"]);
+        AddFolders("DownloadsAutodesk", "Fusion 360 app files (webdeploy)", CleanupKind.Cache, 0, Path.Combine(local, "Autodesk"), ["webdeploy"], ["Fusion360", "FusionLauncher"]);
+        AddFolders("DownloadsCapCut", "CapCut app files", CleanupKind.Cache, 0, Path.Combine(local, "CapCut"), ["Apps"], ["CapCut"]);
+        AddFolders("DownloadsCodex", "Codex runtimes", CleanupKind.Cache, 0, Path.Combine(home, ".cache"), ["codex-runtimes"], ["codex", "Codex"]);
+        AddFolders("DownloadsZed", "Zed downloaded tools", CleanupKind.Cache, 0, Path.Combine(local, "Zed"), ["copilot", "node"], ["Zed", "zed"]);
+        AddFolders("DownloadsGitHub", "GitHub Desktop update packages", CleanupKind.Cache, 0, Path.Combine(local, "GitHubDesktop"), ["packages"], ["GitHubDesktop"]);
         AddFolders("DevCache", "npm cache", CleanupKind.Cache, 14, local, ["npm-cache"]);
         AddFolders("DevCache", "pip cache", CleanupKind.Cache, 14, Path.Combine(local, "pip"), ["Cache"]);
         AddFolders("DevCache", "Yarn cache", CleanupKind.Cache, 14, Path.Combine(local, "Yarn"), ["Cache"]);

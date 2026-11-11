@@ -259,7 +259,7 @@ internal static class WindowsSettingsChecks
             Require(RowCount() == all, "Clearing the search brings every choice back");
             int before = store.Writes;
             Toggle("diagnostics", true); Toggle("tailored", true);
-            Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 Windows changes", "Actual checkbox bindings stage choices without writing");
+            Require(store.Writes == before && apply.IsEnabled && apply.Content.ToString() == "Review 2 changes", "Actual checkbox bindings stage choices without writing");
             Require(((TextBlock)window.FindName("PrivacySummary")).Text == $"2 of {WindowsSettingsService.Catalog.Count(item => !item.Advanced)} turned on · 2 waiting for review", "A section summary shows staged choices before anything is applied");
             Click("ApplyWindowsSettingsButton"); Wait(350);
             Require(overlay.Visibility == Visibility.Visible && !((UIElement)window.FindName("AppSurface")).IsEnabled
@@ -359,6 +359,7 @@ internal static class WindowsSettingsChecks
             Click("CancelWindowsSettingsButton"); Until(() => overlay.Visibility == Visibility.Collapsed);
             Click("RefreshWindowsSettingsButton"); Layout(new Size(920, 820));
             Bulk("ActionAllButton");
+            Require(!window.CanSelectCandidates && alsoUpdate.IsEnabled, "The \"Also turn off Windows Update\" box can be ticked even when no scan result is on screen");
             Require(alsoUpdate.Visibility == Visibility.Visible && ((CheckBox)alsoUpdate).IsChecked == false && ((CheckBox)alsoUpdate).Tag is SolidColorBrush clean && clean.Color == ((SolidColorBrush)Application.Current.Resources["CleanTextBrush"]).Color,
                 "Apply all settings adds its own red, unticked checkbox for turning Windows Update off");
             Require(overlay.Visibility == Visibility.Visible && Choices().Where(choice => choice.CanEdit).All(choice => choice.Selected) && store.Writes == before, "Apply all settings stages every available choice and still only asks");

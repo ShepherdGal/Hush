@@ -2,6 +2,34 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## Release 0.9.5 (November 11, 2026)
+
+Version 0.9.5 published (tag v0.9.5) with Hush-Portable.zip and Hush-Setup.zip. Contents: see docs/CHANGELOG.md (0.9.5). NOT verified: a real Turn off Windows Update run, Perf on a real weak PC.
+
+## Simple / Pro mode (November 11, 2026)
+
+Header "Pro" button (`UI/MainWindow.ProMode.cs`, `Preferences.ProMode`, default off for everyone). Simple = Safe-only scan, Safe list opened directly, Settings with only Info + Appearance; Pro = everything as before; turning Pro on asks via the consent popup. `MainWindow.TestProMode` makes every test window Pro except in `ProModeChecks`. Same day: icon replaced by the owner's artwork unedited, Main color swatches (Dark and Light), sonar-ripple cleaning cue (no 60 fps cap by design). NOT verified: live feel, an existing user's first start on a real PC, Perf on a real weak PC. Fresh exe built.
+
+## Gauge hover (November 9, 2026)
+
+`GaugeHoverCue` inside the gauge grid, driven by `MainWindow.RefreshGaugeHover` (mouse enter/leave, enabled/visible changes, end of SetBusy). Two styles (ready / complete), finite, collapsed while idle. `Perf.ps1` shows the cleaning-cue budget broken (25-33 ms median, software rendering) but it is equally broken on the previous commit, so it is environmental: re-measure on a quiet PC. Fresh exe built. NOT verified: the feel with a real mouse.
+
+## One Review changes button (November 9, 2026)
+
+Services card was "empty" only because Hush had already disabled everything on this PC (see `%LOCALAPPDATA%\Hush\Windows settings\services-changed.json`): rows now also show what Hush turned off (ON switch, switch OFF = turn back on). One footer button "Review changes" replaces the per-card Review buttons (`MainWindow.ReviewChanges.cs`). NOT verified on the real PC: the elevated `--review-all` restart and the combined apply. Fresh exe built.
+
+## Tray, start with Windows, big Services card (November 9, 2026)
+
+Administrator card: Minimize to tray (`TrayIcon`, `InitializeTray` in `Admin/MainWindow.Admin.cs`) and Start with Windows (`RunKeyStartup`, `--startup`, `StartupHint`). Services is full width with its own Actions menu; Interface size is full width too (columns are two cards each). NOT verified on a real PC: the actual icon next to the clock, the Run entry and a real sign-in start; the quiet start shows the window minimized for a moment before it hides in the tray. Tasks has no Actions menu yet (same pattern would apply). Fresh exe built.
+
+## Info card colors and advice (November 9, 2026)
+
+Info bars are now green/amber/red with thresholds in `ResourceSnapshot` and are 12 DIP wide; the line under "Info" comes from `ResourceSnapshot.Assess` (situation + advice, colored). Replaced the old "never red" meter rule. Not verified: real high-load readings (forced in the preview only). Fresh exe built.
+
+## Switch direction and button hover (November 9, 2026)
+
+Owner: Settings switches must be ON for "turn this off", like ShutUp10++, and Boost-type buttons must hover like Actions/Clean. Done: `OffSwitchChoice.On` is now `Selected` (Services, Scheduled tasks); Settings action buttons use `AccentOutlineButton`. Startup-app switches and the Process "End" buttons were deliberately left as they were. Not verified: hover by eye in the live app. Fresh exe built with `scripts/Build.ps1`.
+
 ## Scheduled tasks card (November 9, 2026)
 
 New Settings card **Scheduled tasks** (owner: "also clean unneeded tasks"), built as the sibling of Services: `WindowsSettings/TaskTuning.cs` (catalog of 33, leftovers, never-touch list, save-first history `tasks-changed.json`, Undo, allow-listed history) and `WindowsSettings/MainWindow.Tasks.cs`; full width under the two balanced columns, before Privacy & telemetry. Details: CHANGELOG "Scheduled tasks card". Nothing committed. **Could not verify:** real `schtasks.exe` changes and read-back on real tasks, the real administrator restart with `--tasks`; without administrator rights the top task folder (where Google/Edge/Dropbox updaters live) cannot be listed, so those only show as administrator (the card says "more may show as administrator"). Topic names were made unique ("App updater tasks", "Tasks left behind by removed programs") because Settings remembers open headings by name and Services already uses "App updaters" / "Left behind by removed programs". Firefox's updater is matched in `\Mozilla\` (where Firefox actually puts it), not in the top folder. Observation for later: the Services UI test writes its history and log into the real `%LOCALAPPDATA%\Hush` folder (fake services only, Undo removes the history); the tasks tests use a throw-away folder instead.

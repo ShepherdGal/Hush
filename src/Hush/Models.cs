@@ -117,9 +117,10 @@ internal sealed record CleanupResult(int Deleted, int Skipped, long Bytes, bool 
 
 public static class SafetyPalette
 {
-    // The one primary accent per theme: the aqua Cyan in Dark, a softer, readable blue in Light (about 4:1 on the Light panel).
-    // The gauge, accent text, checkboxes, switches and Safe items all take this single color; never a per-control shade.
-    public static string Accent(bool light) => light ? "#4C7BC8" : "#38CFC8";
+    // The one primary accent per theme: in Dark the person's choice (Settings > Appearance, AccentPalette; this is the DEFAULT, the icon's blue), a softer,
+    // readable blue in Light (about 4:1 on the Light panel). The gauge, accent text, checkboxes, switches and Safe items all take this single color; never a
+    // per-control shade. The window resolves the chosen Dark swatch itself (MainWindow.AccentColor).
+    public static string Accent(bool light) => light ? "#4C7BC8" : AccentPalette.All[0].Color;
     // The ONE red in Hush: the Clean button. Advanced items and every other red element use exactly this value (never a second red).
     // The literals below and in App.xaml are the only red-family colors allowed in the source; a test scans for any other.
     public static string Danger(bool light) => light ? "#B54428" : "#FF795C";

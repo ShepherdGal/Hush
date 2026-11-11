@@ -1,6 +1,6 @@
 # Builds Hush.ico (16-256 px) and Hush-mark*.png from Assets\Hush-icon-source.png.
 #
-# The source is the user's brush artwork, recolored to the app's teal accent, prepared once from the supplied picture (-FromArtwork): the black surround is keyed
+# The source is the user's brush artwork (latest supplied: the glass rounded square, November 11, 2026), exactly as supplied (no color or style edits), prepared once from the supplied picture (-FromArtwork): the black surround is keyed
 # out to real transparency so the rounded square has a crisp edge and no outer glow, and the square is cropped to its exact bounds.
 # Re-run without arguments to regenerate the icon frames; pass -FromArtwork <png> to prepare a new source first.
 param([string]$FromArtwork)
@@ -30,20 +30,39 @@ if ($FromArtwork) {
     $data = $art.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadWrite, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $bytes = [byte[]]::new($data.Stride * $art.Height)
     [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
-    $minX = $art.Width; $minY = $art.Height; $maxX = 0; $maxY = 0
-    for ($y = 0; $y -lt $art.Height; $y++) {
-        for ($x = 0; $x -lt $art.Width; $x++) {
-            $i = $y * $data.Stride + $x * 4
-            $b = $bytes[$i]; $g = $bytes[$i + 1]; $r = $bytes[$i + 2]
-            $max = [Math]::Max($r, [Math]::Max($g, $b))
-            $alpha = [Math]::Min(255, [int]($max * 255 / 24))
-            if ($alpha -lt 255 -and $alpha -gt 0) {
-                $bytes[$i] = [byte][Math]::Min(255, [int]($b * 255 / $alpha)); $bytes[$i + 1] = [byte][Math]::Min(255, [int]($g * 255 / $alpha)); $bytes[$i + 2] = [byte][Math]::Min(255, [int]($r * 255 / $alpha))
+    # The surround is a dark navy (not pure black) with a faint glow, and the artwork's own rim is bright, so the outside is found by flooding in from the corner
+    # through dark pixels; the bright rim stops the flood. Outside pixels become transparent, and the first inside pixels get a soft alpha and are un-blended from the navy.
+    Add-Type -TypeDefinition @"
+public static class IconKey {
+    public static int[] Run(byte[] px, int stride, int w, int h) {
+        var outside = new bool[w * h]; var queue = new int[w * h]; int head = 0, tail = 0;
+        System.Func<int, int> mx = k => { int i = (k / w) * stride + (k % w) * 4; return System.Math.Max(px[i], System.Math.Max(px[i + 1], px[i + 2])); };
+        int[] seeds = { 0, w - 1, (h - 1) * w, h * w - 1 };
+        foreach (int s in seeds) { if (!outside[s]) { outside[s] = true; queue[tail++] = s; } }
+        while (head < tail) {
+            int k = queue[head++]; int x = k % w, y = k / w;
+            for (int d = 0; d < 4; d++) {
+                int nx = x + (d == 0 ? 1 : d == 1 ? -1 : 0), ny = y + (d == 2 ? 1 : d == 3 ? -1 : 0);
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; int n = ny * w + nx;
+                if (outside[n] || mx(n) > 62) continue; outside[n] = true; queue[tail++] = n;
             }
-            $bytes[$i + 3] = [byte]$alpha
-            if ($alpha -gt 127) { if ($x -lt $minX) { $minX = $x }; if ($x -gt $maxX) { $maxX = $x }; if ($y -lt $minY) { $minY = $y }; if ($y -gt $maxY) { $maxY = $y } }
         }
+        int minX = w, minY = h, maxX = 0, maxY = 0;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            int k = y * w + x, i = y * stride + x * 4;
+            if (outside[k]) { px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0; continue; }
+            bool edge = (x > 0 && outside[k - 1]) || (x < w - 1 && outside[k + 1]) || (y > 0 && outside[k - w]) || (y < h - 1 && outside[k + w]);
+            double alpha = 1.0;
+            if (edge) { alpha = System.Math.Min(1.0, System.Math.Max(0.0, (mx(k) - 34) / 56.0)); if (alpha > 0 && alpha < 1) { px[i] = (byte)System.Math.Max(0, System.Math.Min(255, (px[i] - 32 * (1 - alpha)) / alpha)); px[i + 1] = (byte)System.Math.Max(0, System.Math.Min(255, (px[i + 1] - 9 * (1 - alpha)) / alpha)); px[i + 2] = (byte)System.Math.Max(0, System.Math.Min(255, (px[i + 2] - 3 * (1 - alpha)) / alpha)); } }
+            px[i + 3] = (byte)(alpha * 255);
+            if (alpha > 0.5) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+        }
+        return new int[] { minX, minY, maxX, maxY };
     }
+}
+"@
+    $bounds = [IconKey]::Run($bytes, $data.Stride, $art.Width, $art.Height)
+    $minX = $bounds[0]; $minY = $bounds[1]; $maxX = $bounds[2]; $maxY = $bounds[3]
     [System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $data.Scan0, $bytes.Length)
     $art.UnlockBits($data)
     # 2. Crop to the square's exact bounds and fit it to a 512 px canvas with a 1.5% margin.
@@ -54,63 +73,7 @@ if ($FromArtwork) {
     $crop = [System.Drawing.RectangleF]::new($minX, $minY, $maxX - $minX + 1, $maxY - $minY + 1)
     $attributes = [System.Drawing.Imaging.ImageAttributes]::new(); $attributes.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
     $graphics.DrawImage($art, [System.Drawing.Rectangle]::new($target.X, $target.Y, $target.Width, $target.Height), $crop.X, $crop.Y, $crop.Width, $crop.Height, [System.Drawing.GraphicsUnit]::Pixel, $attributes)
-    # 3. Crisp border: the artwork's rim is a soft glow. Measure each pixel's distance to the edge (two-pass chamfer transform); a thin band
-    #    right at the edge becomes a solid ice-blue line (brighter top-left, dimmer bottom-right, like the artwork), and the soft glow just
-    #    inside it is toned down so the edge reads as a clean line instead of a halo.
-    $rect = [System.Drawing.Rectangle]::new(0, 0, $canvas, $canvas)
-    $data = $source.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadWrite, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $bytes = [byte[]]::new($data.Stride * $canvas)
-    [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
-    $stride = $data.Stride
-    # Recolor: rotate every hue toward the app's teal accent (#38CFC8, hue 177 degrees; the artwork is a bluer ice blue around 192-203).
-    $theta = -15.0 * [Math]::PI / 180.0; $ca = [Math]::Cos($theta); $sa = [Math]::Sin($theta)
-    $m = @((0.213 + 0.787 * $ca - 0.213 * $sa), (0.715 - 0.715 * $ca - 0.715 * $sa), (0.072 - 0.072 * $ca + 0.928 * $sa),
-           (0.213 - 0.213 * $ca + 0.143 * $sa), (0.715 + 0.285 * $ca + 0.140 * $sa), (0.072 - 0.072 * $ca - 0.283 * $sa),
-           (0.213 - 0.213 * $ca - 0.787 * $sa), (0.715 - 0.715 * $ca + 0.715 * $sa), (0.072 + 0.928 * $ca + 0.072 * $sa))
-    for ($y = 0; $y -lt $canvas; $y++) { for ($x = 0; $x -lt $canvas; $x++) {
-        $i = $y * $stride + $x * 4
-        if ($bytes[$i + 3] -eq 0) { continue }
-        $b = [double]$bytes[$i]; $g = [double]$bytes[$i + 1]; $r = [double]$bytes[$i + 2]
-        $bytes[$i + 2] = [byte][Math]::Max(0, [Math]::Min(255, $m[0] * $r + $m[1] * $g + $m[2] * $b))
-        $bytes[$i + 1] = [byte][Math]::Max(0, [Math]::Min(255, $m[3] * $r + $m[4] * $g + $m[5] * $b))
-        $bytes[$i]     = [byte][Math]::Max(0, [Math]::Min(255, $m[6] * $r + $m[7] * $g + $m[8] * $b))
-    } }
-    $big = 1000000
-    $dist = [int[]]::new($canvas * $canvas)
-    for ($y = 0; $y -lt $canvas; $y++) { for ($x = 0; $x -lt $canvas; $x++) { $dist[$y * $canvas + $x] = if ($bytes[$y * $stride + $x * 4 + 3] -gt 127) { $big } else { 0 } } }
-    for ($y = 0; $y -lt $canvas; $y++) { for ($x = 0; $x -lt $canvas; $x++) {
-        $k = $y * $canvas + $x; $d = $dist[$k]; if ($d -eq 0) { continue }
-        $left = if ($x -gt 0) { $dist[$k - 1] + 3 } else { 3 }; $up = if ($y -gt 0) { $dist[$k - $canvas] + 3 } else { 3 }
-        $ul = if ($x -gt 0 -and $y -gt 0) { $dist[$k - $canvas - 1] + 4 } else { 4 }; $ur = if ($x -lt $canvas - 1 -and $y -gt 0) { $dist[$k - $canvas + 1] + 4 } else { 4 }
-        $dist[$k] = [Math]::Min($d, [Math]::Min([Math]::Min($left, $up), [Math]::Min($ul, $ur)))
-    } }
-    for ($y = $canvas - 1; $y -ge 0; $y--) { for ($x = $canvas - 1; $x -ge 0; $x--) {
-        $k = $y * $canvas + $x; $d = $dist[$k]; if ($d -eq 0) { continue }
-        $right = if ($x -lt $canvas - 1) { $dist[$k + 1] + 3 } else { 3 }; $down = if ($y -lt $canvas - 1) { $dist[$k + $canvas] + 3 } else { 3 }
-        $dl = if ($x -gt 0 -and $y -lt $canvas - 1) { $dist[$k + $canvas - 1] + 4 } else { 4 }; $dr = if ($x -lt $canvas - 1 -and $y -lt $canvas - 1) { $dist[$k + $canvas + 1] + 4 } else { 4 }
-        $dist[$k] = [Math]::Min($d, [Math]::Min([Math]::Min($right, $down), [Math]::Min($dl, $dr)))
-    } }
-    $rimWidth = 2.2; $glowWidth = 12.0
-    for ($y = 0; $y -lt $canvas; $y++) { for ($x = 0; $x -lt $canvas; $x++) {
-        $d = $dist[$y * $canvas + $x] / 3.0
-        if ($d -le 0 -or $d -gt $glowWidth) { continue }
-        $i = $y * $stride + $x * 4
-        $t = [Math]::Min(1.0, [Math]::Max(0.0, ($x + $y) / (2.0 * $canvas)))
-        # The rim is the accent itself (#38CFC8) across the lit top-left and fades to a deeper teal toward the bottom-right.
-        $tt = [Math]::Max(0.0, ($t - 0.3) / 0.7)
-        $rimR = 56 + (20 - 56) * $tt; $rimG = 207 + (118 - 207) * $tt; $rimB = 200 + (122 - 200) * $tt
-        if ($d -le $rimWidth) {
-            $bytes[$i + 2] = [byte]$rimR; $bytes[$i + 1] = [byte]$rimG; $bytes[$i] = [byte]$rimB
-        } elseif ($d -le $rimWidth + 1.0) {
-            $m = ($d - $rimWidth)
-            $bytes[$i + 2] = [byte]($rimR * (1 - $m) + $bytes[$i + 2] * $m); $bytes[$i + 1] = [byte]($rimG * (1 - $m) + $bytes[$i + 1] * $m); $bytes[$i] = [byte]($rimB * (1 - $m) + $bytes[$i] * $m)
-        } else {
-            $k = 0.6 * (1.0 - ($d - $rimWidth - 1.0) / ($glowWidth - $rimWidth - 1.0))
-            $bytes[$i + 2] = [byte]($bytes[$i + 2] * (1 - $k) + 6 * $k); $bytes[$i + 1] = [byte]($bytes[$i + 1] * (1 - $k) + 36 * $k); $bytes[$i] = [byte]($bytes[$i] * (1 - $k) + 42 * $k)
-        }
-    } }
-    [System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $data.Scan0, $bytes.Length)
-    $source.UnlockBits($data)
+    # The artwork is used exactly as supplied: no recolor, no repainted rim, no tone changes (owner, November 11, 2026). Only the surround is made transparent and the square cropped.
     $source.Save($sourcePath, [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose(); $source.Dispose(); $art.Dispose(); $attributes.Dispose()
     Write-Host "Prepared Hush-icon-source.png from the artwork (bounds $minX,$minY - $maxX,$maxY)."

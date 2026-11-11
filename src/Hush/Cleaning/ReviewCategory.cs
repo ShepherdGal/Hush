@@ -20,11 +20,30 @@ public sealed class BulkCollection<T> : ObservableCollection<T>
     }
 }
 
+// A sub-heading row inside a category's list (owner, November 11, 2026): when one card holds files of several apps or locations ("User temp" and "Windows temp",
+// several apps' caches) each app gets its own heading with its count and size, so the list reads as groups. It only labels; selection stays with the files.
+public sealed class ReviewSubHeading(ReviewCategory category, string title, int count, long bytes)
+{
+    public ReviewCategory Category { get; } = category;
+    public string Title { get; } = title;
+    public string Detail { get; } = $"{(count == 1 ? "1 item" : $"{count:N0} items")} · {Sizes.Format(bytes)}";
+}
+
+// Picks the template of a row in a category's list: a file or a sub-heading.
+public sealed class ReviewRowTemplateSelector : System.Windows.Controls.DataTemplateSelector
+{
+    public System.Windows.DataTemplate? File { get; set; }
+    public System.Windows.DataTemplate? Heading { get; set; }
+    public override System.Windows.DataTemplate? SelectTemplate(object item, System.Windows.DependencyObject container) => item is ReviewSubHeading ? Heading : File;
+}
+
 public sealed class ReviewCategory(string id, string title, SafetyLevel safety, string description, string summary = "") : INotifyPropertyChanged
 {
     // Plain-language sentence shown under the title; Description stays as the technical tooltip.
     public string Summary { get; } = summary;
     public string Id { get; } = id;
+    // Position in the catalog (Definitions order inside its risk level); the tie-breaker when two categories hold the same amount.
+    public int CatalogOrder { get; internal set; }
     public string Title { get; } = title;
     public SafetyLevel Safety { get; } = safety;
     internal bool IsLight { get; private set; }
@@ -37,6 +56,8 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
     public string SafetyLabel => SafetyPalette.Label(Safety);
     public string Description { get; } = description;
     public BulkCollection<CleanupItem> Files { get; } = [];
+    // What the list shows: the files, with a sub-heading in front of each app's files when the card holds more than one (built once per scan result).
+    public BulkCollection<object> Rows { get; } = [];
     public string CountLabel => $"{(Files.Count == 1 ? "1 item" : $"{Files.Count:N0} items")} · {SafetyLabel}";
     // Totals are computed once per scan result (Replace), never by looping the files in a property getter.
     public long TotalBytes { get; private set; }
@@ -75,12 +96,32 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
         foreach (var file in Files) file.Owner = null;
         foreach (var file in files) file.Owner = this;
         Files.ReplaceAll(files);
+        Rows.ReplaceAll(BuildRows(files));
         TotalBytes = 0; bool anySized = false, anyTool = false;
         foreach (var file in files) { TotalBytes += file.Bytes; anySized |= file.Bytes > 0; anyTool |= file.Kind == CleanupKind.SystemTool; }
         unsized = anyTool && !anySized;
         RecountSelection();
-        Notify(nameof(CountLabel)); Notify(nameof(TotalLabel)); Notify(nameof(Selected)); Notify(nameof(HasFiles));
+        Notify(nameof(CountLabel)); Notify(nameof(TotalBytes)); Notify(nameof(TotalLabel)); Notify(nameof(Selected)); Notify(nameof(HasFiles));
     }
+    private List<object> BuildRows(IReadOnlyCollection<CleanupItem> files)
+    {
+        var rows = new List<object>(files.Count + 4);
+        var totals = new Dictionary<string, (int Count, long Bytes)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files) { totals.TryGetValue(file.Group, out var total); totals[file.Group] = (total.Count + 1, total.Bytes + file.Bytes); }
+        string? current = null;
+        foreach (var file in files)
+        {
+            if (totals.Count > 1 && !string.Equals(current, file.Group, StringComparison.OrdinalIgnoreCase))
+            {
+                current = file.Group;
+                var total = totals[file.Group];
+                rows.Add(new ReviewSubHeading(this, file.Group, total.Count, total.Bytes));
+            }
+            rows.Add(file);
+        }
+        return rows;
+    }
+
     private void RecountSelection()
     {
         int count = 0; long bytes = 0;
@@ -170,8 +211,19 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
             "Libraries your programming tools downloaded. They download again at the next build, so builds without internet fail until then.", "Apps"),
         // Red / Advanced (owner request, 0.9): big downloads and installed-app files of other programs. Nothing personal, but removing them has real consequences,
         // so they are never ticked by default and need the consent box.
-        new("AppDownloads", "Large App Downloads and Installed App Files", SafetyLevel.Advanced, "Unity Asset Store downloads, Fusion 360's web-deployed app files, CapCut's app folder, Codex runtimes, Zed's downloaded tools and GitHub Desktop update packages; the apps download or reinstall what they need, but it can take long and they may not start until then",
-            "Big downloads and installed program files of other apps. Removing them frees a lot of space, but those apps must download or reinstall them before you can use them again.", "Apps"),
+        // One red card per app (owner, November 11, 2026: the single long card was split so each app reads on its own).
+        new("DownloadsUnity", "Unity Asset Store Downloads", SafetyLevel.Advanced, "Unity Asset Store packages you downloaded (the Asset Store-5.x folder); they come back only from your account, and only while Unity and Unity Hub are closed; the app downloads or reinstalls what it needs, but it can take long and it may not start until then",
+            "Big downloads and installed files of Unity. Removing them frees a lot of space, but Unity must download or reinstall them before you can use it again.", "Apps"),
+        new("DownloadsAutodesk", "Autodesk Fusion 360 App Files", SafetyLevel.Advanced, "Fusion 360's web-deployed app files (webdeploy); the app downloads or reinstalls what it needs, but it can take long and it may not start until then",
+            "Big downloads and installed files of Fusion 360. Removing them frees a lot of space, but Fusion 360 must download or reinstall them before you can use it again.", "Apps"),
+        new("DownloadsCapCut", "CapCut App Files", SafetyLevel.Advanced, "CapCut's installed app versions (its Apps folder); the app downloads or reinstalls what it needs, but it can take long and it may not start until then",
+            "Big downloads and installed files of CapCut. Removing them frees a lot of space, but CapCut must download or reinstall them before you can use it again.", "Apps"),
+        new("DownloadsCodex", "Codex Runtimes", SafetyLevel.Advanced, "The runtimes Codex downloaded (.cache\\codex-runtimes); the app downloads or reinstalls what it needs, but it can take long and it may not start until then",
+            "Big downloads and installed files of Codex. Removing them frees a lot of space, but Codex must download or reinstall them before you can use it again.", "Apps"),
+        new("DownloadsZed", "Zed Downloaded Tools", SafetyLevel.Advanced, "The tools Zed downloaded (its copilot and node folders); the app downloads or reinstalls what it needs, but it can take long and it may not start until then",
+            "Big downloads and installed files of Zed. Removing them frees a lot of space, but Zed must download or reinstall them before you can use it again.", "Apps"),
+        new("DownloadsGitHub", "GitHub Desktop Update Packages", SafetyLevel.Advanced, "GitHub Desktop's downloaded update packages; the app downloads or reinstalls what it needs, but it can take long and it may not start until then",
+            "Big downloads and installed files of GitHub Desktop. Removing them frees a lot of space, but GitHub Desktop must download or reinstall them before you can use it again.", "Apps"),
         new("DevHomeCaches", "Developer Caches in Your Home Folder", SafetyLevel.Review, "Gradle, Cargo and Bun download caches in your user folder (.gradle, .cargo, .bun); the tools download what they need again, and offline builds fail until then",
             "Downloads that programming tools keep in your user folder. They download again at the next build, so builds without internet fail until then.", "Apps"),
         new("AppLogs", "Application Log Files", SafetyLevel.Review, "Old *.log files in apps' own Logs folders inside your AppData; the apps write new ones; useful only when diagnosing a problem",
@@ -204,10 +256,46 @@ public sealed class ReviewCategory(string id, string title, SafetyLevel safety, 
     // Privacy traces are counted in items (a few hundred bytes each says nothing useful), as Microsoft PC Manager does.
     internal static readonly HashSet<string> CountedByItems = ["RecentAccess", "RecentDocs", "EventTrace", "UsageHistory", "Clipboard", "BrowserHistory", "BrowserCookies"];
     private static readonly Dictionary<string, SafetyLevel> safetyById = Definitions.ToDictionary(d => d.Id, d => d.Safety);
+    // The order of the files inside a category (owner, November 11, 2026): files from the same folder stay together, the folder holding the most comes first, and
+    // inside a folder the largest file comes first. Done once per scan result (one sort, one pass for the folder totals), never per file in a getter.
+    internal static List<CleanupItem> OrderBySizeAndLocation(List<CleanupItem> files)
+    {
+        if (files.Count < 2) return files;
+        var totals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var groupTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            string key = file.Group + "\n" + (file.Folder ?? "");
+            totals[key] = totals.GetValueOrDefault(key) + file.Bytes;
+            groupTotals[file.Group] = groupTotals.GetValueOrDefault(file.Group) + file.Bytes;
+        }
+        var keyed = new (long GroupTotal, string Group, long Total, string Folder, CleanupItem Item)[files.Count];
+        for (int index = 0; index < keyed.Length; index++)
+        {
+            string folder = files[index].Folder ?? "", group = files[index].Group;
+            keyed[index] = (groupTotals[group], group, totals[group + "\n" + folder], folder, files[index]);
+        }
+        Array.Sort(keyed, (a, b) =>
+        {
+            int byGroupTotal = b.GroupTotal.CompareTo(a.GroupTotal); if (byGroupTotal != 0) return byGroupTotal;
+            int byGroup = string.Compare(a.Group, b.Group, StringComparison.OrdinalIgnoreCase); if (byGroup != 0) return byGroup;
+            int byTotal = b.Total.CompareTo(a.Total); if (byTotal != 0) return byTotal;
+            int byFolder = string.Compare(a.Folder, b.Folder, StringComparison.OrdinalIgnoreCase); if (byFolder != 0) return byFolder;
+            int bySize = b.Item.Bytes.CompareTo(a.Item.Bytes); if (bySize != 0) return bySize;
+            return string.Compare(a.Item.FileName ?? a.Item.Path, b.Item.FileName ?? b.Item.Path, StringComparison.OrdinalIgnoreCase);
+        });
+        var ordered = new List<CleanupItem>(keyed.Length);
+        foreach (var entry in keyed) ordered.Add(entry.Item);
+        return ordered;
+    }
+
+    // The Advanced "large downloads and installed app files" cards, one per app (they used to be one card, AppDownloads).
+    internal static readonly string[] AppDownloadIds = ["DownloadsUnity", "DownloadsAutodesk", "DownloadsCapCut", "DownloadsCodex", "DownloadsZed", "DownloadsGitHub"];
+
     internal static ObservableCollection<ReviewCategory> Create()
     {
         // Review page order: Safe (green) first, then Review (orange), then Advanced (red); catalog order is kept inside each level (OrderBy is stable).
-        return new ObservableCollection<ReviewCategory>(Definitions.OrderBy(d => d.Safety).Select(d => new ReviewCategory(d.Id, d.Title, d.Safety, d.Description, d.Summary)));
+        return new ObservableCollection<ReviewCategory>(Definitions.OrderBy(d => d.Safety).Select((d, index) => new ReviewCategory(d.Id, d.Title, d.Safety, d.Description, d.Summary) { CatalogOrder = index }));
     }
     internal static SafetyLevel SafetyOf(string id) => safetyById.TryGetValue(id, out var safety) ? safety : SafetyLevel.Safe;
     internal static string CategoryFor(CleanupItem file) => CategoryFor(file.Kind, file.Group, file.CategoryId);

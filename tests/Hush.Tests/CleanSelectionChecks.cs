@@ -114,8 +114,22 @@ internal static class CleanSelectionChecks
                 "Confirmed Clean removes only the selected fixture and preserves the unselected fixture");
             // 0.9 audit (M2): the result of a clean must stay readable; it used to be replaced at once by "Review remaining files."
             string cleanStatus = ((TextBlock)window.FindName("StatusTitle")).Text;
-            Require(cleanStatus.StartsWith("Cleanup complete") && cleanStatus.Contains("freed") && cleanStatus.Contains("1 cleaned") && window.LastCleanResult is { Deleted: 1 },
-                $"After a clean the status line keeps the result (what was freed and cleaned) instead of being replaced ({cleanStatus})");
+            string cleanDetail = ((TextBlock)window.FindName("StatusDetail")).Text, cleanTip = ((TextBlock)window.FindName("StatusTitle")).ToolTip as string ?? "";
+            Require(cleanStatus.StartsWith("Cleanup complete") && cleanStatus.Contains("freed") && window.LastCleanResult is { Deleted: 1 },
+                $"After a clean the status line keeps the result (what was freed) instead of being replaced ({cleanStatus})");
+            Require(cleanStatus.Length <= 40 && !cleanStatus.Contains("cleaned") && !cleanStatus.Contains("skipped") && !cleanStatus.Contains("disk reports") && !cleanDetail.Contains("found") && cleanTip.Contains("1 cleaned"),
+                $"The result is one short line (\"{cleanStatus}\"), the second line says nothing unless files were left alone (\"{cleanDetail}\"), and the numbers are on hover (\"{cleanTip}\")");
+            // Owner, November 11, 2026: after a clean the person stays on Home (no jump to the Review page) and the gauge shows a finished mission: "100%" in the accent
+            // color with its own glow, and a stronger ring glow, until the next scan or clean.
+            var finishedScan = (FrameworkElement)window.FindName("ScanPage"); var finishedReview = (FrameworkElement)window.FindName("ReviewPage");
+            var gaugeValue = (TextBlock)window.FindName("GaugeValue"); var ringGlow = (System.Windows.Media.Effects.DropShadowEffect)window.FindName("GaugeFinishGlow");
+            Wait(2300);
+            Require(finishedScan.Visibility == Visibility.Visible && finishedReview.Visibility != Visibility.Visible, "After a clean the app stays on Home: it does not jump to the Review page");
+            Require(gaugeValue.Text == "100%" && gaugeValue.Effect is System.Windows.Media.Effects.DropShadowEffect { Opacity: > 0.5 } && gaugeValue.Foreground is SolidColorBrush ink && ink.Color == ((SolidColorBrush)Application.Current.Resources["TealTextBrush"]).Color
+                && ringGlow.Opacity > 0.6 && ringGlow.BlurRadius > 18,
+                $"The finished gauge glows: the 100% takes the accent color and a soft glow, and the ring glow is stronger than after a scan (ring {ringGlow.Opacity:0.00} / {ringGlow.BlurRadius:0})");
+            if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") != null) { Layout(); ThemeMotionChecks.Capture((FrameworkElement)window.Content, "clean-complete-" + (window.IsLightTheme ? "light" : "dark")); }
+            window.ShowReviewPage(true); Until(() => !window.IsPageTransitioning); Layout();   // the next checks work on the remaining result in the Review list
             SetChecked(FileBox(second), true); ExpectClean(1);
             Click(homeClean);
             Require(modal.Visibility == Visibility.Visible && ((TextBlock)window.FindName("ConfirmSummary")).Text.Contains("1 selected"),

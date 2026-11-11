@@ -14,6 +14,8 @@ public partial class MainWindow
     private UpdateAction updateAction;
     private bool applyAllStaged, undoAlsoUpdate;
     private RestorePointStatus? restoreStatus;
+    // The last report of the switch (null when it was refused before running); the result popup words its title from it.
+    private UpdateOffReport? lastUpdateReport;
 
     internal bool IsWindowsUpdateOff => updateSwitch.IsOff;
     internal bool IsWindowUpdateOffForTests() => updateSwitch.IsOff;
@@ -138,6 +140,7 @@ public partial class MainWindow
         {
             if (!updateSwitch.CanChange) return turnOff ? "Windows Update was not turned off: it needs administrator mode." : "Windows Update was not turned back on: it needs administrator mode.";
             var report = await Task.Run(() => turnOff ? updateSwitch.TurnOff() : updateSwitch.TurnBackOn());
+            lastUpdateReport = report;
             return (turnOff ? "Windows Update: " : "Windows Update back on: ") + report.Text(turnOff);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
@@ -151,6 +154,7 @@ public partial class MainWindow
         windowsSettingsBusy = true;
         ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = false;
         string message; bool done = false;
+        lastUpdateReport = null;
         try
         {
             if (windowsPlanNeedsAdministrator)
@@ -187,13 +191,18 @@ public partial class MainWindow
         windowsSettingsBusy = false;
         ConfirmWindowsSettingsButton.IsEnabled = CancelWindowsSettingsButton.IsEnabled = true;
         RefreshWindowsUpdateState();
-        WindowsSettingsStatus.Text = done ? (off ? "Windows Update is off. Turn it back on from the red line at the top of this page." : "Windows Update is back on.") : message;
+        // The wording follows what really happened: nothing changed, only part of it, or all of it.
+        bool nothing = off && done && lastUpdateReport is { Done: false }, partly = done && lastUpdateReport is { Complete: false, Done: true };
+        WindowsSettingsStatus.Text = !done ? message : nothing ? "Windows Update was not turned off: Windows refused every change. Nothing was changed."
+            : off ? (partly ? "Windows Update is partly off. Turn it back on from the red line at the top of this page." : "Windows Update is off. Turn it back on from the red line at the top of this page.") : "Windows Update is back on.";
         if (!done) { await HideWindowsSettingsConfirmation(); return; }
         // The same popup tells exactly what happened.
         WindowsOptions.Visibility = Visibility.Collapsed;
-        WindowsConfirmTitle.Text = off ? "Windows Update turned off" : "Windows Update turned back on";
+        WindowsConfirmTitle.Text = nothing ? "Windows Update was not turned off" : off ? (partly ? "Windows Update partly turned off" : "Windows Update turned off") : "Windows Update turned back on";
         WindowsConfirmSummary.Text = message;
-        WindowsConfirmDetail.Text = off ? "Hush saved every original value first. The red line at the top of Settings stays until you turn Windows Update back on." : "Hush put back what it saved. Updates resume once the services are running.";
+        WindowsConfirmDetail.Text = nothing ? "Windows said no to every change, so Hush left everything as it was and shows no red line. The exact reasons are in the text above and saved in Windows settings\\windows-update-last-run.txt inside Hush's data folder."
+            : off ? "Hush saved every original value first. The red line at the top of Settings stays until you turn Windows Update back on." + (partly ? " The reasons for what Windows refused are saved in windows-update-last-run.txt in Hush's data folder." : "")
+            : "Hush put back what it saved. Updates resume once the services are running.";
         WindowsConfirmNote.Text = "Restart your PC afterwards so everything takes full effect. Hush never restarts Windows for you.";
         WindowsConfirmNote.Visibility = Visibility.Visible;
         ConfirmWindowsSettingsButton.Visibility = Visibility.Collapsed;

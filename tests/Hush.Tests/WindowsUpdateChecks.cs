@@ -27,16 +27,19 @@ internal sealed class FakeUpdateSystem : IWindowsUpdateSystem
     internal readonly Dictionary<string, bool> Tasks = WindowsUpdateSwitch.Tasks.Take(5).ToDictionary(name => name, _ => true);
     internal readonly List<string> Writes = [];
     internal Action? OnFirstWrite;
+    // What Windows can refuse (each with the reason a real tool prints): every policy write, every service change, every task change.
+    internal bool RefusePolicies, RefuseServices, RefuseTasks;
     private bool wrote;
     public bool IsAdministrator => Admin;
     private static string K(string key, string name) => key + "|" + name;
     private void Note(string what) { if (!wrote) { wrote = true; OnFirstWrite?.Invoke(); } Writes.Add(what); }
     public PolicyValue ReadPolicy(string key, string name) => Policies.GetValueOrDefault(K(key, name), PolicyValue.Missing);
-    public void WritePolicy(string key, string name, PolicyValue value) { Note("policy " + name); if (value.Exists) Policies[K(key, name)] = value; else Policies.Remove(K(key, name)); }
+    public void WritePolicy(string key, string name, PolicyValue value) { if (RefusePolicies) throw new UnauthorizedAccessException("Access to the registry key is denied."); Note("policy " + name); if (value.Exists) Policies[K(key, name)] = value; else Policies.Remove(K(key, name)); }
     public int? ReadServiceStart(string service) => Starts.TryGetValue(service, out int start) ? start : null;
     public bool TryWriteServiceStart(string service, int start, out string error)
     {
         error = "";
+        if (RefuseServices) { error = "Windows refused the change ([SC] ChangeServiceConfig FAILED 5: Access is denied.)"; return false; }
         if (Protected.Contains(service)) { error = "Windows protects this service and refused the change"; return false; }
         Note("service " + service); Starts[service] = start; return true;
     }
@@ -44,11 +47,45 @@ internal sealed class FakeUpdateSystem : IWindowsUpdateSystem
     public void StopService(string service) { Note("stop " + service); Running.Remove(service); }
     public void StartService(string service) { Note("start " + service); Running.Add(service); }
     public bool? ReadTaskEnabled(string task) => Tasks.TryGetValue(task, out bool on) ? on : null;
-    public bool TrySetTaskEnabled(string task, bool enabled, out string error) { error = ""; Note("task " + task); Tasks[task] = enabled; return true; }
+    public bool TrySetTaskEnabled(string task, bool enabled, out string error)
+    {
+        error = "";
+        if (RefuseTasks) { error = "ERROR: Access is denied.\r\n"; return false; }
+        Note("task " + task); Tasks[task] = enabled; return true;
+    }
 }
 
 internal static class WindowsUpdateChecks
 {
+    // Honest reports (owner, November 11, 2026: "Turn off Windows Update still doesn't work"): when Windows refuses, the report says why and a run that changed
+    // nothing never leaves the red "Windows Update is off" line behind; the last result is also kept in a text file.
+    internal static void RunReports(string fixture, Action<bool, string> check)
+    {
+        // 1. Windows refuses everything: nothing changed, so nothing is claimed.
+        string refusedDirectory = Path.Combine(fixture, "update-switch-refused");
+        var refused = new FakeUpdateSystem { RefusePolicies = true, RefuseServices = true, RefuseTasks = true };
+        var none = new WindowsUpdateSwitch(refused, refusedDirectory);
+        var report = none.TurnOff();
+        string lastRun = File.Exists(none.LastRunPath) ? File.ReadAllText(none.LastRunPath) : "";
+        check(!report.Done && report.Changed.Count == 0 && !none.IsOff && !File.Exists(Path.Combine(refusedDirectory, "windows-update-off.json")),
+            "When Windows refuses every change, Hush says nothing was changed and leaves no 'Windows Update is off' state behind");
+        check(report.Failed.Any(item => item.Contains("Access is denied")) && report.Failed.Any(item => item.Contains("wuauserv") && item.Contains("ChangeServiceConfig FAILED 5")) && report.Failed.Any(item => item.Contains("stayed enabled") && item.Contains("Access is denied")),
+            "The report names why each part was refused (policy, service and task reasons), not only that it failed (" + string.Join(" | ", report.Failed) + ")");
+        check(lastRun.Contains("nothing was changed") && lastRun.Contains("Access is denied") && lastRun.Contains("turn off"), "The result is also saved in a text file (windows-update-last-run.txt) that can be read afterwards");
+
+        // 2. Windows refuses only the scheduled tasks (they usually need SYSTEM): the rest is off and the state is honest about it.
+        string partialDirectory = Path.Combine(fixture, "update-switch-partial");
+        var partial = new FakeUpdateSystem { RefuseTasks = true };
+        var some = new WindowsUpdateSwitch(partial, partialDirectory);
+        var partialReport = some.TurnOff();
+        check(partialReport.Done && !partialReport.Complete && some.IsOff && partial.Starts["wuauserv"] == 4 && partialReport.Failed.Any(item => item.Contains("stayed enabled")) && File.ReadAllText(some.LastRunPath).Contains("partly done"),
+            "When Windows refuses only some parts the rest is turned off, the state says so, and the refused parts are named");
+        var back = some.TurnBackOn();
+        check(back.Done && !some.IsOff && partial.Starts["wuauserv"] == 3 && File.ReadAllText(some.LastRunPath).Contains("turn back on"), "Turning it back on still restores what was changed and writes its own report");
+        check(WindowsUpdateSwitch.Short("  \r\n[SC] OpenService FAILED 5:\r\n\r\nAccess is denied.  ") == "[SC] OpenService FAILED 5:" && WindowsUpdateSwitch.Short(null) == "" && WindowsUpdateSwitch.Short(new string('x', 300)).Length == 141,
+            "A tool's answer is cut to its first line and a sensible length for the report");
+    }
+
     internal static void RunEngine(string fixture, Action<bool, string> check)
     {
         string directory = Path.Combine(fixture, "update-switch");
@@ -134,15 +171,19 @@ internal static class WindowsUpdateChecks
                 && !confirm.IsEnabled && ((CheckBox)window.FindName("RestorePointBox")).IsChecked == true && ((CheckBox)window.FindName("AlsoUpdateOffBox")).Visibility == Visibility.Collapsed,
                 "Turning Windows Update off asks first, names the security warning, offers a restore point and stays disabled until the consent box is ticked");
             check(consent.Tag is SolidColorBrush tag && tag.Color == ((SolidColorBrush)Application.Current.Resources["CleanTextBrush"]).Color, "The consent box uses the one Clean red");
+            // The real-life case: no scan result on screen. The consent box (a Review-style checkbox whose enabled state used to follow "a scan result can be selected") was dead
+            // then, so it could not be ticked and the "Turn off Windows Update" button stayed faded forever (owner report, November 11, 2026).
+            check(!window.CanSelectCandidates && consent.IsEnabled && ((CheckBox)window.FindName("RestorePointBox")).IsEnabled,
+                "With no scan results the consent box and the restore point box are still enabled, so the person can tick them and the button can be pressed");
             UiLayoutChecks.Layout(root, new Size(920, 820));
             if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string shots) { Directory.CreateDirectory(shots); UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, "windows-update-confirm-dark.png")); }
             check(system.Writes.Count == 0 && points.Created.Count == 0, "Nothing is changed and no restore point is made before the answer");
             consent.IsChecked = true; consent.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             check(confirm.IsEnabled, "Ticking the consent box enables the action");
             Click("ConfirmWindowsSettingsButton");
-            UiLayoutChecks.PumpUntil(() => Text("WindowsConfirmTitle") == "Windows Update turned off");
+            UiLayoutChecks.PumpUntil(() => Text("WindowsConfirmTitle") == "Windows Update partly turned off");
             check(points.Created.Count == 1 && system.Starts["wuauserv"] == 4 && window.IsWindowsUpdateOff && Text("WindowsConfirmSummary").Contains("WaaSMedicSvc"),
-                "A restore point is made first, Windows Update is turned off and the result names what Windows would not change");
+                "A restore point is made first, Windows Update is turned off (the title says partly, since Windows refuses one service) and the result names what Windows would not change");
             UiLayoutChecks.Wait(350); UiLayoutChecks.Layout(root, new Size(920, 820));
             if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string shots2) UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots2, "windows-update-result-dark.png"));
             Click("CancelWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => overlay.Visibility == Visibility.Collapsed);
@@ -178,7 +219,7 @@ internal static class WindowsUpdateChecks
                 "With System Protection off the popup says so and offers to turn it on");
             protection.IsChecked = true; consent.IsChecked = true; consent.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             int createdBefore = points.Created.Count;
-            Click("ConfirmWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => Text("WindowsConfirmTitle") == "Windows Update turned off");
+            Click("ConfirmWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => Text("WindowsConfirmTitle") == "Windows Update partly turned off");
             check(points.Enabled.Count == 1 && points.Created.Count == createdBefore + 1 && window.IsWindowsUpdateOff, "Turning System Protection on first lets the restore point be made");
             Click("CancelWindowsSettingsButton"); UiLayoutChecks.PumpUntil(() => overlay.Visibility == Visibility.Collapsed);
 

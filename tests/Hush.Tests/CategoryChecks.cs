@@ -71,8 +71,8 @@ internal static class CategoryChecks
         }
         check(ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Safe).Select(d => d.Id).Order().SequenceEqual(["Temp", "Thumbnails"]),
             "Only verified disposable temp files and thumbnail caches are Safe; browser caches, shader caches, logs and traces are Review");
-        check(new[] { "WindowsOld", "RecycleBin", "Registry", "BrowserCookies", "AppDownloads" }.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
-            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 5,
+        check(new[] { "WindowsOld", "RecycleBin", "Registry", "BrowserCookies" }.Concat(ReviewCategory.AppDownloadIds).All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced)
+            && ReviewCategory.Definitions.Where(d => d.Safety == SafetyLevel.Advanced).Count() == 4 + ReviewCategory.AppDownloadIds.Length,
             "Irreversible or recovery-related categories are Advanced (red) and nothing else is");
         check(ReviewCategory.Definitions.Select(d => d.Id).Distinct().Count() == ReviewCategory.Definitions.Length
             && ReviewCategory.Definitions.All(d => ReviewCategory.GroupDefinitions.Any(g => g.Id == d.GroupId)),
@@ -233,7 +233,7 @@ internal static class CategoryChecks
         check(defaults.Where(t => t.Category == "BrowserCookies").All(t => ReviewCategory.SafetyOf("BrowserCookies") == SafetyLevel.Advanced
                 && (t.Pattern ?? "").Split(';').All(p => p.StartsWith("Cookies") || p.StartsWith("cookies.sqlite")) && !t.Recursive),
             "Cookie rules list only cookie database files and are Advanced");
-        check(defaults.Where(t => t.Category == "AppDownloads").All(t => t.Processes is { Length: > 0 } && t.Kind == CleanupKind.Cache && !t.DeletableOnly) && ReviewCategory.SafetyOf("AppDownloads") == SafetyLevel.Advanced,
+        check(defaults.Where(t => t.Category != null && ReviewCategory.AppDownloadIds.Contains(t.Category)).All(t => t.Processes is { Length: > 0 } && t.Kind == CleanupKind.Cache && !t.DeletableOnly) && ReviewCategory.AppDownloadIds.All(id => ReviewCategory.SafetyOf(id) == SafetyLevel.Advanced),
             "Large app downloads and installed-app files are Advanced (red, opt-in), each only while its app is closed");
         check(defaults.Where(t => t.Category == "BrowserHistory").All(t => !(t.Pattern ?? "").Contains("places") && !(t.Pattern ?? "").Contains("Bookmarks")),
             "Browser history never includes Firefox places.sqlite (it also holds bookmarks) or bookmark files");

@@ -46,10 +46,17 @@ public static class SmoothScroll
         // The panel that does the scrolling is the first virtualizing panel inside the viewer's content presenter (a ListBox's rows).
         var presenter = viewer.Template?.FindName("PART_ScrollContentPresenter", viewer) as DependencyObject;
         var panel = presenter == null ? null : FirstVirtualizingPanel(presenter, 0);
-        return !(panel != null && VirtualizingPanel.GetScrollUnit(panel) == ScrollUnit.Item);
+        if (panel == null) return true;
+        // ScrollUnit is set on the list (the ItemsControl that owns the panel), not on the panel itself: reading it from the panel always said "by item", so a list that
+        // scrolls by pixel (the Review file lists) was never given the wheel and the page behind it scrolled instead.
+        return VirtualizingPanel.GetScrollUnit(ItemsControl.GetItemsOwner(panel) ?? (DependencyObject)panel) != ScrollUnit.Item;
     }
 
-    private static VirtualizingPanel? FirstVirtualizingPanel(DependencyObject parent, int depth)
+    // Used by the scrollbar's up and down chevrons (ScrollSteps): where the viewer is heading (the glide's target while one runs), and a way to move it softly.
+    internal static double TargetOffset(ScrollViewer viewer) => viewer.GetValue(GlideProperty) is Glide { Active: true } glide ? glide.Target : viewer.VerticalOffset;
+    internal static void MoveBy(ScrollViewer viewer, double distance) => For(viewer).Nudge(distance);
+
+    internal static VirtualizingPanel? FirstVirtualizingPanel(DependencyObject parent, int depth)
     {
         if (depth > 6) return null;
         for (int index = 0; index < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); index++)

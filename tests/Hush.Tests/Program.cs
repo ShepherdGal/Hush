@@ -140,10 +140,14 @@ static void RunChecks()
         ReliabilityChecks.Run(fixture, Check);
         ServiceChecks.RunEngine(fixture, Check);
         TaskChecks.RunEngine(fixture, Check);
+        TrayChecks.Run(fixture, Check);
         SilentToolChecks.Run(fixture, Check);
         WindowsUpdateChecks.RunEngine(fixture, Check);
+        WindowsUpdateChecks.RunReports(fixture, Check);
         ScaleChecks.Run(fixture, Check);
         UiSizeChecks.Run(Check);
+        AccentChecks.Run(fixture, Check);
+        ReviewOrderChecks.Run(Check);
         ColorRuleChecks.Run(Check);
         PerformanceRuleChecks.Run(Check);
         LockedArchiveChecks.Run(Check);

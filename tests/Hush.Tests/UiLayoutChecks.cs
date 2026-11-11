@@ -364,6 +364,12 @@ internal static class UiLayoutChecks
                 WindowsUpdateChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 ServiceChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 TaskChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                TrayChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                AccentChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
+                ProModeChecks.RunUi(fixture, (ok, message) => Require(ok, message));
+                ReviewOrderChecks.RunUi(engine, (ok, message) => Require(ok, message));
+                ReviewOrderChecks.RunListUi(engine, (ok, message) => Require(ok, message));
+                GaugeHoverChecks.RunUi(engine, fixture, (ok, message) => Require(ok, message));
                 SmoothScrollChecks.Run((ok, message) => Require(ok, message));
                 Console.WriteLine("PASS: Interface size (Smart, 75%, 100%, 120%) rescales the real window, is remembered, and always fits the screen");
                 Console.WriteLine("PASS: Empty gauge, real live odometer count, safety selection, shared motion, About/update popup, blurred confirmation and responsive layout verified");
@@ -378,7 +384,7 @@ internal static class UiLayoutChecks
             }
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        if (!thread.Join(TimeSpan.FromSeconds(85))) throw new TimeoutException("The UI verification did not finish within 85 seconds.");
+        if (!thread.Join(TimeSpan.FromSeconds(200))) throw new TimeoutException("The UI verification did not finish within 200 seconds.");
         if (failure != null) throw new Exception("UI layout verification failed", failure);
     }
 
@@ -434,10 +440,10 @@ internal static class UiLayoutChecks
             Require(!cue.IsPlaying && !cue.IsRunning, "The cleaning cue is off until files are being cleaned");
             cue.Visibility = Visibility.Visible; cue.IsRunning = true;
             PumpUntil(() => cue.IsPlaying);
-            Wait(250); double first = cue.SweepAngle; Wait(250); double second = cue.SweepAngle;
-            Require(second != first && button.Effect == null, $"The cleaning sweep really turns ({first:0}° then {second:0}°) and the gauge button carries no effect");
+            Wait(250); double first = cue.Motion; Wait(250); double second = cue.Motion;
+            Require(second != first && button.Effect == null, $"The cleaning ripple really spreads (scale {first:0.00} then {second:0.00}) and the gauge button carries no effect");
             cue.IsRunning = false; PumpUntil(() => !cue.IsPlaying);
-            Require(cue.SweepAngle == 0, "The cleaning cue stops and rests when the clean ends");
+            Require(cue.Motion == ScanActivity.RestMotion, "The cleaning cue stops and rests when the clean ends");
         }
         finally { window.Close(); }
     }

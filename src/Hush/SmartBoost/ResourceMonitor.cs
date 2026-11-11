@@ -8,13 +8,33 @@ internal readonly record struct ResourceSnapshot(double CpuPercent, long MemoryU
 {
     public double MemoryPercent => MemoryTotal <= 0 ? 0 : 100.0 * MemoryUsed / MemoryTotal;
     public double DiskUsedPercent => DiskTotal <= 0 ? 0 : 100.0 * (DiskTotal - DiskFree) / DiskTotal;
-    // The one-line reading on the Info card: the most pressing thing first, plain words, no advice that is not true.
-    public const double Busy = 85, Full = 90;
-    public string Headline => DiskUsedPercent >= Full ? "The system drive is almost full."
-        : MemoryPercent >= Busy ? "Memory is busy right now."
-        : CpuPercent >= Busy ? "The processor is busy right now."
-        : "Everything looks light.";
+    // Where each Info bar turns amber (middle) and red (bad). Below the first number a bar is green (good).
+    public const double CpuAmber = 60, CpuRed = 85, MemoryAmber = 70, MemoryRed = 85, DiskAmber = 75, DiskRed = 90, TempAmber = 50, TempRed = 100;
+    public static MeterLevel LevelOf(double percent, double amberAt, double redAt) => percent >= redAt ? MeterLevel.Red : percent >= amberAt ? MeterLevel.Amber : MeterLevel.Green;
+
+    // The one line under "Info": what the situation is and, when it is not good, what to do about it. The most pressing thing is named first (red before amber;
+    // drive, memory, processor, temporary files). tempPercent is how full the Temporary files bar is (0-100), or a negative number while it is not read yet.
+    // Plain words, no promise of speed: closing programs and cleaning free memory and space, nothing more.
+    public InfoReading Assess(double tempPercent)
+    {
+        var temp = tempPercent < 0 ? MeterLevel.Green : LevelOf(tempPercent, TempAmber, TempRed);
+        var disk = LevelOf(DiskUsedPercent, DiskAmber, DiskRed);
+        var memory = LevelOf(MemoryPercent, MemoryAmber, MemoryRed);
+        var cpu = LevelOf(CpuPercent, CpuAmber, CpuRed);
+        foreach (var level in new[] { MeterLevel.Red, MeterLevel.Amber })
+        {
+            if (disk == level) return new(level, level == MeterLevel.Red ? "The system drive is almost full. Clean files or uninstall big programs." : "The system drive is getting full. A cleanup soon would help.");
+            if (memory == level) return new(level, level == MeterLevel.Red ? "Memory is almost full. Close programs you aren't using, or restart." : "Memory use is rising. Closing unused programs or Boost helps.");
+            if (cpu == level) return new(level, level == MeterLevel.Red ? "The processor is overloaded. If it stays so, close heavy programs." : "The processor is working hard. Close programs you don't need.");
+            if (temp == level) return new(level, level == MeterLevel.Red ? "Temporary files have piled up. Press Boost to clean them." : "Temporary files are building up. Boost can clean them.");
+        }
+        return new(MeterLevel.Green, "Everything looks good. Nothing needs your attention.");
+    }
 }
+
+internal enum MeterLevel { Green, Amber, Red }
+
+internal readonly record struct InfoReading(MeterLevel Level, string Text);
 
 // Three cheap readings (Windows' own counters, no performance-counter objects, no background thread): processor use since the previous
 // reading, physical memory in use and free space on the system drive. Hush only samples while the indicators are on screen.

@@ -27,10 +27,88 @@ public partial class MainWindow
         try
         {
             AdminModeBox.IsChecked = prefs.RunAsAdmin == true;
+            MinimizeToTrayBox.IsChecked = prefs.MinimizeToTray;
+            StartWithWindowsBox.IsChecked = prefs.StartWithWindows;
             bool elevated = AdminMode.Elevation.IsElevated;
-            AdminSummary.Text = prefs.RunAsAdmin == true ? (elevated ? "On · Hush is running as administrator" : "On · applies the next time Hush starts") : "Off";
+            AdminSummary.Text = (prefs.RunAsAdmin == true ? (elevated ? "On · Hush is running as administrator" : "On · applies the next time Hush starts") : "Off")
+                + (prefs.MinimizeToTray ? " · Minimize to tray" : "") + (prefs.StartWithWindows ? " · Starts with Windows" : "");
         }
         finally { adminLoading = false; }
+    }
+
+    // ----- Minimize to tray and Start with Windows (0.9, user request; Settings > Administrator) -----
+    // Test seams: the test runner installs fakes, so no test ever puts an icon next to the clock or writes the real Run key.
+    internal static Func<string, Action, Action, ITrayIcon> TrayFactory = (exe, open, quit) => new TrayIcon(exe, open, quit);
+    internal static IStartupRegistration StartupRegistration = new RunKeyStartup();
+    private ITrayIcon? tray;
+    internal bool TrayIconVisible => tray?.Visible == true;
+    // True while Hush sits only in the notification area (its window is hidden).
+    internal bool IsInTray => !IsVisible && tray?.Visible == true;
+
+    private void InitializeTray()
+    {
+        // Minimizing hides the window while the option is on. (A hidden window has no taskbar button, so nothing else is needed.)
+        StateChanged += (_, _) => { if (WindowState == WindowState.Minimized && prefs.MinimizeToTray && TrayIconVisible) Hide(); };
+        Closed += (_, _) => { tray?.Dispose(); tray = null; };
+        ApplyTrayPreference();
+        // The entry in Windows' Run key follows the copy that is running now (an update or a move changes its path). Real window only, off the UI thread.
+        Loaded += (_, _) =>
+        {
+            if (prefs.StartWithWindows && Application.Current?.MainWindow == this)
+            { string? self = Environment.ProcessPath; _ = Task.Run(() => { try { RunKeyStartup.Sync(StartupRegistration, true, self); } catch { } }); }
+        };
+    }
+
+    private void ApplyTrayPreference()
+    {
+        if (prefs.MinimizeToTray)
+        {
+            tray ??= TrayFactory(Environment.ProcessPath ?? "", () => Dispatcher.BeginInvoke(RestoreFromTray), () => Dispatcher.BeginInvoke(Close));
+            tray.Visible = true;
+        }
+        else
+        {
+            if (tray != null) tray.Visible = false;
+            if (!IsVisible && IsLoaded) RestoreFromTray(); // the option was turned off while Hush was hidden: never leave it without a way back
+        }
+    }
+
+    // The tray icon was used (or a second start asked for the window): show Hush again, in front.
+    internal void RestoreFromTray() => SingleInstance.BringToFront(this);
+
+    // Opened by Windows at sign-in: quietly. With Minimize to tray on, Hush goes straight to the notification area; otherwise it opens minimized.
+    internal void StartInBackground()
+    {
+        if (prefs.TermsAccepted != Terms.Version) return; // the very first start always shows the terms
+        ShowActivated = false;
+        WindowState = WindowState.Minimized;
+        if (prefs.MinimizeToTray) Loaded += (_, _) => Dispatcher.BeginInvoke(() => { if (WindowState == WindowState.Minimized && TrayIconVisible) Hide(); }, System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private void MinimizeToTray_Click(object sender, RoutedEventArgs e)
+    {
+        if (adminLoading) return;
+        prefs.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
+        SavePreferences();
+        ApplyTrayPreference();
+        RefreshAdminSwitch();
+    }
+
+    private async void StartWithWindows_Click(object sender, RoutedEventArgs e)
+    {
+        if (adminLoading) return;
+        bool wanted = StartWithWindowsBox.IsChecked == true;
+        string? failure = null;
+        try
+        {
+            string? self = Environment.ProcessPath;
+            if (wanted) { if (self == null) throw new IOException("Windows did not say where Hush is."); StartupRegistration.Enable(self); }
+            else StartupRegistration.Disable();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { failure = ex.Message; }
+        if (failure == null) { prefs.StartWithWindows = wanted; SavePreferences(); }
+        RefreshAdminSwitch(); // on a failure the switch goes back to what is really true
+        if (failure != null) await AskConsent("Start with Windows", "Windows did not accept the change, so nothing was changed.\n\n" + failure, "OK", "Close");
     }
 
     private async void AdminMode_Click(object sender, RoutedEventArgs e)

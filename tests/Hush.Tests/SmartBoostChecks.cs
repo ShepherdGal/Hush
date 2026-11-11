@@ -89,11 +89,26 @@ internal static class SmartBoostChecks
                 && !StartupAppsService.IsDisabled([6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) && !StartupAppsService.IsDisabled(null), "The flag format matches Task Manager (2/6 enabled, 3 disabled)");
         }
 
-        // The Info card's one-line reading names the most pressing thing first.
-        check(new ResourceSnapshot(10, 40, 100, 50, 100, 1).Headline == "Everything looks light."
-            && new ResourceSnapshot(10, 90, 100, 50, 100, 1).Headline == "Memory is busy right now."
-            && new ResourceSnapshot(95, 10, 100, 50, 100, 1).Headline == "The processor is busy right now."
-            && new ResourceSnapshot(95, 90, 100, 5, 100, 1).Headline == "The system drive is almost full.", "The Info summary reads the situation in plain words, most pressing first");
+        // The Info card's bars are green (good), amber (so-so) or red (bad), and its one line reports the situation, with advice once it is not good.
+        check(ResourceSnapshot.LevelOf(10, 60, 85) == MeterLevel.Green && ResourceSnapshot.LevelOf(60, 60, 85) == MeterLevel.Amber && ResourceSnapshot.LevelOf(84.9, 60, 85) == MeterLevel.Amber
+            && ResourceSnapshot.LevelOf(85, 60, 85) == MeterLevel.Red && ResourceSnapshot.LevelOf(100, 60, 85) == MeterLevel.Red, "A bar is green below its first limit, amber from it and red from the second");
+        var good = new ResourceSnapshot(10, 40, 100, 50, 100, 1).Assess(5);
+        var okMemory = new ResourceSnapshot(10, 75, 100, 50, 100, 1).Assess(5);
+        var badMemory = new ResourceSnapshot(10, 90, 100, 50, 100, 1).Assess(5);
+        var badCpu = new ResourceSnapshot(95, 10, 100, 50, 100, 1).Assess(5);
+        var badDisk = new ResourceSnapshot(95, 90, 100, 5, 100, 1).Assess(5);
+        var okTemp = new ResourceSnapshot(10, 40, 100, 50, 100, 1).Assess(60);
+        var badTemp = new ResourceSnapshot(10, 40, 100, 50, 100, 1).Assess(100);
+        check(good.Level == MeterLevel.Green && good.Text.StartsWith("Everything looks good")
+            && okMemory.Level == MeterLevel.Amber && okMemory.Text.StartsWith("Memory use is rising") && okMemory.Text.Contains("Closing unused programs")
+            && badMemory.Level == MeterLevel.Red && badMemory.Text.StartsWith("Memory is almost full") && badMemory.Text.Contains("restart")
+            && badCpu.Level == MeterLevel.Red && badCpu.Text.StartsWith("The processor is overloaded")
+            && badDisk.Level == MeterLevel.Red && badDisk.Text.StartsWith("The system drive is almost full") && badDisk.Text.Contains("uninstall")
+            && okTemp.Level == MeterLevel.Amber && okTemp.Text.Contains("Boost") && badTemp.Level == MeterLevel.Red && badTemp.Text.Contains("piled up")
+            && new ResourceSnapshot(10, 40, 100, 50, 100, 1).Assess(-1).Level == MeterLevel.Green,
+            "The Info line reports the situation in plain words and gives advice that fits it when it is so-so or bad");
+        check(new ResourceSnapshot(10, 75, 100, 5, 100, 1).Assess(5).Text.StartsWith("The system drive is almost full") && new ResourceSnapshot(95, 75, 100, 50, 100, 1).Assess(5).Text.StartsWith("The processor is overloaded"),
+            "The most pressing problem is named first: red before amber, then drive, memory, processor, temporary files");
 
         // Resource readings and low-resource mode.
         var monitor = new ResourceMonitor();
@@ -197,8 +212,8 @@ internal static class SmartBoostChecks
             var italics = Descendants<TextBlock>(root).Where(block => block.FontStyle == FontStyles.Italic).Select(block => block.Text).Distinct().ToList();
             UiLayoutChecks.Require(italics.All(text => text is "Make more room to breathe.") && italics.Contains("Make more room to breathe."),
                 "In the running window only the home heading is italic" + (italics.All(text => text is "Make more room to breathe.") ? "" : ": " + string.Join(" | ", italics)));
-            UiLayoutChecks.Require(((ItemsControl)window.FindName("CategoriesList")).Items.Groups == null && Descendants<TextBlock>(root).All(block => block.Text != "Appearance"),
-                "Review Files is a flat list again and Settings has no Appearance section");            UiLayoutChecks.Require(window.StartupChoices.Count == 1 && window.StartupChoices[0].Enabled, "The startup list shows this account's startup apps");
+            UiLayoutChecks.Require(((ItemsControl)window.FindName("CategoriesList")).Items.Groups == null,
+                "Review Files is a flat list again (Settings > Appearance is the card for interface size and the Dark theme color, not a Review group)");            UiLayoutChecks.Require(window.StartupChoices.Count == 1 && window.StartupChoices[0].Enabled, "The startup list shows this account's startup apps");
             ((Expander)window.FindName("SettingsBoostSection")).IsExpanded = true;
             foreach (var size in new[] { new Size(920, 820), new Size(800, 740) })
             {
@@ -302,6 +317,7 @@ internal static class SmartBoostChecks
             var tempText = (TextBlock)window.FindName("TempText");
             UiLayoutChecks.PumpUntil(() => tempText.Text != "…");
             double BarX(string name) => ((FrameworkElement)window.FindName(name)).TransformToAncestor(root).Transform(new Point(0, 0)).X;
+            UiLayoutChecks.Require(memoryTrack.ActualWidth == 12, $"The Info bars are 12 DIP wide (2 wider than before), not {memoryTrack.ActualWidth}");
             UiLayoutChecks.Require(BarX("CpuFill") < BarX("MemoryFill") && BarX("MemoryFill") < BarX("DiskFill") && BarX("DiskFill") < BarX("TempFill"),
                 "The Info bars run left to right: Processor, Memory, System drive used, then Temporary files (0.9, user direction)");
             Rect BoundsOf(FrameworkElement element) => element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize));
@@ -359,6 +375,14 @@ internal static class SmartBoostChecks
                     if (window.IsLightTheme != light) window.ToggleTheme();
                     UiLayoutChecks.Wait(420);
                     scroll.ScrollToTop(); UiLayoutChecks.Layout(root, new Size(920, 820)); UiLayoutChecks.Wait(80);
+                    // Preview only: show all three bar colors at once (green processor, amber memory, red drive, amber temporary files) and the matching advice line.
+                    var showMeter = typeof(MainWindow).GetMethod("ShowMeter", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+                    void Meter(string fill, string text, double percent, double amber, double red) => showMeter.Invoke(null, [window.FindName(fill), window.FindName(text), percent, $"{percent:0}%", amber, red, 0, 0.0]);
+                    Meter("CpuFill", "CpuText", 22, ResourceSnapshot.CpuAmber, ResourceSnapshot.CpuRed); Meter("MemoryFill", "MemoryText", 74, ResourceSnapshot.MemoryAmber, ResourceSnapshot.MemoryRed);
+                    Meter("DiskFill", "DiskText", 93, ResourceSnapshot.DiskAmber, ResourceSnapshot.DiskRed); Meter("TempFill", "TempText", 60, ResourceSnapshot.TempAmber, ResourceSnapshot.TempRed);
+                    var previewLine = (TextBlock)window.FindName("InfoSummary"); var previewReading = new ResourceSnapshot(22, 74, 100, 7, 100, 1).Assess(60);
+                    previewLine.Text = previewReading.Text; previewLine.SetResourceReference(TextBlock.ForegroundProperty, "CleanTextBrush");
+                    UiLayoutChecks.Wait(500);
                     UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(shots, $"info-card-{(light ? "light" : "dark")}.png"));
                     ((FrameworkElement)window.FindName("SettingsBrowserSection")).BringIntoView(); UiLayoutChecks.Layout(root, new Size(920, 820)); UiLayoutChecks.Wait(120);
                     scroll.ScrollToVerticalOffset(scroll.ScrollableHeight); UiLayoutChecks.Wait(120);

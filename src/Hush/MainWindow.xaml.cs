@@ -91,6 +91,10 @@ public partial class MainWindow : Window
         AppSurface.Effect = null; // the popup blur is attached only while a popup is open (see SetBackdropBlur)
         var categoryView = CollectionViewSource.GetDefaultView(Categories);
         categoryView.Filter = value => value is ReviewCategory { HasFiles: true } category && InOpenGroup(category);
+        // Safe, then Review, then Advanced; inside each risk level the category holding the most comes first (ties keep the catalog order).
+        categoryView.SortDescriptions.Add(new SortDescription(nameof(ReviewCategory.Safety), ListSortDirection.Ascending));
+        categoryView.SortDescriptions.Add(new SortDescription(nameof(ReviewCategory.TotalBytes), ListSortDirection.Descending));
+        categoryView.SortDescriptions.Add(new SortDescription(nameof(ReviewCategory.CatalogOrder), ListSortDirection.Ascending));
         CategoriesList.ItemsSource = categoryView;
         foreach (var category in Categories)
         {
@@ -102,10 +106,18 @@ public partial class MainWindow : Window
         light = prefs.Light;
         InitializeUiSize();
         ApplyTheme();
+        InitializeAccentChoices();
+        InitializeProMode();
         ResetGauge();
         RefreshSelection();
         InitializeBoost();
         InitializeMemoryTrim();
+        InitializeTray();
+        // The gauge's own hover (before a scan, and a different one after it); off while Hush works.
+        ScanCircleButton.MouseEnter += (_, _) => RefreshGaugeHover();
+        ScanCircleButton.MouseLeave += (_, _) => RefreshGaugeHover();
+        ScanCircleButton.IsEnabledChanged += (_, _) => RefreshGaugeHover();
+        ScanCircleButton.IsVisibleChanged += (_, _) => RefreshGaugeHover();
         AboutVersion.Text = $"Version {UpdateService.DisplayVersion}";
         PreviewKeyDown += async (_, e) =>
         {
@@ -117,12 +129,13 @@ public partial class MainWindow : Window
             { e.Handled = true; await HideAbout(); }
             else if (e.Key == Key.Escape && WindowsSettingsOverlay.Visibility == Visibility.Visible && WindowsSettingsOverlay.IsEnabled && !windowsSettingsBusy)
             { e.Handled = true; await HideWindowsSettingsConfirmation(); }
-            else if (e.Key == Key.Escape && ActionsPopup.IsOpen)
-            { e.Handled = true; ActionsPopup.IsOpen = false; }
+            else if (e.Key == Key.Escape && (ActionsPopup.IsOpen || ServicesActionsPopup.IsOpen))
+            { e.Handled = true; CloseActionMenus(); }
         };
         PreviewMouseDown += CloseActionsOnOutsidePress;
-        Deactivated += (_, _) => { if (CloseActionsOnDeactivate) ActionsPopup.IsOpen = false; };
+        Deactivated += (_, _) => { if (CloseActionsOnDeactivate) CloseActionMenus(); };
         ActionsButton.IsVisibleChanged += (_, e) => { if (e.NewValue is false) ActionsPopup.IsOpen = false; }; // leaving Settings closes the menu
+        ServicesActionsButton.IsVisibleChanged += (_, e) => { if (e.NewValue is false) ServicesActionsPopup.IsOpen = false; }; // so does closing the Services card
     }
 
     // The soft blur behind a popup. A window-wide effect makes WPF push every frame of this transparent window through the effect pipeline, even at
@@ -155,6 +168,15 @@ public partial class MainWindow : Window
         showGaugePercentage = true;
         GaugeFinishGlow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.OpacityProperty, null);
         GaugeFinishGlow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.BlurRadiusProperty, null);
+        // The finished-clean look ends with the next scan or clean: the "100%" goes back to its normal color and loses its glow (and the effect is detached).
+        if (GaugeValue.Effect != null)
+        {
+            var glow = (System.Windows.Media.Effects.DropShadowEffect)FindResource("GaugeValueGlowEffect");
+            glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.OpacityProperty, null); glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.BlurRadiusProperty, null);
+            glow.Opacity = 0; glow.BlurRadius = 0;
+            GaugeValue.Effect = null;
+        }
+        GaugeValue.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
         BeginAnimation(GaugePercentProperty, null);
         GaugePercent = gaugeTarget = 0;
         GaugeValue.Text = "0%";
@@ -170,7 +192,9 @@ public partial class MainWindow : Window
         { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
     }
 
-    internal async Task CompleteGauge()
+    // mission: the end of a clean. Besides the ring's bloom, the "100%" turns to the accent color and glows, and both settle into a lasting finished look (until the next
+    // scan or clean): a sense of a finished mission. A scan's end keeps the calmer bloom.
+    internal async Task CompleteGauge(bool mission = false)
     {
         gaugeTarget = 100;
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -187,16 +211,27 @@ public partial class MainWindow : Window
         if (GaugePercent >= 100 && cancellation?.IsCancellationRequested != true)
         {
             // One soft bloom settles into a visible completed state until the next scan.
-            var bloom = new DoubleAnimationUsingKeyFrames();
-            bloom.KeyFrames.Add(new EasingDoubleKeyFrame(0.22, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            bloom.KeyFrames.Add(new EasingDoubleKeyFrame(0.72, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(650)), new SineEase { EasingMode = EasingMode.EaseInOut }));
-            bloom.KeyFrames.Add(new EasingDoubleKeyFrame(0.50, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1800)), new SineEase { EasingMode = EasingMode.EaseInOut }));
-            GaugeFinishGlow.BeginAnimation(DropShadowEffect.OpacityProperty, bloom);
-            var radius = new DoubleAnimationUsingKeyFrames();
-            radius.KeyFrames.Add(new EasingDoubleKeyFrame(12, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            radius.KeyFrames.Add(new EasingDoubleKeyFrame(20, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(650)), new SineEase { EasingMode = EasingMode.EaseInOut }));
-            radius.KeyFrames.Add(new EasingDoubleKeyFrame(16, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1800)), new SineEase { EasingMode = EasingMode.EaseInOut }));
-            GaugeFinishGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, radius);
+            var ease = new SineEase { EasingMode = EasingMode.EaseInOut };
+            DoubleAnimationUsingKeyFrames Frames(double start, double peak, double rest, int peakAt = 650, int restAt = 1800)
+            {
+                var frames = new DoubleAnimationUsingKeyFrames();
+                frames.KeyFrames.Add(new EasingDoubleKeyFrame(start, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                frames.KeyFrames.Add(new EasingDoubleKeyFrame(peak, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(peakAt)), ease));
+                frames.KeyFrames.Add(new EasingDoubleKeyFrame(rest, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(restAt)), ease));
+                return frames;
+            }
+            // The ring: one soft bloom that settles into a lasting glow (stronger and wider for a finished clean).
+            GaugeFinishGlow.BeginAnimation(DropShadowEffect.OpacityProperty, mission ? Frames(0.3, 1.0, 0.8, 700, 2000) : Frames(0.22, 0.72, 0.50));
+            GaugeFinishGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, mission ? Frames(12, 30, 24, 700, 2000) : Frames(12, 20, 16));
+            if (mission)
+            {
+                // The "100%": the accent color and its own glow, attached only now (an effect is attached only while it is visible) and removed again by ResetGauge.
+                GaugeValue.SetResourceReference(TextBlock.ForegroundProperty, "TealTextBrush");
+                var glow = (DropShadowEffect)FindResource("GaugeValueGlowEffect");
+                GaugeValue.Effect = glow;
+                glow.BeginAnimation(DropShadowEffect.OpacityProperty, Frames(0, 1.0, 0.75, 700, 2000));
+                glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Frames(0, 22, 16, 700, 2000));
+            }
         }
     }
 
@@ -212,7 +247,7 @@ public partial class MainWindow : Window
     private void OpenResults_Click(object sender, RoutedEventArgs e)
     {
         if (!scanned || busy) return;
-        OpenReviewGroup(null); // Take a look always starts from the three groups
+        OpenReviewGroup(IsProMode ? null : SafetyLevel.Safe); // Pro: Take a look starts from the three groups; Simple has only the Safe items, so it opens them directly
         ShowReviewPage(true);
         PrimaryButton.Focus();
     }
@@ -283,12 +318,12 @@ public partial class MainWindow : Window
     {
         if (busy || SettingsPage.Visibility == Visibility.Visible) return;
         settingsReturnToReview = ReviewPage.Visibility == Visibility.Visible;
-        LoadWindowsSettings();
+        if (IsProMode) LoadWindowsSettings();   // the Windows choices are only read when they can be seen (Simple mode hides them)
         RefreshWindowsUpdateState();
         // (The restore-point probe is not run here any more: it asks Windows Management, which costs about a second of CPU, and the confirmation that needs it
         // probes by itself when it opens. 0.9 audit.)
         RefreshAdminSwitch();
-        LoadStartupApps();
+        if (IsProMode) LoadStartupApps();
         Motion.EnterPage(MainContent, () =>
         {
             ScanPage.Visibility = ReviewPage.Visibility = Visibility.Collapsed;
@@ -308,10 +343,10 @@ public partial class MainWindow : Window
         if (visit != settingsVisit || SettingsPage.Visibility != Visibility.Visible) return;
         StartResourceIndicators();
         RefreshTempFiles();
-        RefreshProcesses(rebuildList: SettingsProcessSection.IsExpanded);
+        if (IsProMode) RefreshProcesses(rebuildList: SettingsProcessSection.IsExpanded);
         // The Services list is read when its card is opened (or refreshed), not every time Settings opens: reading it walks every Windows service and starts sc.exe.
-        if (SettingsServicesSection.IsExpanded) _ = RefreshServicesAsync();
-        if (SettingsTasksSection.IsExpanded) _ = RefreshTasksAsync(); // likewise the scheduled tasks (a walk of every task file)
+        if (IsProMode && SettingsServicesSection.IsExpanded) _ = RefreshServicesAsync();
+        if (IsProMode && SettingsTasksSection.IsExpanded) _ = RefreshTasksAsync(); // likewise the scheduled tasks (a walk of every task file)
     }
 
     // The Settings sections sit in two columns side by side; in a narrow window they stack into one.
@@ -338,6 +373,15 @@ public partial class MainWindow : Window
     }
 
     private async void Circle_Click(object sender, RoutedEventArgs e) => await ActivateGaugeAsync();
+
+    // Decides which hover the gauge shows: none while Hush works, "ready" before a scan, "complete" after one. Called when the pointer moves on or off the
+    // gauge and whenever the gauge's state changes (a scan that ends under a resting pointer starts the "complete" hover by itself).
+    private void RefreshGaugeHover()
+    {
+        if (busy || !ScanCircleButton.IsEnabled || !ScanCircleButton.IsVisible) { GaugeHover.Stop(); return; }
+        if (!ScanCircleButton.IsMouseOver) { GaugeHover.Leave(); return; }
+        GaugeHover.Enter(scanned ? GaugeHoverStyle.Complete : GaugeHoverStyle.Ready);
+    }
 
     internal async Task ActivateGaugeAsync()
     {
@@ -387,10 +431,10 @@ public partial class MainWindow : Window
         ReviewGroupsView.Visibility = items.Count > 0 && !list ? Visibility.Visible : Visibility.Collapsed;
         // Inside a group: chevron back, "Select all in <group>" and Expand all. On the overview: "Select all categories" (all three groups) only.
         bool inGroup = openGroup != null && !ReviewShowsAllCategories;
-        GroupBackButton.Visibility = inGroup ? Visibility.Visible : Visibility.Collapsed;
+        GroupBackButton.Visibility = inGroup && IsProMode ? Visibility.Visible : Visibility.Collapsed; // Simple has one group only: Back leaves Review
         OverviewDivider.Visibility = items.Count > 0 && !list ? Visibility.Visible : Visibility.Collapsed;
         CollapseAllButton.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
-        string label = inGroup ? $"Select all in {openGroup switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review", _ => "Advanced" }}" : "Select all categories";
+        string label = !IsProMode ? "Select all" : inGroup ? $"Select all in {openGroup switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review", _ => "Advanced" }}" : "Select all categories";
         if (!ReferenceEquals(SelectAllBox.Content, label) && !Equals(SelectAllBox.Content, label)) SelectAllBox.Content = label;
     }
 
@@ -447,7 +491,7 @@ public partial class MainWindow : Window
     {
         if (busy) return;
         // Inside a group, Back returns to the three groups; from the groups it leaves Review.
-        if (openGroup != null && ReviewPage.Visibility == Visibility.Visible) { OpenReviewGroup(null); Motion.Reveal(ReviewGroupsView); return; }
+        if (IsProMode && openGroup != null && ReviewPage.Visibility == Visibility.Visible) { OpenReviewGroup(null); Motion.Reveal(ReviewGroupsView); return; }
         Headline.Text = "Make more room to breathe.";
         GaugeValue.Text = $"{Math.Floor(GaugePercent):0}%";
         GaugeLabel.Text = scanned ? "Click to scan again" : "Click to scan";
@@ -482,7 +526,7 @@ public partial class MainWindow : Window
     {
         if (busy || BoostWorking) return;
         // Low-resource mode scans at background CPU and disk priority and reports progress less often.
-        options ??= LowResourceMode.IsActive ? new ScanOptions(ReportIntervalMs: LowResourceMode.ReportIntervalMs, Background: true) : null;
+        options ??= DefaultScanOptions();
         pendingScanOptions = options;
         CurrentScanState = ScanState.Scanning;
         scanSkippedLocations = false;
@@ -492,7 +536,7 @@ public partial class MainWindow : Window
         SetBusy(true, "scan");
         ResetGauge();
         StatusDetail.Text = "Looking through safe cleanup locations…";
-        StatusTitle.Text = "Searching files…";
+        StatusTitle.Text = "Searching files…"; StatusTitle.ToolTip = null;
         GaugeLabel.Text = "Click to stop";
         ScanCircleButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Stop scan");
         bool acceptingProgress = true;
@@ -605,14 +649,22 @@ public partial class MainWindow : Window
         if (!CanClean || BoostWorking) return;
         confirmedItems = items.Where(x => x.Selected).ToArray();
         if (confirmedItems.Length == 0) return;
-        ConfirmSummary.Text = $"Clean {confirmedItems.Length:N0} selected items and free {Sizes.Format(confirmedItems.Sum(x => x.Bytes))}?";
+        // Simple mode: just what will be freed and one calm line. Pro mode: the breakdown by group and category and the short list of what will happen.
+        bool simple = !IsProMode;
+        long freed = confirmedItems.Sum(x => x.Bytes);
+        ConfirmTitle.Text = $"Clean {Sizes.Format(freed)}?";
+        ConfirmSummary.Text = simple ? "Only safe temporary files. Your own files are never touched."
+            : $"{confirmedItems.Length:N0} selected {(confirmedItems.Length == 1 ? "item" : "items")}";
         ConfirmDetail.Text = ConfirmationText(confirmedItems);
-        // From Home, Clean only touches what was selected by default (the green Safe items); say so once, plainly.
+        // From Home, Clean only touches what was selected by default (the green Safe items); say so once, plainly (Pro mode only: Simple mode is Safe only by definition).
         ConfirmHomeNote.Text = confirmedItems.All(x => x.Safety == SafetyLevel.Safe)
             ? "Cleans only the green, recommended items. Use Take a look to choose more."
             : "Includes the extra items you chose in Take a look.";
-        ConfirmHomeNote.Visibility = fromHome ? Visibility.Visible : Visibility.Collapsed;
-        BuildConfirmGroups(confirmedItems);
+        ConfirmHomeNote.Visibility = fromHome && !simple ? Visibility.Visible : Visibility.Collapsed;
+        ConfirmScroll.Visibility = simple ? Visibility.Collapsed : Visibility.Visible;
+        ConfirmDeleteButton.Content = simple ? "Clean" : "Clean selected";
+        CancelDeleteButton.Content = simple ? "Not now" : "Keep my files";
+        if (!simple) BuildConfirmGroups(confirmedItems);
         // Advanced (red) items are irreversible or recovery-related: the clean button stays off until the person ticks the consent box.
         bool advanced = confirmedItems.Any(x => x.Safety == SafetyLevel.Advanced);
         AdvancedConsentBox.IsChecked = false;
@@ -628,8 +680,9 @@ public partial class MainWindow : Window
         KeyboardNavigation.SetTabNavigation(ModalOverlay, KeyboardNavigationMode.Cycle);
     }
 
-    // The popup lists what will be cleaned as three tiny colored groups (green Safe, amber Review, red Advanced): one summary line per group,
-    // then one line per category. Text is deliberately small; the window is not.
+    // The Pro popup lists what will be cleaned as up to three colored groups (green Safe, amber Review, red Advanced): a header per group, then one row per category.
+    // Every row is one grid with the same columns, so the colored lines, the names and the amounts line up (the amounts share one right edge and use the same
+    // monospace figures as the sizes elsewhere).
     private void BuildConfirmGroups(IReadOnlyCollection<CleanupItem> selected)
     {
         ConfirmGroups.Children.Clear();
@@ -639,30 +692,39 @@ public partial class MainWindow : Window
             if (inLevel.Count == 0) continue;
             string brush = level switch { SafetyLevel.Safe => "GoodBrush", SafetyLevel.Review => "MeterWarnBrush", _ => "CleanTextBrush" };
             string name = level switch { SafetyLevel.Safe => "Safe", SafetyLevel.Review => "Review", _ => "Advanced" };
-            TextBlock Line(string text, bool strong, bool right, string foreground)
-            {
-                var block = new TextBlock { Text = text, FontSize = (double)FindResource("CompactFontSize"), FontWeight = strong ? FontWeights.SemiBold : FontWeights.Normal,
-                    TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left };
-                block.SetResourceReference(TextBlock.ForegroundProperty, foreground);
-                return block;
-            }
-            Grid Row(string left, string rightText, bool strong, string foreground, Thickness margin)
+            string Amount(IEnumerable<CleanupItem> group) { var list = group.ToList(); return $"{list.Count:N0} {(list.Count == 1 ? "item" : "items")} · {Sizes.Format(list.Sum(x => x.Bytes))}"; }
+            Grid Row(string left, string rightText, bool header, string foreground, Thickness margin)
             {
                 var row = new Grid { Margin = margin };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(header ? 12 : 12) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var l = Line(left, strong, false, foreground); var r = Line(rightText, strong, true, foreground);
-                r.Margin = new Thickness(14, 0, 0, 0);
-                Grid.SetColumn(r, 1); row.Children.Add(l); row.Children.Add(r);
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = "ConfirmAmount" });
+                if (header)
+                {
+                    var line = new Border { CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 1, 0, 1) };
+                    line.SetResourceReference(Border.BackgroundProperty, brush);
+                    row.Children.Add(line);
+                }
+                TextBlock Text(string text, bool right)
+                {
+                    var block = new TextBlock { Text = text, FontSize = (double)FindResource("CompactFontSize"), FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal,
+                        TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left };
+                    if (right) block.FontFamily = new FontFamily("Cascadia Mono, Consolas");
+                    block.SetResourceReference(TextBlock.ForegroundProperty, foreground);
+                    return block;
+                }
+                var l = Text(left, false); var r = Text(rightText, true);
+                Grid.SetColumn(l, 2); Grid.SetColumn(r, 4);
+                row.Children.Add(l); row.Children.Add(r);
                 return row;
             }
-            string Amount(IEnumerable<CleanupItem> group) { var list = group.ToList(); return $"{list.Count:N0} {(list.Count == 1 ? "item" : "items")} · {Sizes.Format(list.Sum(x => x.Bytes))}"; }
-            var header = Row(name, Amount(inLevel), true, brush, new Thickness(0, ConfirmGroups.Children.Count == 0 ? 0 : 10, 0, 2));
-            ConfirmGroups.Children.Add(header);
+            ConfirmGroups.Children.Add(Row(name, Amount(inLevel), true, brush, new Thickness(0, ConfirmGroups.Children.Count == 0 ? 0 : 16, 0, 6)));
             foreach (var group in inLevel.GroupBy(item => ReviewCategory.CategoryFor(item)).OrderByDescending(g => g.Sum(x => x.Bytes)))
             {
                 string title = ReviewCategory.Definitions.FirstOrDefault(d => d.Id == group.Key)?.Title ?? group.Key;
-                ConfirmGroups.Children.Add(Row(title, Amount(group), false, "MutedBrush", new Thickness(14, 0, 0, 0)));
+                ConfirmGroups.Children.Add(Row(title, Amount(group), false, "MutedBrush", new Thickness(0, 3, 0, 3)));
             }
         }
     }
@@ -672,18 +734,18 @@ public partial class MainWindow : Window
     {
         bool Has(string category) => selected.Any(x => ReviewCategory.CategoryFor(x) == category);
         int registry = selected.Count(x => x.Kind == CleanupKind.Registry);
-        var lines = new List<string> { "Files are permanently deleted, bypassing the Recycle Bin. Locked or changed files are skipped." };
-        if (registry > 0) lines.Add($"{registry} app registry entries are backed up to .reg files first.");
-        if (Has("RecycleBin")) lines.Add("Recycle Bin: everything in it is removed on every drive, for good.");
-        if (Has("WindowsOld")) lines.Add("Previous Windows installation: Hush deletes Windows.old itself, including the old Users folder (administrator mode); you can't go back to the old Windows.");
-        if (Has("AppDownloads")) lines.Add("Large app downloads and installed app files: those apps download or reinstall them before they work again (Fusion 360, CapCut, Codex, Zed, GitHub Desktop), and Unity Asset Store packages come back only from your account. Nothing of yours is in them.");
-        if (Has("BrowserCookies")) lines.Add("Cookies: you will be signed out of websites. Passwords and bookmarks stay.");
+        var lines = new List<string> { "Files are permanently deleted, not sent to the Recycle Bin. Files in use are skipped." };
+        if (registry > 0) lines.Add($"{registry} app registry entries are backed up first.");
+        if (Has("RecycleBin")) lines.Add("The Recycle Bin is emptied on every drive.");
+        if (Has("WindowsOld")) lines.Add("Windows.old is deleted, including the old Users folder (administrator mode). You can't go back to the old Windows.");
+        if (ReviewCategory.AppDownloadIds.Any(Has)) lines.Add("Those apps download or reinstall what is removed; Unity Asset Store packages come back only from your account.");
+        if (Has("BrowserCookies")) lines.Add("You will be signed out of websites. Passwords and bookmarks stay.");
         if (Has("BrowserHistory")) lines.Add("Browser history is cleared. Bookmarks, passwords and logins stay.");
         if (Has("Clipboard")) lines.Add("Clipboard history is cleared. Pinned clips stay.");
-        if (Has("Update") || Has("Delivery") || Has("Setup")) lines.Add("Update, delivery and setup files can be downloaded again; updates may download twice.");
+        if (Has("Update") || Has("Delivery") || Has("Setup")) lines.Add("Update and setup files can be downloaded again.");
         if (Has("BrowserEdge") || Has("BrowserChrome") || Has("BrowserFirefox") || Has("BrowserOther") || Has("DirectX") || Has("NvidiaShader") || Has("GpuShader"))
-            lines.Add("Browser and shader caches rebuild themselves; the next launch may be a little slower.");
-        lines.Add("Defender history, certificates, security logs, restore points and recovery data are never touched.");
+            lines.Add("Browser and shader caches rebuild; the next launch may be a little slower.");
+        lines.Add("Security data and restore points are never touched.");
         return string.Join("\n", lines);
     }
 
@@ -717,7 +779,7 @@ public partial class MainWindow : Window
         ResetGauge();
         GaugeLabel.Text = "Click to stop";
         ScanCircleButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Stop cleaning");
-        StatusTitle.Text = "Cleaning selected items…";
+        StatusTitle.Text = "Cleaning selected items…"; StatusTitle.ToolTip = null;
         var progress = new Progress<int>(count =>
         {
             if (cancellation?.IsCancellationRequested != true) AnimateGaugeTo(Math.Min(99, count * 100.0 / selected.Length));
@@ -729,13 +791,19 @@ public partial class MainWindow : Window
             var result = await Task.Run(() => engine.Clean(selected, progress, cancellation!.Token, toolNote));
             RemoveDeleted();
             foreach (var item in selected) if (item.Outcome != "Deleted") item.Selected = false;
-            if (!result.Stopped) await CompleteGauge();
+            if (!result.Stopped) await CompleteGauge(mission: true);
             else FreezeGauge();
             GaugeLabel.Text = "space freed";
+            // Sleek and minimal (owner, November 11, 2026): one short line with the result, and a second one only when something was left alone. The numbers
+            // (cleaned, skipped and why, what the disk itself reports, how much is still found) are one hover away on the result line.
+            StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed";
+            StatusDetail.Text = result.Skipped > 0 ? $"{result.Skipped:N0} {(result.Skipped == 1 ? "file was" : "files were")} left alone" : "";
             // The claim comes from the items; the measurement comes from Windows' own free-space figure for the fixed drives.
-            string measured = result.MeasuredFreed > 0 ? $" · disk reports {Sizes.Format(result.MeasuredFreed)} more free" : "";
-            StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed{measured} · {result.Deleted:N0} cleaned · {result.Skipped:N0} skipped";
-            StatusDetail.Text = FoundSummary() + (result.Skipped > 0 && result.SkipSummary.Length > 0 ? " · skipped: " + result.SkipSummary : "");
+            var more = new List<string> { $"{result.Deleted:N0} cleaned" };
+            if (result.Skipped > 0) more.Add($"{result.Skipped:N0} skipped" + (result.SkipSummary.Length > 0 ? $" ({result.SkipSummary})" : ""));
+            if (result.MeasuredFreed > 0) more.Add($"the disk reports {Sizes.Format(result.MeasuredFreed)} more free");
+            if (items.Count > 0) more.Add(FoundSummary() + " still found");
+            StatusTitle.ToolTip = string.Join(" · ", more);
             lastCleanResult = result;
         }
         catch (Exception ex)
@@ -751,7 +819,8 @@ public partial class MainWindow : Window
         {
             // The status line keeps what the try/catch above set ("Cleanup complete · X freed ..." or "Cleanup couldn't finish."): the result and any
             // failure must stay readable (0.9 audit). It used to be replaced here at once by "Review remaining files.".
-            RebuildCategories(); SetBusy(false); RefreshSelection(); ShowReviewPage(true); PrimaryButton.Focus();
+            // The person stays on Home with the finished gauge (owner, November 11, 2026: no automatic jump to the Review page after a clean).
+            RebuildCategories(); SetBusy(false); RefreshSelection(); ScanCircleButton.Focus();
             ReleaseOldResults();
         }
     }
@@ -763,7 +832,7 @@ public partial class MainWindow : Window
         if (value) currentOperation = mode;
         if (value) { cancellation?.Dispose(); cancellation = new(); }
         // The Hush logo (About button) stays enabled and unchanged while Hush works: it looks identical in every state, and About_Click ignores clicks while busy.
-        CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = GroupBackButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = SettingsButton.IsEnabled = !value;
+        CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = GroupBackButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = SettingsButton.IsEnabled = ProModeButton.IsEnabled = !value;
         bool scanning = value && mode == "scan";
         ScanRipplesCue.IsRunning = scanning;
         FileScanActivity.IsRunning = value && !scanning;
@@ -772,6 +841,8 @@ public partial class MainWindow : Window
         StatusDetail.Visibility = scanning ? Visibility.Hidden : Visibility.Visible;
         RescanButton.Visibility = Visibility.Collapsed;
         PrimaryButton.IsEnabled = ScanCircleButton.IsEnabled = true;
+        RefreshGaugeHover();
+        if (!value) Dispatcher.BeginInvoke(RefreshGaugeHover, System.Windows.Threading.DispatcherPriority.Loaded); // the scan state is set just after this call
         UpdateLandingStatus();
         if (value)
         {
@@ -864,7 +935,7 @@ public partial class MainWindow : Window
             if (!byCategory.TryGetValue(id, out var list)) byCategory[id] = list = [];
             list.Add(item);
         }
-        foreach (var category in Categories) category.Replace(byCategory.TryGetValue(category.Id, out var list) ? list : []);
+        foreach (var category in Categories) category.Replace(byCategory.TryGetValue(category.Id, out var list) ? ReviewCategory.OrderBySizeAndLocation(list) : []);
         foreach (var category in Categories) category.Expanded = expanded.Contains(category.Id) && category.Files.Count > 0;
         CollectionViewSource.GetDefaultView(Categories).Refresh();
     }
@@ -996,7 +1067,10 @@ public partial class MainWindow : Window
         SavePreferences();
     }
 
-    internal void ToggleTheme() { light = !light; ApplyTheme(animate: true); }
+    internal void ToggleTheme() { light = !light; ApplyTheme(animate: true); RefreshAccentChoices(); }
+
+    // The accent for a theme: the person's choice (Settings > Appearance) in its Dark shade or its slightly darker Light shade.
+    private string AccentColor(bool forLight) => AccentPalette.Find(prefs.Accent).For(forLight);
 
     private void ApplyTheme(bool animate = false)
     {
@@ -1007,11 +1081,11 @@ public partial class MainWindow : Window
             : ["#11151B", "#1B212B", "#252C38", "#2C3442", "#C6CFDC", "#9BA8BA", "#8794A8", "#D8DFE9"];
         for (int i = 0; i < keys.Length; i++) Set(keys[i], colors[i]);
         Set("ModalShadeBrush", light ? "#65E4EAF0" : "#A00C1016");
-        Set("SafetyGreenBrush", SafetyPalette.Accent(light));
+        Set("SafetyGreenBrush", AccentColor(light));
         Set("GoodBrush", SafetyPalette.Good(light));
         Set("CleanTextBrush", SafetyPalette.Danger(light));
         Set("CleanFillBrush", "#08FF795C");
-        Set("AccentFillBrush", "#08" + SafetyPalette.Accent(light).TrimStart('#'));
+        Set("AccentFillBrush", "#08" + AccentColor(light).TrimStart('#'));
         foreach (var category in Categories) category.SetTheme(light);
         UpdateReviewGroups();
         ThemeSunCore.Opacity = light ? 1 : 0.3;
@@ -1020,11 +1094,11 @@ public partial class MainWindow : Window
         ThemeButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, light ? "Light theme. Switch to dark theme" : "Dark theme. Switch to light theme");
         // One primary accent per theme (Cyan in Dark, soft blue in Light). The gauge, accent text, glows and Safe accents all read it,
         // so they stay identical to each other; TealBrush/TealTextBrush ease with the theme like every other palette brush.
-        string accent = SafetyPalette.Accent(light);
+        string accent = AccentColor(light);
         Application.Current.Resources["PrimaryAccentColor"] = (Color)ColorConverter.ConvertFromString(accent);
         Set("TealBrush", accent);
         Set("TealTextBrush", accent);
-        Set("AccentHoverBrush", light ? "#3A66AE" : "#7FE3DD");
+        Set("AccentHoverBrush", AccentPalette.Find(prefs.Accent).HoverFor(light));
         Set("MeterWarnBrush", SafetyPalette.Text(SafetyLevel.Review, light));
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
         if (!busy) ApplyPrimaryAppearance(CanClean && items.Count > 0);

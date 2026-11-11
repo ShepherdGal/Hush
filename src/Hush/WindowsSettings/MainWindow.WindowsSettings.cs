@@ -151,11 +151,17 @@ public partial class MainWindow
     // suite runs would otherwise close the menu under the test (one full run failed that way, three isolated runs passed).
     internal static bool CloseActionsOnDeactivate = true;
 
+    // Both Actions menus (the Windows choices' and the Services card's) close the same way.
+    private void CloseActionMenus() { ActionsPopup.IsOpen = false; ServicesActionsPopup.IsOpen = false; }
+
     private void CloseActionsOnOutsidePress(object sender, MouseButtonEventArgs e)
     {
-        if (!ActionsPopup.IsOpen) return;
-        if (e.OriginalSource is DependencyObject source && (IsWithin(source, ActionsButton) || (ActionsPopup.Child is { } menu && IsWithin(source, menu)))) return;
-        ActionsPopup.IsOpen = false;
+        foreach (var (popup, button) in new[] { (ActionsPopup, (FrameworkElement)ActionsButton), (ServicesActionsPopup, ServicesActionsButton) })
+        {
+            if (!popup.IsOpen) continue;
+            if (e.OriginalSource is DependencyObject source && (IsWithin(source, button) || (popup.Child is { } menu && IsWithin(source, menu)))) continue;
+            popup.IsOpen = false;
+        }
     }
 
     private static bool IsWithin(DependencyObject? node, DependencyObject ancestor)
@@ -179,9 +185,9 @@ public partial class MainWindow
             bool include = level switch { BulkLevel.Recommended => !choice.Advanced && choice.TakesEffect, BulkLevel.Somewhat => choice.TakesEffect, _ => true };
             if (include) choice.Selected = true;
         }
-        if (adjustmentChoices.Count(choice => choice.CanEdit && choice.Selected != choice.Baseline.Enabled) == 0)
+        if (PendingChanges == 0)
         { WindowsSettingsStatus.Text = "Nothing to change: those settings are already on."; applyAllStaged = false; return; }
-        ApplyWindowsSettings_Click(this, new RoutedEventArgs());
+        ReviewChanges_Click(this, new RoutedEventArgs()); // one review for everything staged
     }
     private void ActionRecommended_Click(object sender, RoutedEventArgs e) => StageBulk(BulkLevel.Recommended);
     private void ActionSomewhat_Click(object sender, RoutedEventArgs e) => StageBulk(BulkLevel.Somewhat);
@@ -196,8 +202,7 @@ public partial class MainWindow
     private void UpdateWindowsChanges()
     {
         int count = adjustmentChoices.Count(choice => choice.CanEdit && choice.Selected != choice.Baseline.Enabled);
-        ApplyWindowsSettingsButton.IsEnabled = count > 0;
-        ApplyWindowsSettingsButton.Content = count == 0 ? "Review Windows changes" : $"Review {count} Windows change{(count == 1 ? "" : "s")}";
+        UpdateReviewButton(); // the one button counts everything staged on the page, not only the Windows choices
         PrivacySummary.Text = Describe(adjustmentChoices.Where(choice => !choice.Advanced));
         ImpactSummary.Text = Describe(adjustmentChoices.Where(choice => choice.Advanced));
     }

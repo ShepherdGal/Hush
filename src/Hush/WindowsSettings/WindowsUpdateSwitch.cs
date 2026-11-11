@@ -27,6 +27,7 @@ internal interface IWindowsUpdateSystem
 
 internal sealed record UpdateOffReport(bool Done, IReadOnlyList<string> Changed, IReadOnlyList<string> Failed)
 {
+    // Done is true only when at least one part really changed (and was read back); Complete when nothing at all was refused.
     internal bool Complete => Failed.Count == 0;
     // One plain paragraph for the result popup: what changed and was verified, and what could not be changed.
     internal string Text(bool turningOff)
@@ -60,6 +61,8 @@ internal sealed class WindowsUpdateSwitch(IWindowsUpdateSystem system, string di
     private sealed record SavedTask(string Name, bool? Enabled);
     private sealed record Backup(int Schema, bool Active, List<SavedPolicy> Policies, List<SavedService> Services, List<SavedTask> Tasks);
     private readonly string historyPath = Path.Combine(Path.GetFullPath(directory), "windows-update-off.json");
+    // The plain-text result of the last run (what changed, what Windows refused and why), kept so a failure can always be read afterwards.
+    internal string LastRunPath => Path.Combine(Path.GetFullPath(directory), "windows-update-last-run.txt");
     private readonly string folder = Path.GetFullPath(directory);
 
     // True while Hush's own change is in place (saved history says so). The red line in Settings follows this.
@@ -102,17 +105,22 @@ internal sealed class WindowsUpdateSwitch(IWindowsUpdateSystem system, string di
                 changed.Add(name + " disabled");
                 if (name != "WaaSMedicSvc") { try { system.StopService(name); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException) { /* stays disabled: it will not start again */ } }
             }
-            int tasksOff = 0, tasksFailed = 0;
+            int tasksOff = 0, tasksFailed = 0; string? taskReason = null;
             foreach (string task in Tasks)
             {
                 if (system.ReadTaskEnabled(task) == null) continue;
-                if (system.TrySetTaskEnabled(task, false, out _) && system.ReadTaskEnabled(task) == false) tasksOff++; else tasksFailed++;
+                if (system.TrySetTaskEnabled(task, false, out string taskError) && system.ReadTaskEnabled(task) == false) tasksOff++;
+                else { tasksFailed++; taskReason ??= Short(taskError); }
             }
             if (tasksOff > 0) changed.Add($"{tasksOff} update task{(tasksOff == 1 ? "" : "s")} disabled");
-            if (tasksFailed > 0) failed.Add($"{tasksFailed} update task{(tasksFailed == 1 ? "" : "s")} stayed enabled");
+            if (tasksFailed > 0) failed.Add($"{tasksFailed} update task{(tasksFailed == 1 ? "" : "s")} stayed enabled" + (string.IsNullOrEmpty(taskReason) ? "" : $" ({taskReason})"));
         }
         catch { Save(backup with { Active = true }); throw; }
-        return new(true, changed, failed);
+        // Honest state: when nothing at all could be changed, Hush does not claim that Windows Update is off (no history, so no red line); the originals were never touched.
+        if (changed.Count == 0 && existing is not { Active: true }) { try { File.Delete(historyPath); } catch (IOException) { } }
+        var report = new UpdateOffReport(changed.Count > 0, changed, failed);
+        WriteLastRun("turn off", report);
+        return report;
     }
 
     internal UpdateOffReport TurnBackOn()
@@ -141,18 +149,42 @@ internal sealed class WindowsUpdateSwitch(IWindowsUpdateSystem system, string di
             changed.Add(saved.Name + " restored");
             if (saved.WasRunning && saved.Name != "WaaSMedicSvc") { try { system.StartService(saved.Name); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException) { failed.Add(saved.Name + " could not be restarted (it starts again on its own or at the next restart)"); } }
         }
-        int tasksOn = 0, tasksFailed = 0;
+        int tasksOn = 0, tasksFailed = 0; string? taskReason = null;
         foreach (var saved in backup.Tasks)
         {
             if (!Tasks.Contains(saved.Name) || saved.Enabled == null) continue;
-            if (system.TrySetTaskEnabled(saved.Name, saved.Enabled.Value, out _) && system.ReadTaskEnabled(saved.Name) == saved.Enabled) tasksOn++; else tasksFailed++;
+            // A task that still has its old state (one Windows would not let Hush disable) has nothing to put back; trying anyway used to fail and keep Hush "off" for good.
+            if (system.ReadTaskEnabled(saved.Name) == saved.Enabled) continue;
+            if (system.TrySetTaskEnabled(saved.Name, saved.Enabled.Value, out string taskError) && system.ReadTaskEnabled(saved.Name) == saved.Enabled) tasksOn++;
+            else { tasksFailed++; taskReason ??= Short(taskError); }
         }
         if (tasksOn > 0) changed.Add($"{tasksOn} update task{(tasksOn == 1 ? "" : "s")} restored");
-        if (tasksFailed > 0) failed.Add($"{tasksFailed} update task{(tasksFailed == 1 ? "" : "s")} could not be restored");
+        if (tasksFailed > 0) failed.Add($"{tasksFailed} update task{(tasksFailed == 1 ? "" : "s")} could not be restored" + (string.IsNullOrEmpty(taskReason) ? "" : $" ({taskReason})"));
         // The history is closed only when everything came back; otherwise it stays so a second try (or Undo later) still knows the originals.
         if (failed.Count == 0) { try { File.Delete(historyPath); } catch (IOException) { } }
         else Save(backup with { Active = true });
-        return new(true, changed, failed);
+        var report = new UpdateOffReport(changed.Count > 0 || failed.Count == 0, changed, failed);
+        WriteLastRun("turn back on", report);
+        return report;
+    }
+
+    // One short line of a tool's answer ("[SC] ChangeServiceConfig FAILED 5: Access is denied."), so a refusal says why instead of only that it happened.
+    internal static string Short(string? text)
+    {
+        string line = (text ?? "").Split('\n').Select(part => part.Trim()).FirstOrDefault(part => part.Length > 0) ?? "";
+        return line.Length > 140 ? line[..140] + "…" : line;
+    }
+
+    private void WriteLastRun(string action, UpdateOffReport report)
+    {
+        try
+        {
+            Directory.CreateDirectory(folder);
+            if (!CleanupEngine.SafePath(folder, folder)) return;
+            string result = !report.Done ? "nothing was changed" : report.Complete ? "done" : "partly done";
+            File.WriteAllText(LastRunPath, $"Windows Update switch · {DateTime.Now:yyyy-MM-dd HH:mm:ss}\r\nAction: {action}\r\nResult: {result}\r\n\r\n{report.Text(action == "turn off")}\r\n");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* the report is only a convenience */ }
     }
 
     private Backup? Load()
@@ -222,10 +254,16 @@ internal sealed class RealWindowsUpdateSystem : IWindowsUpdateSystem
         //    these services, while their registry keys are often locked to TrustedInstaller (writing the key directly was refused on many PCs, which is
         //    why turning Windows Update off could not work). The delayed-start flag is kept as it was when a service goes back to Automatic.
         string kind = start switch { 2 => DelayedStart(service) ? "delayed-auto" : "auto", 3 => "demand", 4 => "disabled", _ => "" };
+        string detail = "";
         if (kind.Length > 0)
         {
-            try { if (Run("sc.exe", "config", service, "start=", kind).Code == 0) return true; }
-            catch (IOException) { /* fall back to the registry below */ }
+            try
+            {
+                var result = Run("sc.exe", "config", service, "start=", kind);
+                if (result.Code == 0) return true;
+                detail = WindowsUpdateSwitch.Short(result.Output);
+            }
+            catch (IOException ex) { detail = ex.Message; /* fall back to the registry below */ }
         }
         // 2. The registry value itself, where its key allows it.
         try
@@ -237,7 +275,7 @@ internal sealed class RealWindowsUpdateSystem : IWindowsUpdateSystem
             return true;
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
-        { error = service == "WaaSMedicSvc" ? "Windows protects this service and refused the change" : "Windows refused the change"; return false; }
+        { error = (service == "WaaSMedicSvc" ? "Windows protects this service and refused the change" : "Windows refused the change") + (detail.Length > 0 ? $" ({detail})" : ""); return false; }
     }
 
     // Service state through sc.exe (its state code is a number, so it reads the same in every language): 4 = running, 1 = stopped.
