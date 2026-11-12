@@ -33,7 +33,7 @@ foreach ($name in 'Hush-Portable.exe', 'Hush-Setup.exe') {
 }
 # Loose copies of the license and the icon, so they sit beside the downloads (and are attached to the release).
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $artifacts 'LICENSE') -Force
-Copy-Item -LiteralPath (Join-Path $root 'docs\Hush-icon.png') -Destination (Join-Path $artifacts 'Hush-icon.png') -Force
+Copy-Item -LiteralPath (Join-Path $root 'docs\app-icon.png') -Destination (Join-Path $artifacts 'Hush-icon.png') -Force
 # One zip per exe: the exe, the license and the terms. The updater reads Hush-Portable.zip and unpacks Hush-Portable.exe from it.
 foreach ($name in 'Hush-Portable', 'Hush-Setup') {
     $zipFolder = Join-Path $stage "zip-$name"

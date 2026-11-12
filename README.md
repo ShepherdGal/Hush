@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/Hush-icon.png" width="128" alt="Hush icon"></p>
+<p align="center"><img src="docs/app-icon.png" width="128" alt="Hush icon"></p>
 
 # Hush
 

@@ -1,4 +1,4 @@
-# Builds Hush.ico (16-256 px) and Hush-mark*.png from Assets\Hush-icon-source.png.
+# Builds Hush.ico (16-256 px) and Hush-mark.png from Assets\Hush-icon-source.png.
 #
 # The source is the user's brush artwork (latest supplied: the glass rounded square, November 11, 2026), exactly as supplied (no color or style edits), prepared once from the supplied picture (-FromArtwork): the black surround is keyed
 # out to real transparency so the rounded square has a crisp edge and no outer glow, and the square is cropped to its exact bounds.
@@ -91,10 +91,7 @@ foreach ($size in $sizes) {
     $memory = [System.IO.MemoryStream]::new()
     $bitmap.Save($memory, [System.Drawing.Imaging.ImageFormat]::Png)
     $frames.Add($memory.ToArray())
-    if ($size -in @(32, 256)) {
-        $name = if ($size -eq 256) { 'Hush-mark.png' } else { 'Hush-mark-32.png' }
-        $bitmap.Save((Join-Path $assetDirectory $name), [System.Drawing.Imaging.ImageFormat]::Png)
-    }
+    if ($size -eq 256) { $bitmap.Save((Join-Path $assetDirectory 'Hush-mark.png'), [System.Drawing.Imaging.ImageFormat]::Png) }
     $memory.Dispose(); $attributes.Dispose(); $graphics.Dispose(); $bitmap.Dispose()
 }
 $source.Dispose()
