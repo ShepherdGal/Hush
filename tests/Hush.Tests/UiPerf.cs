@@ -305,6 +305,41 @@ internal static class UiPerf
         }
     }
 
+    // `Hush.Tests.exe --cue-bench`: the same timeline as experiments/winui3-spike (idle until 14 s, then the cleaning cue with the percentage changing 20 times a second, exit
+    // at 37 s) for the real Hush window, so an outside script (experiments/winui3-spike/Measure.ps1) can compare the CPU, memory and GPU of the two. It cleans nothing.
+    internal static int CueBench()
+    {
+        int code = 0;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+                string testsRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+                string fixture = Path.Combine(testsRoot, ".fixtures-bench-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(fixture);
+                try
+                {
+                    var engine = new CleanupEngine([new(fixture, "User temp", CleanupKind.Temp, TimeSpan.Zero)], dataDirectory: Path.Combine(fixture, "audit"));
+                    var app = new App(); app.InitializeComponent();
+                    var window = new MainWindow(engine, preferencesPath: AcceptedPreferences(fixture), updateFactory: () => new QuietClient());
+                    window.Show();
+                    var setBusy = typeof(MainWindow).GetMethod("SetBusy", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+                    var detail = (TextBlock)window.FindName("StatusDetail");
+                    Pump(14000);
+                    setBusy.Invoke(window, [true, "clean"]);
+                    for (int tick = 0; tick < 440; tick++) { window.AnimateGaugeTo(tick / 2 % 100); detail.Text = $"{tick * 50:N0} of 5,000 items processed"; Pump(50); }
+                    Pump(1000);
+                    window.Close();
+                }
+                finally { try { Directory.Delete(fixture, true); } catch { } }
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); code = 1; }
+        });
+        thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
+        return code;
+    }
+
     // `Hush.Tests.exe --preview-cleaning <folder>`: renders the Home page in the middle of a clean (dark and light) as PNGs, using a fixture and no real cleaning.
     internal static int PreviewCleaning(string directory)
     {

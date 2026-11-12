@@ -798,7 +798,7 @@ public partial class MainWindow : Window
             // The lasting glow of the whole ring starts after the final smash (it used to be overridden by a late pulse of the cue).
             if (!result.Stopped) await CompleteGauge(mission: true, after: TrimsMemory ? FileScanActivity.FinishAsync() : null);
             else FreezeGauge();
-            GaugeLabel.Text = "space freed";
+            GaugeLabel.Text = result.Stopped ? "Stopped" : "Done";   // the amount freed is on the result line under the gauge
             // Sleek and minimal (owner, November 11, 2026): one short line with the result, and a second one only when something was left alone. The numbers
             // (cleaned, skipped and why, what the disk itself reports, how much is still found) are one hover away on the result line.
             StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed";

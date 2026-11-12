@@ -64,3 +64,6 @@ NuGet.Config
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Throw-away experiments (the abandoned WinUI 3 spike): local only
+experiments/

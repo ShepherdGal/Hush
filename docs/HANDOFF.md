@@ -2,7 +2,11 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
-## Icon refresh, Pro glow, finished glow, GitHub (November 12, 2026, unreleased)
+## Release 0.9.7 (November 12, 2026)
+
+Version 0.9.7 (tag v0.9.7, 0.9.6 skipped on purpose) with Hush-Portable.zip and Hush-Setup.zip. Contents: see docs/CHANGELOG.md (0.9.7, the details are the sections below it). Also this release: the percentage in the gauge is exactly centered and the finished label says "Done". NOT verified: a real update showing the new icon at once (needs a real update from an installed 0.9.5), live feel and Perf on a real weak PC, the finished gauge in the running exe. The WinUI 3 experiment (`experiments/winui3-spike`, results in its README) was abandoned for now at the owner's request; it is not in Git.
+
+## Icon refresh, Pro glow, finished glow, GitHub (November 12, 2026)
 
 See the CHANGELOG entry of the same name. The icon-after-update fix lives in `HushSetup.RefreshRegistration` (icon stamp) and is NOT verified on a real update. Pro mode glow is `UI/LetterGlow.cs` (`ProGlow`, `WordmarkGlow`): a tight per-letter glow drawn once as a picture. README icon is `docs/app-icon.png` (pushed). Still to do by the owner: upload `docs/Hush-social-preview.png` in GitHub Settings. Old local files left for the owner to approve: `artifacts\preview-gauge`, `artifacts\RELEASE NOTES 0.8.3.md` and `0.9.0.md`, `docs\References` (untracked).
 

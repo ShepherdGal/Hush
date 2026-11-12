@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Hush</AssemblyName>
     <RootNamespace>Hush</RootNamespace>
-    <Version>0.9.5</Version>
+    <Version>0.9.7</Version>
     <Authors>ShepherdGal</Authors>
     <Copyright>Copyright (c) 2026 ShepherdGal. MIT License.</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>

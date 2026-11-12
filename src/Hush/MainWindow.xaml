@@ -151,10 +151,9 @@
               <local:GaugeHoverCue x:Name="GaugeHover"/>
               <!-- While files are being cleaned: the Smash cue fills the whole inside of the gauge (see ScanActivity); the percentage stays on top of it, on the cue's soft plate. -->
               <local:ScanActivity x:Name="FileScanActivity" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Center" Smashed="CleaningCue_Smashed"/>
-              <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="230">
-                <TextBlock x:Name="GaugeValue" Text="0%" Foreground="{DynamicResource TextBrush}" FontSize="36" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="GaugeLabel" Text="Click to scan" FontSize="18" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" Margin="0,12,0,0"/>
-              </StackPanel>
+              <!-- The percentage sits exactly in the middle of the gauge, always (owner, November 12, 2026; the 4 DIP bottom margin lifts the digits 2 DIP so their ink, not their line box, is centered on the ring); the label hangs below it (a fixed distance, so it never moves the number). -->
+              <TextBlock x:Name="GaugeValue" Text="0%" Foreground="{DynamicResource TextBrush}" FontSize="36" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,4"/>
+              <TextBlock x:Name="GaugeLabel" Text="Click to scan" FontSize="18" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,196,0,0" MaxWidth="230" TextTrimming="CharacterEllipsis"/>
             </Grid>
           </Button>
           <Grid x:Name="StatusSlot" Grid.Row="2" HorizontalAlignment="Center" Width="670" MaxWidth="670" Margin="20,0,20,8">

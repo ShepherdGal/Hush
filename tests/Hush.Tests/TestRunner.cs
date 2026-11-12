@@ -43,6 +43,7 @@ internal static class TestRunner
             else if (args is ["--task-report"]) return PerformanceChecks.TaskReport();
             else if (args is ["--ui-perf"]) return UiPerf.Run();
             else if (args is ["--preview-cleaning", var folder]) return UiPerf.PreviewCleaning(folder);
+            else if (args is ["--cue-bench"]) return UiPerf.CueBench();
             else if (args is ["--preview-more", var moreFolder]) return UiPerf.PreviewMore(moreFolder);
             else throw new ArgumentException("Unknown test arguments.");
             return 0;

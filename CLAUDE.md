@@ -42,7 +42,7 @@ Hush is a native, portable Windows cleaning and tweaking tool (.NET 10, WPF). Re
 
 ## Version
 
-- Current version: **0.9.5** (Hush.csproj `<Version>0.9.5</Version>`, released November 11, 2026). The About screen shows the short form ("0.9.5").
+- Current version: **0.9.7** (Hush.csproj `<Version>0.9.7</Version>`, released November 12, 2026; 0.9.6 was skipped on purpose, at the owner's request). The About screen shows the short form ("0.9.7").
 - **Never change the version number unless the user explicitly says to.** Feature work does not bump it automatically.
 
 ## Terms of use (use at your own risk)

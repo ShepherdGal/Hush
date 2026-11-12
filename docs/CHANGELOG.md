@@ -2,7 +2,13 @@
 
 Dates use Asia/Jerusalem.
 
-## Icon refresh after updates, Pro glow, finished-gauge glow, GitHub icon — November 12, 2026 (unreleased)
+## 0.9.7 — November 12, 2026
+
+A new cleaning animation (Smash), the percentage always centered with "Done" when a clean finishes, the finished gauge glowing all around, Pro mode lighting up the logo and the Pro button, and the new icon showing right after an update. The entries below are the details of this release (0.9.6 was skipped on purpose).
+
+- **The gauge text.** The percentage is now exactly in the middle of the gauge (the ink of the digits, not their line box, is centered on the ring), always; the label hangs below it at a fixed distance. After a finished clean the label says "Done" (it said "space freed"; the amount is on the result line), after a stopped clean "Stopped".
+
+## Icon refresh after updates, Pro glow, finished-gauge glow, GitHub icon — November 12, 2026
 
 - **The new icon now shows right after an update (owner bug: it only appeared after uninstalling and reinstalling).** An update replaces `Hush.exe` at the same path, and Windows kept the icon it had cached for the shortcuts and the Settings > Apps entry. The first start of a changed program file (its "icon stamp" in the uninstall key: version, size and write time) now saves the Start menu and Desktop shortcuts again, repeats the Apps icon and tells the Windows shell that these icons changed (`HushSetup.RefreshRegistration`, `ShellIconRefresher`); a start with an unchanged file does nothing. Tested with a fake announcer (`SetupChecks`); **not verified:** a real update on a real PC (never done on this machine), taskbar pins (their shortcut files are not touched).
 - **The finished gauge glows again, the whole ring.** The Smash cue's final pulse of the ring glow could land after the finished look had started and return it to its resting value; now the final smash leaves the ring alone and `CompleteGauge(mission: true, after: finale)` starts the lasting glow once the final smash is over, a little stronger (rest 0.9, blur 28).
