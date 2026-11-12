@@ -32,10 +32,10 @@ internal static class ProModeChecks
             string Text(string name) => ((TextBlock)window.FindName(name)).Text;
 
             // 1. Everyone starts in Simple mode, old and new users; the header button is the plain caption look, with a clear name.
-            check(!window.IsProMode && (string)pro.Tag == "Off" && !Motion.GetOuterGlow(pro) && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, off" && (string)pro.Content == "Pro",
+            check(!window.IsProMode && (string)pro.Tag == "Off" && !((UIElement)window.FindName("ProGlow")).IsVisible && !((UIElement)window.FindName("WordmarkGlow")).IsVisible && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, off" && (string)pro.Content == "Pro",
                 "Everyone starts in Simple mode (also with an existing settings file), and the Pro button is the plain header look with a spoken name");
             var settings = (Button)window.FindName("SettingsButton");
-            check(pro.IsDescendantOf((DependencyObject)window.FindName("CaptionControls")) && ((StackPanel)window.FindName("CaptionControls")).Children.IndexOf(pro) < ((StackPanel)window.FindName("CaptionControls")).Children.IndexOf(settings),
+            check(pro.IsDescendantOf((DependencyObject)window.FindName("CaptionControls")) && ((StackPanel)window.FindName("CaptionControls")).Children.IndexOf((UIElement)window.FindName("ProModeSlot")) < ((StackPanel)window.FindName("CaptionControls")).Children.IndexOf(settings),
                 "The Pro button sits next to the Settings icon, on its left");
 
             // 2. Settings in Simple mode: the Info card (bars and Boost), the update line and Appearance only.
@@ -82,9 +82,10 @@ internal static class ProModeChecks
             // 5. Agreeing switches: saved, highlighted with the shared accent glow, old results cleared (a Safe-only scan does not fit Pro), everything visible again.
             Click("ProModeButton"); UiLayoutChecks.PumpUntil(OverlayShown); UiLayoutChecks.Wait(340);
             Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => !OverlayShown()); UiLayoutChecks.Wait(400);
-            check(window.IsProMode && Preferences.Load(preferences).ProMode && (string)pro.Tag == "On" && Motion.GetOuterGlow(pro) && Motion.GetGlow(pro) > 0
-                && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, on" && pro.BorderThickness.Left == 1,
-                "Pro mode is saved, and its button takes the shared accent highlight (outline, fill and outer glow) with a spoken 'on'");
+            check(window.IsProMode && Preferences.Load(preferences).ProMode && (string)pro.Tag == "On" && ((UIElement)window.FindName("ProGlow")).IsVisible && ((UIElement)window.FindName("WordmarkGlow")).IsVisible && pro.Effect == null && ((Button)window.FindName("AboutButton")).Effect == null
+                && !Motion.GetOuterGlow(pro) && pro.BorderThickness.Left == 0
+                && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, on",
+                "Pro mode is saved, the word Pro and the Hush wordmark get a tight glow per letter (no border, no fill, no effect) and the button has a spoken 'on'");
             check(window.ReviewItems.Count == 0 && window.CurrentScanState == MainWindow.ScanState.Ready, "Switching mode clears the earlier results (nothing was deleted); a new scan fills them");
             ThemeMotionChecks.Capture(root, "promode-home-pro-dark");
             Click("SettingsButton"); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning); UiLayoutChecks.Wait(300);
@@ -113,7 +114,7 @@ internal static class ProModeChecks
 
             // 6. Turning Pro off asks nothing and goes straight back; a new window remembers the last choice.
             Click("ProModeButton"); UiLayoutChecks.Wait(300);
-            check(!window.IsProMode && !OverlayShown() && (string)pro.Tag == "Off" && !Motion.GetOuterGlow(pro) && !Preferences.Load(preferences).ProMode, "Turning Pro off needs no question and removes the highlight");
+            check(!window.IsProMode && !OverlayShown() && (string)pro.Tag == "Off" && !((UIElement)window.FindName("ProGlow")).IsVisible && !((UIElement)window.FindName("WordmarkGlow")).IsVisible && !Preferences.Load(preferences).ProMode, "Turning Pro off needs no question and removes the glow from the button and the wordmark");
             Click("ProModeButton"); UiLayoutChecks.PumpUntil(OverlayShown); UiLayoutChecks.Wait(340); Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => !OverlayShown());
         }
         finally { window.Close(); }
@@ -130,5 +131,21 @@ internal static class ProModeChecks
             }
         }
         finally { again.Close(); MainWindow.TestProMode = oldForce; }
+
+        // The letter glow picture: made once from the text, bright at the letters, nothing at the far edge, and SMOOTH (no stepped, jagged edge: the neighbouring pixels of
+        // the picture never jump), and it is a frozen picture, so showing it costs nothing per frame.
+        var sample = new LetterGlow { Text = "Hush", FontSize = 33, FontWeight = FontWeights.Medium, FontFamily = new System.Windows.Media.FontFamily("Segoe UI") };
+        sample.Measure(new Size(400, 200));
+        var picture = sample.Bake();
+        check(picture != null && picture.IsFrozen && picture.PixelWidth > sample.DesiredSize.Width * 3 && picture.PixelHeight > sample.DesiredSize.Height * 3, "The letter glow is one frozen picture, a little larger than the text");
+        if (picture != null)
+        {
+            int w = picture.PixelWidth, h = picture.PixelHeight; var px = new byte[w * h * 4]; picture.CopyPixels(px, w * 4, 0);
+            byte Alpha(int x, int y) => px[(y * w + x) * 4 + 3];
+            int maxStep = 0, bright = 0;
+            for (int y = 0; y < h; y++) for (int x = 1; x < w; x++) { maxStep = Math.Max(maxStep, Math.Abs(Alpha(x, y) - Alpha(x - 1, y))); if (Alpha(x, y) > 200) bright++; }
+            check(Alpha(0, 0) < 4 && Alpha(w - 1, h - 1) < 4 && Alpha(w / 2, h / 2) > 60 && bright > 0 && maxStep < 40,
+                $"The letter glow is bright at the letters, gone at the edge and smooth (corner {Alpha(0, 0)}, middle {Alpha(w / 2, h / 2)}, biggest jump between neighbouring pixels {maxStep} of 255)");
+        }
     }
 }

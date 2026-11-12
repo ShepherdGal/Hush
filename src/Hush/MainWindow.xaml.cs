@@ -194,7 +194,8 @@ public partial class MainWindow : Window
 
     // mission: the end of a clean. Besides the ring's bloom, the "100%" turns to the accent color and glows, and both settle into a lasting finished look (until the next
     // scan or clean): a sense of a finished mission. A scan's end keeps the calmer bloom.
-    internal async Task CompleteGauge(bool mission = false)
+    // after: something to wait for before the finished look (the cleaning cue's final smash), so the lasting glow starts when the smash is over and nothing overrides it.
+    internal async Task CompleteGauge(bool mission = false, Task? after = null)
     {
         gaugeTarget = 100;
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -208,6 +209,7 @@ public partial class MainWindow : Window
         };
         BeginAnimation(GaugePercentProperty, animation);
         await finished.Task;
+        if (after != null) await after;
         if (GaugePercent >= 100 && cancellation?.IsCancellationRequested != true)
         {
             // One soft bloom settles into a visible completed state until the next scan.
@@ -221,8 +223,8 @@ public partial class MainWindow : Window
                 return frames;
             }
             // The ring: one soft bloom that settles into a lasting glow (stronger and wider for a finished clean).
-            GaugeFinishGlow.BeginAnimation(DropShadowEffect.OpacityProperty, mission ? Frames(0.3, 1.0, 0.8, 700, 2000) : Frames(0.22, 0.72, 0.50));
-            GaugeFinishGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, mission ? Frames(12, 30, 24, 700, 2000) : Frames(12, 20, 16));
+            GaugeFinishGlow.BeginAnimation(DropShadowEffect.OpacityProperty, mission ? Frames(0.3, 1.0, 0.9, 700, 2000) : Frames(0.22, 0.72, 0.50));
+            GaugeFinishGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, mission ? Frames(12, 36, 28, 700, 2000) : Frames(12, 20, 16));
             if (mission)
             {
                 // The "100%": the accent color and its own glow, attached only now (an effect is attached only while it is visible) and removed again by ResetGauge.
@@ -791,7 +793,10 @@ public partial class MainWindow : Window
             var result = await Task.Run(() => engine.Clean(selected, progress, cancellation!.Token, toolNote));
             RemoveDeleted();
             foreach (var item in selected) if (item.Outcome != "Deleted") item.Selected = false;
-            if (!result.Stopped) await CompleteGauge(mission: true);
+            // A finished clean ends the Smash cue on purpose: the dust rushes in and one bigger final smash lands while the ring fills to 100% (a stopped or failed clean just stops it).
+            // Only the real app window plays the finale; test windows share one process and must not wait for it.
+            // The lasting glow of the whole ring starts after the final smash (it used to be overridden by a late pulse of the cue).
+            if (!result.Stopped) await CompleteGauge(mission: true, after: TrimsMemory ? FileScanActivity.FinishAsync() : null);
             else FreezeGauge();
             GaugeLabel.Text = "space freed";
             // Sleek and minimal (owner, November 11, 2026): one short line with the result, and a second one only when something was left alone. The numbers
@@ -1102,6 +1107,8 @@ public partial class MainWindow : Window
         Set("MeterWarnBrush", SafetyPalette.Text(SafetyLevel.Review, light));
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
         if (!busy) ApplyPrimaryAppearance(CanClean && items.Count > 0);
+        // The letter glows are pictures in the main color: draw them again for the new color (only when they are on screen do they actually draw).
+        WordmarkGlow?.Refresh(); ProGlow?.Refresh();
     }
 
     private void About_Click(object sender, RoutedEventArgs e)

@@ -163,8 +163,9 @@
       <Setter Property="StrokeEndLineCap" Value="Round"/>
       <Setter Property="StrokeLineJoin" Value="Round"/>
     </Style>
-    <!-- Header mode toggle ("Pro"): the plain caption look while off; while on (Tag="On") it takes the shared accent highlight, the same outline, fill and outer
-         glow as AccentOutlineButton (Take a look, Actions), so an ON header toggle always looks like a highlighted Hush button. -->
+    <!-- Header mode toggle ("Pro"): the plain caption look while off; while on (Tag="On") the word itself lights up in the accent color with a soft glow around the
+         letters (owner, November 12, 2026: no border and no fill, an exception to the other highlighted buttons; the glow is a LetterGlow behind it (a tight glow around each letter, drawn
+         once as a picture), shown by ApplyProMode only while Pro is on, and the Hush wordmark gets one too). -->
     <Style x:Key="ProModeButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
       <Setter Property="Height" Value="34"/>
       <Setter Property="MinWidth" Value="54"/>
@@ -173,13 +174,8 @@
       <Setter Property="FontWeight" Value="Medium"/>
       <Style.Triggers>
         <Trigger Property="Tag" Value="On">
-          <Setter Property="Background" Value="{DynamicResource AccentFillBrush}"/>
           <Setter Property="Foreground" Value="{DynamicResource TealTextBrush}"/>
-          <Setter Property="BorderBrush" Value="{DynamicResource TealTextBrush}"/>
-          <Setter Property="BorderThickness" Value="1"/>
           <Setter Property="local:Motion.HoverForeground" Value="{DynamicResource AccentHoverBrush}"/>
-          <Setter Property="local:Motion.Glow" Value="0.13"/>
-          <Setter Property="local:Motion.OuterGlow" Value="True"/>
         </Trigger>
       </Style.Triggers>
     </Style>

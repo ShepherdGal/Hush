@@ -33,7 +33,10 @@ internal static class ReviewOrderChecks
 
     internal static void RunUi(CleanupEngine engine, Action<bool, string> check)
     {
-        var window = new MainWindow(engine) { ShowActivated = false, ShowInTaskbar = false, ReviewShowsAllCategories = false };
+        // Its own throw-away settings file (dark theme, defaults): the window must not read the real file of whoever runs the tests, whose theme or mode would change what is checked.
+        string preferences = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hush-test-order-" + Guid.NewGuid().ToString("N") + ".json");
+        new Preferences { TermsAccepted = Terms.Version, RunAsAdmin = false }.Save(preferences);
+        var window = new MainWindow(engine, preferencesPath: preferences) { ShowActivated = false, ShowInTaskbar = false, ReviewShowsAllCategories = false };
         try
         {
             window.Show();
@@ -60,7 +63,7 @@ internal static class ReviewOrderChecks
             Color Ink(Border border) => ((SolidColorBrush)border.BorderBrush).Color;
             Color Accent(SafetyLevel level) => (Color)ColorConverter.ConvertFromString(SafetyPalette.Text(level, false));
             check(window.ReviewGroups.Count == 3 && Ink(outlines[0]) == Accent(SafetyLevel.Safe) && Ink(outlines[1]).A == 0 && Ink(outlines[2]).A == 0,
-                "Only the fully selected Safe group is outlined, in the Safe green");
+                $"Only the fully selected Safe group is outlined, in the Safe green (outline colors {Ink(outlines[0])}, {Ink(outlines[1])}, {Ink(outlines[2])}; wanted {Accent(SafetyLevel.Safe)})");
             foreach (var category in window.Categories) category.Selected = true;
             UiLayoutChecks.Wait(500);
             check(Ink(outlines[0]) == Accent(SafetyLevel.Safe) && Ink(outlines[1]) == Accent(SafetyLevel.Review) && Ink(outlines[2]) == Accent(SafetyLevel.Advanced),
@@ -76,7 +79,7 @@ internal static class ReviewOrderChecks
             UiLayoutChecks.Wait(500);
             check(outlines.All(border => Ink(border).A == 0), "Clearing the selection removes every outline");
         }
-        finally { window.Close(); }
+        finally { window.Close(); try { System.IO.File.Delete(preferences); } catch { } }
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject

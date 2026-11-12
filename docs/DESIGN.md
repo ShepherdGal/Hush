@@ -154,9 +154,9 @@ Run scripts/Verify.ps1 after UI changes. It renders both themes, checks theme/pa
 
 ## Icon and accent (0.8)
 
-- The app icon is the user's brush artwork recolored to the same aqua as the accent: hue-rotated toward #38CFC8, black surround keyed to real transparency, and a thin solid #38CFC8 border (deeper aqua toward the bottom-right) with the soft inner glow toned down, so the edge is crisp and not glowing. Source: `src/Hush/Assets/Hush-icon-source.png`; `GenerateIcon.ps1` builds `Hush.ico` (16-256 px) and `Hush-mark*.png`.
+- The app icon is the user's glass brush artwork exactly as supplied (blue-cyan on navy, no recoloring; November 11, 2026). Source: `src/Hush/Assets/Hush-icon-source.png`; `GenerateIcon.ps1` builds `Hush.ico` (16-256 px) and `Hush-mark.png`; `scripts/MakeSocialPreview.ps1` builds the GitHub images from it (`docs/app-icon.png`, `docs/Hush-social-preview.png`). After an update the installed shortcuts and the Settings > Apps entry are refreshed by `HushSetup.RefreshRegistration` (icon stamp), so Windows shows the new icon at once.
 - An ice-blue accent (#7FE0F6) was tried in 0.8 and rejected: the Dark accent is aqua #38CFC8 (hover #7FE3DD) and Light is soft blue #4C7BC8.
-- The header wordmark "Hush" is Inter **Medium 500, upright** (0.9, user direction; the About and Setup wordmarks match). It never changes color or effect: not when the window is inactive, not on hover, never dimmed while Hush works.
+- The header wordmark "Hush" is Inter **Medium 500, upright** (0.9, user direction; the About and Setup wordmarks match). It never changes color when the window is inactive, on hover or while Hush works; the only thing that changes it is Pro mode (owner, November 12, 2026), which gives it a tight accent glow around each letter (`WordmarkGlow`, a `LetterGlow` picture, shown only while Pro is on).
 ## The one red (0.8)
 
 - The Clean button's red (#FF795C Dark, #B54428 Light) is the only red in Hush. Advanced items in Review, the Advanced consent checkbox and the Clean button all use it. Review stays orange (#FFA24D, #B35F0C in Light); high resource readings use that orange. `ColorRuleChecks` fails the build on any other red.

@@ -98,11 +98,16 @@
       <Grid.Effect><BlurEffect x:Name="BackgroundBlur" Radius="0" RenderingBias="Quality"/></Grid.Effect>
       <Grid.RowDefinitions><RowDefinition Height="68"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <Grid Margin="30,0,18,0" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+        <!-- Pro mode (owner, November 12, 2026): a tight glow around each letter of the wordmark while Pro is on, drawn once as a picture (see LetterGlow and ApplyProMode). -->
+        <local:LetterGlow x:Name="WordmarkGlow" Visibility="Collapsed" Text="Hush" FontFamily="{Binding FontFamily, ElementName=AboutButton}" FontSize="{Binding FontSize, ElementName=AboutButton}" FontWeight="{Binding FontWeight, ElementName=AboutButton}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
         <Button x:Name="AboutButton" Content="Hush" Click="About_Click" Style="{StaticResource AccentTextButton}" local:Motion.MouseOnly="True" local:Motion.HoverForeground="{DynamicResource TealTextBrush}" FontSize="33" FontWeight="Medium" Height="52" HorizontalAlignment="Left" VerticalAlignment="Center" Padding="0" AutomationProperties.Name="About Hush"/>
         <!-- 0.9: a quiet green line beside the wordmark when a newer version exists (found by one silent check at start). Clicking opens the update popup. -->
         <Button x:Name="UpdateNoticeButton" Content="There is a new update!" Click="UpdateNotice_Click" Style="{StaticResource TextButton}" Foreground="{DynamicResource GoodBrush}" local:Motion.HoverForeground="{DynamicResource HeadingBrush}" local:Motion.MouseOnly="True" FontSize="{DynamicResource CompactFontSize}" FontWeight="Medium" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="92,3,0,0" Padding="10,8" Visibility="Collapsed" Opacity="0" AutomationProperties.Name="A new update is available: open the update window"/>
         <StackPanel x:Name="CaptionControls" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-          <Button x:Name="ProModeButton" Content="Pro" Style="{StaticResource ProModeButton}" Tag="Off" Click="ProMode_Click" Margin="0,0,8,0" ToolTip="Pro mode is off. Turn it on to see everything Hush can do." AutomationProperties.Name="Pro mode, off"/>
+          <Grid x:Name="ProModeSlot" Margin="0,0,8,0">
+            <local:LetterGlow x:Name="ProGlow" Visibility="Collapsed" Text="Pro" FontFamily="{Binding FontFamily, ElementName=ProModeButton}" FontSize="{Binding FontSize, ElementName=ProModeButton}" FontWeight="{Binding FontWeight, ElementName=ProModeButton}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Button x:Name="ProModeButton" Content="Pro" Style="{StaticResource ProModeButton}" Tag="Off" Click="ProMode_Click" ToolTip="Pro mode is off. Turn it on to see everything Hush can do." AutomationProperties.Name="Pro mode, off"/>
+          </Grid>
           <Button x:Name="SettingsButton" Style="{StaticResource CaptionButton}" Click="Settings_Click" Margin="0,0,4,0" ToolTip="Settings" AutomationProperties.Name="Settings">
             <Path Style="{StaticResource CaptionIcon}" Data="M8,1 L10,1 L10.6,3.2 L12.1,4.1 L14.3,3.5 L15.3,5.3 L13.8,6.9 L13.8,8.9 L15.3,10.5 L14.3,12.3 L12.1,11.7 L10.6,12.6 L10,14.8 L8,14.8 L7.4,12.6 L5.9,11.7 L3.7,12.3 L2.7,10.5 L4.2,8.9 L4.2,6.9 L2.7,5.3 L3.7,3.5 L5.9,4.1 L7.4,3.2 Z M11.4,7.9 A2.4,2.4 0 1 1 6.6,7.9 A2.4,2.4 0 1 1 11.4,7.9"/>
           </Button>
@@ -144,8 +149,8 @@
               </Grid></Viewbox>
               <!-- The hover on the gauge (see GaugeHoverCue): one style before a scan, another after it. Pre-built shapes, transform and opacity only. -->
               <local:GaugeHoverCue x:Name="GaugeHover"/>
-              <!-- While files are being cleaned: a futuristic scan fills the whole inside of the gauge (see ScanActivity); the percentage stays on top of it. -->
-              <local:ScanActivity x:Name="FileScanActivity" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <!-- While files are being cleaned: the Smash cue fills the whole inside of the gauge (see ScanActivity); the percentage stays on top of it, on the cue's soft plate. -->
+              <local:ScanActivity x:Name="FileScanActivity" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Center" Smashed="CleaningCue_Smashed"/>
               <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="230">
                 <TextBlock x:Name="GaugeValue" Text="0%" Foreground="{DynamicResource TextBrush}" FontSize="36" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                 <TextBlock x:Name="GaugeLabel" Text="Click to scan" FontSize="18" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" Margin="0,12,0,0"/>

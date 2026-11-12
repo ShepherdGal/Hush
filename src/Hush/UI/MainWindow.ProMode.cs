@@ -26,6 +26,8 @@ public sealed partial class MainWindow
         ProModeButton.Tag = pro ? "On" : "Off";
         ProModeButton.ToolTip = pro ? "Pro mode is on. Click to go back to Simple mode." : "Pro mode is off. Turn it on to see everything Hush can do.";
         System.Windows.Automation.AutomationProperties.SetName(ProModeButton, pro ? "Pro mode, on" : "Pro mode, off");
+        // A tight glow around each letter of "Pro" and of the Hush wordmark while Pro is on (a picture drawn once, see LetterGlow; both are hidden in Simple mode).
+        ProGlow.Visibility = WordmarkGlow.Visibility = pro ? Visibility.Visible : Visibility.Collapsed;
         // Settings: only the Info card (above) and Appearance stay in Simple mode; the red "Windows Update is off" line stays too, whatever the mode.
         var proOnly = new UIElement[] { SettingsColumns, SettingsServicesSection, SettingsTasksSection, SettingsPrivacySection, SettingsImpactSection, SettingsUpdateSection, SettingsFooter };
         foreach (var element in proOnly) element.Visibility = pro ? Visibility.Visible : Visibility.Collapsed;

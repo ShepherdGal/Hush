@@ -109,21 +109,50 @@ internal static class HushSetup
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
 
-    // After an in-app update the installed file is newer than the label Windows shows; keep them equal.
+    // After an in-app update the installed file is newer than the label Windows shows; keep them equal. The icon needs the same care (owner bug, November 12, 2026):
+    // an update replaces Hush.exe at the same path, and Windows keeps showing the icon it cached for the shortcuts and the Settings > Apps entry until they are
+    // reinstalled. So the first start of a changed program file (its "icon stamp" differs from the one recorded) saves the shortcuts again, repeats the Apps icon
+    // and tells the Windows shell that these icons changed; a start with an unchanged file does nothing.
     internal static void RefreshRegistration(SetupLocations locations)
     {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(locations.RegistryKey, writable: true);
             if (key == null) return;
+            string exe = File.Exists(locations.AdminExe) && key.GetValue("InstallLocation") is string where && SamePath(where, locations.AdminInstallDirectory) ? locations.AdminExe : locations.InstalledExe;
             if (key.GetValue("DisplayVersion") is not string shown || shown != UpdateService.DisplayVersion)
             {
                 key.SetValue("DisplayVersion", UpdateService.DisplayVersion);
-                string exe = File.Exists(locations.AdminExe) && key.GetValue("InstallLocation") is string where && SamePath(where, locations.AdminInstallDirectory) ? locations.AdminExe : locations.InstalledExe;
                 key.SetValue("EstimatedSize", (int)Math.Max(1, new FileInfo(exe).Length / 1024), RegistryValueKind.DWord);
             }
+            var file = new FileInfo(exe);
+            string stamp = $"{UpdateService.DisplayVersion}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
+            if (key.GetValue("IconStamp") is string seen && seen == stamp) return;
+            var changed = new List<string> { exe };
+            string directory = Path.GetDirectoryName(exe)!;
+            foreach (string shortcut in new[] { locations.StartMenuShortcut, locations.DesktopShortcut })
+                if (File.Exists(shortcut) && ShortcutTarget(shortcut) is { } target && SamePath(target, exe)) { CreateShortcut(shortcut, exe, directory); changed.Add(shortcut); }
+            key.SetValue("DisplayIcon", exe + ",0");
+            key.SetValue("IconStamp", stamp);
+            ShellIconRefresher(changed);
         }
         catch { }
+    }
+
+    // Tells the Windows shell that these icons changed, so Explorer, the Start menu and the Settings > Apps list read them again at once. Tests replace it so
+    // nothing is ever announced to the real shell.
+    internal static Action<IEnumerable<string>> ShellIconRefresher = AnnounceIconChange;
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll")] private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+    private static void AnnounceIconChange(IEnumerable<string> paths)
+    {
+        const int updateItem = 0x00002000, associationsChanged = 0x08000000; const uint pathFlag = 0x0005, flush = 0x1000;
+        foreach (string path in paths)
+        {
+            IntPtr text = System.Runtime.InteropServices.Marshal.StringToHGlobalUni(path);
+            try { SHChangeNotify(updateItem, pathFlag | flush, text, IntPtr.Zero); } finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(text); }
+        }
+        SHChangeNotify(associationsChanged, flush, IntPtr.Zero, IntPtr.Zero);   // the icon cache itself
     }
 
     internal static SetupResult Uninstall(SetupLocations locations, bool removeData, string? runningExe, IAdminTaskScheduler? adminScheduler = null, IStartupRegistration? startup = null)

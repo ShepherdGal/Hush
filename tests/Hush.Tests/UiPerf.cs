@@ -336,7 +336,9 @@ internal static class UiPerf
                         var size = new Size(920, 820);
                         UiLayoutChecks.Layout(root, size);
                         UiLayoutChecks.Save(root, size, Path.Combine(directory, light ? "cleaning-light.png" : "cleaning-dark.png"));
-                        for (int extra = 2; extra <= 4; extra++) { Pump(430); UiLayoutChecks.Save(root, size, Path.Combine(directory, $"cleaning-{(light ? "light" : "dark")}-{extra}.png")); }
+                        // A series through the Smash cycle (charging, squash, the blast, the wipe), spaced to catch the 3.8 s cycle: the pumps are in milliseconds.
+                        int[] gaps = [1400, 350, 250, 250, 450];
+                        for (int extra = 0; extra < gaps.Length; extra++) { Pump(gaps[extra]); UiLayoutChecks.Save(root, size, Path.Combine(directory, $"cleaning-{(light ? "light" : "dark")}-{extra + 2}.png")); }
                     }
                     // Every main color the person can choose, in both themes (the cue follows the accent and the muted text color by resource).
                     foreach (var swatch in AccentPalette.All.Skip(1))

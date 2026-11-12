@@ -2,6 +2,14 @@
 
 Updated November 7, 2026 (Asia/Jerusalem).
 
+## Icon refresh, Pro glow, finished glow, GitHub (November 12, 2026, unreleased)
+
+See the CHANGELOG entry of the same name. The icon-after-update fix lives in `HushSetup.RefreshRegistration` (icon stamp) and is NOT verified on a real update. Pro mode glow is `UI/LetterGlow.cs` (`ProGlow`, `WordmarkGlow`): a tight per-letter glow drawn once as a picture. README icon is `docs/app-icon.png` (pushed). Still to do by the owner: upload `docs/Hush-social-preview.png` in GitHub Settings. Old local files left for the owner to approve: `artifacts\preview-gauge`, `artifacts\RELEASE NOTES 0.8.3.md` and `0.9.0.md`, `docs\References` (untracked).
+
+## Cleaning cue: Smash (November 12, 2026, unreleased)
+
+`UI/ScanActivity.cs` was rewritten as the owner's pick "Smash" (see CHANGELOG): looping charge, squash, smash and wipe cycle of 3.78 s inside the gauge, a final bigger smash when the clean finishes (`FinishAsync`, called from `ConfirmDelete_Click`), a soft plate under the percentage, pulse of the percentage and ring glow through `Smashed`. NOT verified: how it feels live, `scripts/Perf.ps1` budgets for the new cue (about 150 key-frame tracks while the dust moves), a real weak PC. Fresh exe built.
+
 ## Release 0.9.5 (November 11, 2026)
 
 Version 0.9.5 published (tag v0.9.5) with Hush-Portable.zip and Hush-Setup.zip. Contents: see docs/CHANGELOG.md (0.9.5). NOT verified: a real Turn off Windows Update run, Perf on a real weak PC.
@@ -125,7 +133,7 @@ See the CHANGELOG entry of the same name and the Smart Boost / No file-count lim
 - The app is **Hush**, version **0.7** (Hush.csproj). Namespace, assembly, executable (`Hush.exe`), window title, wordmark, About text, data folder (`%LOCALAPPDATA%\Hush`), updater repo/asset names, test fixture registry root and scripts all use Hush. The app icon is an aqua "H".
 - CLAUDE.md (and its copy AGENTS.md) holds the product direction, basic data-safety rules and the visual system; the app is meant to grow into a broad cleaning and tweaking tool as the user asks for features.
 - Current behavior: 16 cleanup categories (Safe ones selected by default), live scan, confirmed cleanup with audit logs, Dark/Light themes, Windows privacy switches with Undo, and one-click anonymous in-app updates.
-- Backups/ holds local source and portable snapshots (never in Git); docs/References holds design reference images (also not in Git).
+- Backups/ holds local source and portable snapshots (never in Git).
 
 ## Verification (November 7, 2026)
 

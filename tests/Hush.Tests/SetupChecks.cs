@@ -101,10 +101,25 @@ internal static class SetupChecks
         // The Settings > Apps version label follows an in-app update.
         var refresh = locate("refresh");
         Require(HushSetup.Install(source, false, refresh).Success, "A fourth fixture install works");
-        using (var key = Registry.CurrentUser.OpenSubKey(refresh.RegistryKey, writable: true)) key!.SetValue("DisplayVersion", "0.1");
-        HushSetup.RefreshRegistration(refresh);
-        using (var key = Registry.CurrentUser.OpenSubKey(refresh.RegistryKey))
-            Require((string?)key!.GetValue("DisplayVersion") == UpdateService.DisplayVersion, "After an update the Settings > Apps version label is refreshed");
+        var announced = new List<string>(); var realAnnouncer = HushSetup.ShellIconRefresher; HushSetup.ShellIconRefresher = paths => announced.AddRange(paths);   // never tell the real shell
+        try
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(refresh.RegistryKey, writable: true)) key!.SetValue("DisplayVersion", "0.1");
+            HushSetup.RefreshRegistration(refresh);
+            using (var key = Registry.CurrentUser.OpenSubKey(refresh.RegistryKey))
+                Require((string?)key!.GetValue("DisplayVersion") == UpdateService.DisplayVersion, "After an update the Settings > Apps version label is refreshed");
+
+            // The icon refreshes at once after an update (owner bug: the new icon only showed after uninstalling and reinstalling): the first start of a changed
+            // program file saves the shortcut again, repeats the Apps icon and announces the change to the shell; a start with an unchanged file does nothing.
+            Require(announced.Contains(refresh.InstalledExe) && announced.Contains(refresh.StartMenuShortcut) && HushSetup.ShortcutTarget(refresh.StartMenuShortcut) is { } t && HushSetup.SamePath(t, refresh.InstalledExe),
+                "The first start of an updated program announces its changed icons (the program and its shortcut) and keeps the shortcut pointing at it");
+            int first = announced.Count; HushSetup.RefreshRegistration(refresh);
+            Require(announced.Count == first, "A start with an unchanged program file announces nothing");
+            using (var key = Registry.CurrentUser.OpenSubKey(refresh.RegistryKey, writable: true)) key!.SetValue("IconStamp", "an older program file");
+            HushSetup.RefreshRegistration(refresh);
+            Require(announced.Count > first, "A different program file (the next update) announces its icons again");
+        }
+        finally { HushSetup.ShellIconRefresher = realAnnouncer; }
         HushSetup.Uninstall(refresh, false, null);
     }
 
