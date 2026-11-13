@@ -32,7 +32,7 @@ internal static class ProModeChecks
             string Text(string name) => ((TextBlock)window.FindName(name)).Text;
 
             // 1. Everyone starts in Simple mode, old and new users; the header button is the plain caption look, with a clear name.
-            check(!window.IsProMode && (string)pro.Tag == "Off" && !((UIElement)window.FindName("ProGlow")).IsVisible && !((UIElement)window.FindName("WordmarkGlow")).IsVisible && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, off" && (string)pro.Content == "Pro",
+            check(!window.IsProMode && (string)pro.Tag == "Off" && !((UIElement)window.FindName("WordmarkGlow")).IsVisible && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, off" && (string)pro.Content == "Pro",
                 "Everyone starts in Simple mode (also with an existing settings file), and the Pro button is the plain header look with a spoken name");
             var settings = (Button)window.FindName("SettingsButton");
             check(pro.IsDescendantOf((DependencyObject)window.FindName("CaptionControls")) && ((StackPanel)window.FindName("CaptionControls")).Children.IndexOf((UIElement)window.FindName("ProModeSlot")) < ((StackPanel)window.FindName("CaptionControls")).Children.IndexOf(settings),
@@ -82,7 +82,7 @@ internal static class ProModeChecks
             // 5. Agreeing switches: saved, highlighted with the shared accent glow, old results cleared (a Safe-only scan does not fit Pro), everything visible again.
             Click("ProModeButton"); UiLayoutChecks.PumpUntil(OverlayShown); UiLayoutChecks.Wait(340);
             Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => !OverlayShown()); UiLayoutChecks.Wait(400);
-            check(window.IsProMode && Preferences.Load(preferences).ProMode && (string)pro.Tag == "On" && ((UIElement)window.FindName("ProGlow")).IsVisible && ((UIElement)window.FindName("WordmarkGlow")).IsVisible && pro.Effect == null && ((Button)window.FindName("AboutButton")).Effect == null
+            check(window.IsProMode && Preferences.Load(preferences).ProMode && (string)pro.Tag == "On" && ((UIElement)window.FindName("WordmarkGlow")).IsVisible && pro.Effect == null && ((Button)window.FindName("AboutButton")).Effect == null
                 && !Motion.GetOuterGlow(pro) && pro.BorderThickness.Left == 0
                 && System.Windows.Automation.AutomationProperties.GetName(pro) == "Pro mode, on",
                 "Pro mode is saved, the word Pro and the Hush wordmark get a tight glow per letter (no border, no fill, no effect) and the button has a spoken 'on'");
@@ -113,8 +113,41 @@ internal static class ProModeChecks
             Click("BackButton"); UiLayoutChecks.PumpUntil(() => !window.IsPageTransitioning);
 
             // 6. Turning Pro off asks nothing and goes straight back; a new window remembers the last choice.
-            Click("ProModeButton"); UiLayoutChecks.Wait(300);
-            check(!window.IsProMode && !OverlayShown() && (string)pro.Tag == "Off" && !((UIElement)window.FindName("ProGlow")).IsVisible && !((UIElement)window.FindName("WordmarkGlow")).IsVisible && !Preferences.Load(preferences).ProMode, "Turning Pro off needs no question and removes the glow from the button and the wordmark");
+            Click("SimpleModeButton"); UiLayoutChecks.Wait(300);
+            check(!window.IsProMode && !OverlayShown() && (string)pro.Tag == "Off" && !((UIElement)window.FindName("WordmarkGlow")).IsVisible && !Preferences.Load(preferences).ProMode, "Turning Pro off needs no question and removes the glow from the button and the wordmark");
+            Click("ProModeButton"); UiLayoutChecks.PumpUntil(OverlayShown); UiLayoutChecks.Wait(340); Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => !OverlayShown());
+
+            // 7. The Boost chip beside the wordmark is ALWAYS there (both modes, never hidden) and reads "RAM x% · CPU y% · amount to clean"; a heartbeat line, no icon glyph.
+            var chip = (UIElement)window.FindName("BoostChipButton");
+            check(chip.IsVisible && window.BoostChipLabel.Contains("RAM") && window.BoostChipLabel.Contains("CPU"), $"The Boost chip is shown from the start, in Pro mode too ({window.BoostChipLabel})");
+            window.UpdateBoostChip(new JunkReading(1_500_000_000, 900, DateTime.UtcNow)); window.SampleBoostChip(); UiLayoutChecks.Wait(60);
+            check(chip.IsVisible && System.Text.RegularExpressions.Regex.IsMatch(window.BoostChipLabel, @"^RAM \d+% · CPU \d+% · 1\.[34] GB$"), $"The chip shows memory in use, processor use and the amount to clean ({window.BoostChipLabel})");
+            if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string chipShots) { Directory.CreateDirectory(chipShots); UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(chipShots, "boost-chip-dark.png")); }
+            window.UpdateBoostChip(new JunkReading(0, 0, DateTime.UtcNow)); UiLayoutChecks.Wait(60);
+            check(chip.IsVisible && window.BoostChipLabel.EndsWith("· 0 MB"), $"With nothing to clean the chip stays and says 0 MB ({window.BoostChipLabel})");
+            // 7b. Slide up (no loop, always finishes): the new text arrives in place and the stacked second line is empty and invisible again.
+            var chipText = (TextBlock)window.FindName("BoostChipText"); var chipNext = (TextBlock)window.FindName("BoostChipNext");
+            window.UpdateBoostChip(new JunkReading(2_000_000_000, 10, DateTime.UtcNow)); UiLayoutChecks.Wait(120);
+            check(chipNext.Text.Length > 0 && chipNext.Opacity < 1 && chipNext.Opacity > 0, "While the text slides up the new line is arriving (partly shown)");
+            UiLayoutChecks.Wait(500);
+            check(chipText.Text == window.BoostChipLabel && chipText.Opacity == 1 && chipNext.Text.Length == 0 && chipNext.Opacity == 0 && ((System.Windows.Media.TranslateTransform)chipText.RenderTransform).Y == 0, $"The slide ends finished: the new text is in place, nothing left half way ({chipText.Text})");
+            // The chip's own border draws itself while a Boost runs (from the top centre, clockwise): it follows the run, closes, stays a moment, then fades to the ordinary border.
+            var ring = (BorderSweep)window.FindName("BoostChipBorder"); var mainSweep = (UpdateActivity)window.FindName("BoostSweep");
+            check(ring.Drawn == 0 && ring.IsLoaded, "At rest the chip's border sweep draws nothing (the ordinary border shows)");
+            mainSweep.Progress = 0; mainSweep.IsRunning = true; UiLayoutChecks.Wait(80); mainSweep.Progress = 0.6; UiLayoutChecks.Wait(500);
+            check(ring.IsRunning && ring.Drawn > 0.4 && ring.Drawn < 0.8, $"The chip's border draws itself as far as the Boost has got ({ring.Drawn:0.00})");
+            if (Environment.GetEnvironmentVariable("HUSH_PREVIEW_DIRECTORY") is string runShots) { Directory.CreateDirectory(runShots); UiLayoutChecks.Save(root, new Size(920, 820), Path.Combine(runShots, "boost-chip-working-dark.png")); }
+            var both = Task.WhenAll(mainSweep.CompleteAsync(), ring.CompleteAsync()); UiLayoutChecks.PumpUntil(() => both.IsCompleted); mainSweep.IsRunning = false; UiLayoutChecks.Wait(300);
+            check(ring.Drawn >= 0.99 && ring.Opacity > 0.9, "When Boost is done the border is closed and stays a moment, so it looks finished");
+            UiLayoutChecks.Wait(1900);
+            check(!ring.IsRunning && ring.Drawn == 0 && ring.Opacity == 1, "Afterwards it fades away and rests (no loop, nothing left half drawn)");
+            // 8. The support link in the About window opens the Ko-fi page (through the test seam, never a real browser).
+            string? opened = null; var previousOpener = MainWindow.LinkOpener; MainWindow.LinkOpener = url => opened = url;
+            try { Click("SupportButton"); } finally { MainWindow.LinkOpener = previousOpener; }
+            check(opened == "https://ko-fi.com/trueshepherdmusic" && ((TextBlock)((StackPanel)((Button)window.FindName("SupportButton")).Content).Children[1]).Text == "Enjoying Hush? Support it on Ko-fi", "The About window's support link says 'Enjoying Hush? Support it on Ko-fi' and opens the Ko-fi page");
+            check(!window.BoostChipTimerRunning, "Test windows never start the chip's 5-second timer; only the real app window does, and only while it is in front");
+            Click("SimpleModeButton"); UiLayoutChecks.Wait(300);
+            check(!window.IsProMode && chip.IsVisible, "The Boost chip stays in Simple mode too");
             Click("ProModeButton"); UiLayoutChecks.PumpUntil(OverlayShown); UiLayoutChecks.Wait(340); Click("ConsentConfirmButton"); UiLayoutChecks.PumpUntil(() => !OverlayShown());
         }
         finally { window.Close(); }

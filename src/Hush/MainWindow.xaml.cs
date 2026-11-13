@@ -108,6 +108,7 @@ public partial class MainWindow : Window
         ApplyTheme();
         InitializeAccentChoices();
         InitializeProMode();
+        InitializeBoostChip();
         ResetGauge();
         RefreshSelection();
         InitializeBoost();
@@ -264,6 +265,7 @@ public partial class MainWindow : Window
             ShowTermsOnStart();
             _ = Task.Run(UpdateInstaller.PruneAll);
             _ = RunQuietUpdateCheck();
+            _ = Task.Delay(3500).ContinueWith(_ => Dispatcher.InvokeAsync(RefreshBoostChipAsync), TaskScheduler.Default);   // one quiet read of the Safe junk, a moment after start, for the Boost chip
         }
     }
 
@@ -803,6 +805,7 @@ public partial class MainWindow : Window
             // (cleaned, skipped and why, what the disk itself reports, how much is still found) are one hover away on the result line.
             StatusTitle.Text = $"{(result.Stopped ? "Stopped safely" : "Cleanup complete")} · {Sizes.Format(result.Bytes)} freed";
             StatusDetail.Text = result.Skipped > 0 ? $"{result.Skipped:N0} {(result.Skipped == 1 ? "file was" : "files were")} left alone" : "";
+            if (TrimsMemory) _ = RefreshBoostChipAsync();   // the Boost chip follows what is left
             // The claim comes from the items; the measurement comes from Windows' own free-space figure for the fixed drives.
             var more = new List<string> { $"{result.Deleted:N0} cleaned" };
             if (result.Skipped > 0) more.Add($"{result.Skipped:N0} skipped" + (result.SkipSummary.Length > 0 ? $" ({result.SkipSummary})" : ""));
@@ -837,7 +840,7 @@ public partial class MainWindow : Window
         if (value) currentOperation = mode;
         if (value) { cancellation?.Dispose(); cancellation = new(); }
         // The Hush logo (About button) stays enabled and unchanged while Hush works: it looks identical in every state, and About_Click ignores clicks while busy.
-        CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = GroupBackButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = SettingsButton.IsEnabled = ProModeButton.IsEnabled = !value;
+        CategoriesList.IsEnabled = CollapseAllButton.IsEnabled = GroupBackButton.IsEnabled = SelectAllBox.IsEnabled = BackButton.IsEnabled = SettingsButton.IsEnabled = ProModeButton.IsEnabled = SimpleModeButton.IsEnabled = !value; BoostChipButton.IsEnabled = !value && !boosting;
         bool scanning = value && mode == "scan";
         ScanRipplesCue.IsRunning = scanning;
         FileScanActivity.IsRunning = value && !scanning;
@@ -1108,7 +1111,7 @@ public partial class MainWindow : Window
         Set("ActionFillBrush", light ? "#E4E8F0" : "#252C38");
         if (!busy) ApplyPrimaryAppearance(CanClean && items.Count > 0);
         // The letter glows are pictures in the main color: draw them again for the new color (only when they are on screen do they actually draw).
-        WordmarkGlow?.Refresh(); ProGlow?.Refresh();
+        WordmarkGlow?.Refresh();
     }
 
     private void About_Click(object sender, RoutedEventArgs e)

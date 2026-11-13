@@ -445,16 +445,16 @@ internal static class UiLayoutChecks
             cue.IsRunning = false; PumpUntil(() => !cue.IsPlaying);
             Require(cue.Motion == ScanActivity.RestMotion, "The cleaning cue stops and rests when the clean ends");
 
-            // Smash: it keeps looping on its own, one smash after another, until it is ended on purpose; then the dust rushes in and ONE bigger final smash lands.
+            // Smash (owner, November 13, 2026): the loop is calm and never smashes; ONE smash lands only when the cue is ended on purpose (at 100%).
             Require(cue.FinishAsync().IsCompleted, "Ending a cue that is not playing returns at once");
             var smashes = new List<bool>(); cue.Smashed += (_, _) => smashes.Add(cue.IsFinalSmash);
             cue.IsRunning = true; PumpUntil(() => cue.IsPlaying);
-            PumpUntil(() => smashes.Count >= 1);
-            Require(smashes.Count == 1 && !smashes[0] && !cue.IsFinishing, "The cleaning cue smashes by itself at the end of each cycle (an ordinary smash, not the final one)");
+            Wait(4500);   // longer than one whole loop (3.78 s)
+            Require(smashes.Count == 0 && cue.IsPlaying && !cue.IsFinishing, "The cleaning cue never smashes while the clean is running, not even after a whole loop");
             var ending = cue.FinishAsync();
             Require(cue.IsFinishing && !ending.IsCompleted, "Ending the cue starts the finale instead of cutting it off");
             PumpUntil(() => ending.IsCompleted);
-            Require(smashes.Count == 2 && smashes[1], "The finale ends with exactly one final smash, and only then does the cue report that it is done");
+            Require(smashes.Count == 1 && smashes[0], "The finale ends with exactly one smash, and only then does the cue report that it is done");
             cue.IsRunning = false; PumpUntil(() => !cue.IsPlaying);
             Require(cue.Motion == ScanActivity.RestMotion && cue.FinishAsync().IsCompleted, $"After the finale the cue rests like any other stop (core scale {cue.Motion} vs {ScanActivity.RestMotion})");
         }

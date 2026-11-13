@@ -9,12 +9,11 @@ namespace Hush;
 // The "files are being cleaned" cue inside the gauge: SMASH (owner's pick, November 12, 2026, from four concepts, then two refinements and three ways to keep the
 // percentage readable; the owner chose "B, soft plate" and no spark on the ring tip).
 //
-// The picture: dust drifts in from the rim and spirals into a core in the middle that charges (grows, brightens, glows). Just before the impact the core squashes
-// tight, then SMASHES: a white flash, a fast shockwave ring with a thinner one behind it, and sparks flying outward. The blast WIPES every speck still on its way (each
-// one is erased the moment the shockwave reaches it), then the field is empty and calm and the cycle starts again with fresh dust. One cycle is 3.78 s (3.6 s slowed
-// by 5%, owner). It keeps looping until the clean really finishes: FinishAsync() fast-forwards the dust and ends with ONE bigger, slower final smash, then the cue is
-// done (the gauge itself shows the finished state). The percentage sits on top of a soft plate (a few translucent discs in the panel color, built once) that fades
-// whatever passes under the digits, so the number never clashes with the animation.
+// The picture (owner, November 13, 2026: the smash happens ONLY at 100%, never while the clean is still running): while files are being cleaned, dust drifts in from the
+// rim and spirals into a charged core in the middle, on a calm 3.78 s loop that never smashes. When the clean really finishes, FinishAsync() squashes the core tight,
+// fades the dust and plays ONE smash: a white flash, a fast shockwave ring with thinner ones behind it, and sparks flying outward. Then the cue is done (the gauge itself
+// shows the finished state). The percentage sits on top of a soft plate (a few translucent discs in the panel color, built once) that fades whatever passes under the
+// digits, so the number never clashes with the animation.
 //
 // How it stays cheap (60 fps native on an i3, docs/RULES.md; no frame-rate cap, ever): everything is built ONCE (lazily, when the cue first plays) from shapes whose
 // glow is layered translucent discs. All motion is a transform (scale, rotate, translate) or an opacity change on the render thread at the display's own refresh rate.
@@ -34,8 +33,11 @@ public sealed class ScanActivity : Grid
     // The gauge's inner disc is 250 DIP across (the track ring sits outside it).
     private const double Size = 250, Reach = 104, DustEnd = 16;
     // One cycle (seconds) and where the impact falls in it; the final smash is slower and the dust is fast-forwarded before it.
-    private const double CycleSeconds = 3.78, ImpactFraction = 0.8, FinalSeconds = 1.5, FinaleSpeed = 3;
-    private const double PreSeconds = CycleSeconds * ImpactFraction, PostSeconds = CycleSeconds * (1 - ImpactFraction);
+    // While the clean runs the dust drifts in on a calm loop (CycleSeconds) around a charged core; nothing smashes. At 100% (FinishAsync) the core squashes (ChargeSeconds),
+    // the dust fades, and ONE smash (FinalSeconds) lands.
+    private const double CycleSeconds = 3.78, WarmSeconds = 0.9, ChargeSeconds = 0.7, FinalSeconds = 1.5;
+    // The core's resting (charged) radius while the clean runs, and its radius when squashed just before the smash.
+    private const double HeldRadius = 12, SquashedRadius = 22 * 0.45;
     // The core is one 32 DIP disc scaled; its radius at rest is 7 (times 0.7), the glow is a 120 DIP stack scaled.
     private const double CoreDiameter = 32, GlowDiameter = 120, FlashDiameter = 120;
     private const int DustCount = 56, SparkCount = 18, Steps = 12;
@@ -54,8 +56,6 @@ public sealed class ScanActivity : Grid
         public required Ellipse Dot;
         public required TranslateTransform Move;
         public required double Angle, Start, Length, Width;
-        // Where the speck is when the impact comes (null: it was absorbed before): the blast wipes it from there.
-        public double? FrozenAt;
     }
 
     private sealed class Spark
@@ -69,9 +69,9 @@ public sealed class ScanActivity : Grid
     private readonly Grid glow, core, plate, flash, ring1, ring2, ring3;
     private readonly ScaleTransform glowScale = new(GlowRest, GlowRest), coreScale = new(CoreRest, CoreRest), flashScale = new(1, 1), ring1Scale = new(1, 1), ring2Scale = new(1, 1), ring3Scale = new(1, 1);
     private readonly Ellipse coreWhite;
-    private Storyboard? pre, post, final;
-    private bool preActive, postActive, finalActive, playing, finishing;
-    private enum Stage { Idle, Pre, Post, Final, Done }
+    private Storyboard? warm, cycle, charge, final;
+    private bool warmActive, cycleActive, chargeActive, finalActive, playing, finishing;
+    private enum Stage { Idle, Cycle, Charge, Final, Done }
     private Stage stage = Stage.Idle;
     private TaskCompletionSource? finished;
 
@@ -88,7 +88,7 @@ public sealed class ScanActivity : Grid
         var random = new Random(5);
         for (int index = 0; index < DustCount; index++)
         {
-            double angle = random.NextDouble() * 360, size = 1.8 + random.NextDouble() * 2.4, start = 0.02 + 0.68 * random.NextDouble(), length = 0.26 + 0.14 * random.NextDouble();
+            double angle = random.NextDouble() * 360, size = 1.8 + random.NextDouble() * 2.4, start = 0.02 + 0.58 * random.NextDouble(), length = 0.26 + 0.14 * random.NextDouble();
             var turn = new RotateTransform(angle);
             var move = new TranslateTransform(Reach, 0);
             var dot = new Ellipse { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0, RenderTransform = move };
@@ -96,8 +96,7 @@ public sealed class ScanActivity : Grid
             var lane = new Grid { Width = Size, Height = Size, RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = turn, IsHitTestVisible = false };
             lane.Children.Add(dot);
             Children.Add(lane);
-            double frozen = start + length > ImpactFraction ? (ImpactFraction - start) / length : -1;
-            dust.Add(new Speck { Lane = lane, Turn = turn, Dot = dot, Move = move, Angle = angle, Start = start, Length = length, Width = size, FrozenAt = frozen >= 0 ? frozen : null });
+            dust.Add(new Speck { Lane = lane, Turn = turn, Dot = dot, Move = move, Angle = angle, Start = start, Length = length, Width = size });
         }
 
         // The charging glow around the core: seven translucent accent discs stacked (no blur), scaled as one.
@@ -192,7 +191,7 @@ public sealed class ScanActivity : Grid
         if (IsRunning && IsVisible && IsLoaded) Play(); else Stop();
     }
 
-    // Ends the cue on purpose: the dust rushes in, one bigger final smash wipes the field, then the task completes (the cue is then done until it stops).
+    // Ends the cue on purpose: the core squashes, the dust fades, ONE smash lands, then the task completes (the cue is then done until it stops).
     // Returns at once when nothing is playing.
     internal Task FinishAsync()
     {
@@ -200,7 +199,7 @@ public sealed class ScanActivity : Grid
         if (finished != null) return finished.Task;
         finishing = true;
         finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (stage == Stage.Pre && pre != null) pre.SetSpeedRatio(this, FinaleSpeed); // the dust rushes in; the Completed event then starts the final smash
+        StartCharge(); // the core squashes and the dust fades; the Completed event then starts the one smash
         return finished.Task;
     }
 
@@ -234,50 +233,68 @@ public sealed class ScanActivity : Grid
 
     private void EnsureBuilt()
     {
-        if (pre != null) return;
-        pre = BuildPre(); post = BuildBlast(PostSeconds, false); final = BuildBlast(FinalSeconds, true);
-        pre.Completed += (_, _) => { if (playing && stage == Stage.Pre) StartBlast(); };
-        post.Completed += (_, _) => { if (playing && stage == Stage.Post) { RemoveBoard(post, ref postActive); StartPre(); } };
+        if (cycle != null) return;
+        warm = BuildWarm(); cycle = BuildCycle(); charge = BuildCharge(); final = BuildBlast(FinalSeconds, true);
+        cycle.Completed += (_, _) => { if (playing && stage == Stage.Cycle) StartCycle(); };
+        charge.Completed += (_, _) => { if (playing && stage == Stage.Charge) StartBlast(); };
         final.Completed += (_, _) => { if (playing && stage == Stage.Final) { stage = Stage.Done; finished?.TrySetResult(); } };
     }
 
-    // Before the impact: the dust spirals in, the core charges and squashes (3.02 s).
-    private Storyboard BuildPre()
+    // The core grows from its rest size to the charged size once, when the cue starts, and then holds (the storyboard keeps its last value).
+    private Storyboard BuildWarm()
     {
-        var board = new Storyboard { Duration = TimeSpan.FromSeconds(PreSeconds) };
-        foreach (var speck in dust)
-        {
-            double begins = speck.Start * CycleSeconds, endsU = speck.FrozenAt ?? 1, ends = Math.Min(PreSeconds, (speck.Start + speck.Length * endsU) * CycleSeconds);
-            var turn = Track(board, speck.Lane, AnglePath, PreSeconds); var move = Track(board, speck.Dot, MovePath, PreSeconds); var fade = Track(board, speck.Dot, OpacityPath, PreSeconds);
-            Key(turn, 0, DustAngle(speck.Angle, 0)); Key(move, 0, Reach); Key(fade, 0, 0);
-            for (int step = 0; step <= Steps; step++)
-            {
-                double u = endsU * step / Steps, time = begins + (ends - begins) * step / Steps;
-                if (step == 0) time += 0.0005; // keeps the first point apart from the hold at the start
-                Key(turn, time, DustAngle(speck.Angle, u)); Key(move, time, DustRadius(u));
-            }
-            // Fades in over the first seventh of the way, holds, and goes out over the last tenth (absorbed); a speck still on its way at the impact is wiped later.
-            Key(fade, begins, 0);
-            foreach (double u in new[] { 1.0 / 7, 0.9, 1.0 })
-            {
-                if (u > endsU) break;
-                Key(fade, begins + (ends - begins) * u / endsU, DustAlpha(u));
-            }
-            if (endsU < 1) Key(fade, ends, DustAlpha(endsU));
-            if (ends < PreSeconds - 0.001) { Key(turn, PreSeconds, DustAngle(speck.Angle, endsU)); Key(move, PreSeconds, DustRadius(endsU)); Key(fade, PreSeconds, endsU < 1 ? DustAlpha(endsU) : 0); }
-        }
-
-        // The core grows and brightens as the charge builds, then squashes tight just before the impact; its glow follows.
-        double squashAt = (ImpactFraction - 0.06) * CycleSeconds, charged = Math.Pow((ImpactFraction - 0.06) / ImpactFraction, 2);
-        double radiusAtSquash = 7 + 15 * charged, squashed = (7 + 15) * 0.45;
-        KeyBoth(board, core, PreSeconds, keys => { Key(keys, 0, CoreScaleFor(7)); Key(keys, squashAt, CoreScaleFor(radiusAtSquash), new QuadraticEase { EasingMode = EasingMode.EaseIn }); Key(keys, PreSeconds, CoreScaleFor(squashed)); });
-        KeyBoth(board, glow, PreSeconds, keys => { Key(keys, 0, GlowScaleFor(7 * 2.4)); Key(keys, squashAt, GlowScaleFor(radiusAtSquash * 2.4 + 10 * charged), new QuadraticEase { EasingMode = EasingMode.EaseIn }); Key(keys, PreSeconds, GlowScaleFor(squashed * 2.4 + 10)); });
-        var glowOpacity = Track(board, glow, OpacityPath, PreSeconds); Key(glowOpacity, 0, 0.48); Key(glowOpacity, squashAt, 1, new QuadraticEase { EasingMode = EasingMode.EaseIn }); Key(glowOpacity, PreSeconds, 1);
-        var white = Track(board, coreWhite, OpacityPath, PreSeconds); Key(white, 0, 0.2); Key(white, squashAt, 0.2 + 0.6 * charged, new QuadraticEase { EasingMode = EasingMode.EaseIn }); Key(white, PreSeconds, 0.8);
+        var board = new Storyboard { Duration = TimeSpan.FromSeconds(WarmSeconds) };
+        var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+        KeyBoth(board, core, WarmSeconds, keys => { Key(keys, 0, CoreScaleFor(7)); Key(keys, WarmSeconds, CoreScaleFor(HeldRadius), ease); });
+        KeyBoth(board, glow, WarmSeconds, keys => { Key(keys, 0, GlowScaleFor(7 * 2.4)); Key(keys, WarmSeconds, GlowScaleFor(HeldRadius * 2.4 + 4), ease); });
+        var glowOpacity = Track(board, glow, OpacityPath, WarmSeconds); Key(glowOpacity, 0, 0.48); Key(glowOpacity, WarmSeconds, 0.7, ease);
+        var white = Track(board, coreWhite, OpacityPath, WarmSeconds); Key(white, 0, 0.2); Key(white, WarmSeconds, 0.35, ease);
         return board;
     }
 
-    // The blast (0.76 s, or 1.5 s and bigger for the final smash): flash, shockwave rings, sparks, the core settling back, and the wipe of every speck still on its way.
+    // The calm loop (3.78 s): dust spirals in and is absorbed by the core. Every speck finishes inside the cycle, so the loop restarts cleanly and nothing smashes.
+    private Storyboard BuildCycle()
+    {
+        var board = new Storyboard { Duration = TimeSpan.FromSeconds(CycleSeconds) };
+        foreach (var speck in dust)
+        {
+            double begins = speck.Start * CycleSeconds, ends = Math.Min(CycleSeconds, (speck.Start + speck.Length) * CycleSeconds);
+            var turn = Track(board, speck.Lane, AnglePath, CycleSeconds); var move = Track(board, speck.Dot, MovePath, CycleSeconds); var fade = Track(board, speck.Dot, OpacityPath, CycleSeconds);
+            Key(turn, 0, DustAngle(speck.Angle, 0)); Key(move, 0, Reach); Key(fade, 0, 0);
+            for (int step = 0; step <= Steps; step++)
+            {
+                double u = (double)step / Steps, time = begins + (ends - begins) * step / Steps;
+                if (step == 0) time += 0.0005; // keeps the first point apart from the hold at the start
+                Key(turn, time, DustAngle(speck.Angle, u)); Key(move, time, DustRadius(u));
+            }
+            // Fades in over the first seventh of the way, holds, and goes out over the last tenth (absorbed).
+            Key(fade, begins, 0);
+            foreach (double u in new[] { 1.0 / 7, 0.9, 1.0 }) Key(fade, begins + (ends - begins) * u, DustAlpha(u));
+            if (ends < CycleSeconds - 0.001) { Key(turn, CycleSeconds, DustAngle(speck.Angle, 1)); Key(move, CycleSeconds, DustRadius(1)); Key(fade, CycleSeconds, 0); }
+        }
+        return board;
+    }
+
+    // At 100%: the core squashes tight (its glow follows) and whatever dust is still on its way fades out; the smash follows at once.
+    private Storyboard BuildCharge()
+    {
+        var board = new Storyboard { Duration = TimeSpan.FromSeconds(ChargeSeconds) };
+        var squash = new QuadraticEase { EasingMode = EasingMode.EaseIn };
+        double hold = ChargeSeconds * 0.2;
+        KeyBoth(board, core, ChargeSeconds, keys => { Key(keys, 0, CoreScaleFor(HeldRadius)); Key(keys, hold, CoreScaleFor(HeldRadius)); Key(keys, ChargeSeconds, CoreScaleFor(SquashedRadius), squash); });
+        KeyBoth(board, glow, ChargeSeconds, keys => { Key(keys, 0, GlowScaleFor(HeldRadius * 2.4 + 4)); Key(keys, hold, GlowScaleFor(HeldRadius * 2.4 + 4)); Key(keys, ChargeSeconds, GlowScaleFor(SquashedRadius * 2.4 + 10), squash); });
+        var glowOpacity = Track(board, glow, OpacityPath, ChargeSeconds); Key(glowOpacity, 0, 0.7); Key(glowOpacity, hold, 0.7); Key(glowOpacity, ChargeSeconds, 1, squash);
+        var white = Track(board, coreWhite, OpacityPath, ChargeSeconds); Key(white, 0, 0.35); Key(white, hold, 0.35); Key(white, ChargeSeconds, 0.8, squash);
+        foreach (var speck in dust)
+        {
+            var fade = new DoubleAnimation { To = 0, Duration = TimeSpan.FromSeconds(ChargeSeconds * 0.7) };
+            Storyboard.SetTarget(fade, speck.Dot); Storyboard.SetTargetProperty(fade, new PropertyPath(OpacityPath));
+            board.Children.Add(fade);
+        }
+        return board;
+    }
+
+    // The smash (1.5 s): flash, shockwave rings, sparks and the core settling back.
     private Storyboard BuildBlast(double seconds, bool big)
     {
         var board = new Storyboard { Duration = TimeSpan.FromSeconds(seconds) };
@@ -310,24 +327,7 @@ public sealed class ScanActivity : Grid
             Key(fade, 0, 1); Key(fade, seconds / 1.2, 0); Key(fade, seconds, 0);
         }
 
-        // The wipe: every speck still on its way when the impact came stays where it was until the shockwave reaches it, then it is erased.
-        foreach (var speck in dust)
-        {
-            if (speck.FrozenAt is not double u) continue;
-            double radius = DustRadius(u), alpha = DustAlpha(u);
-            double reached = WaveTime(radius, reach, span, seconds), gone = Math.Max(reached + 0.04, WaveTime(radius + 12, reach, span, seconds));
-            var fade = Track(board, speck.Dot, OpacityPath, seconds);
-            Key(fade, 0, alpha); Key(fade, Math.Min(reached, seconds - 0.05), alpha); Key(fade, Math.Min(gone, seconds - 0.01), 0); Key(fade, seconds, 0);
-        }
         return board;
-    }
-
-    // The time (in the blast) at which the first shockwave ring, 8 + (reach - 8) * eased(k * span) from the middle, reaches the distance "radius".
-    private static double WaveTime(double radius, double reach, double span, double seconds)
-    {
-        double ratio = Math.Clamp((radius - 8) / (reach - 8), 0, 1);
-        double x = 1 - Math.Pow(1 - ratio, 1.0 / 3); // inverse of the cubic ease-out
-        return Math.Min(1, x / span) * seconds;
     }
 
     private static void AnimateWave(Storyboard board, Grid ring, ScaleTransform scale, double from, double to, double delay, double growSeconds, double seconds, double peak)
@@ -350,22 +350,27 @@ public sealed class ScanActivity : Grid
         if (playing) return;
         playing = true; finishing = false; finished = null;
         EnsureBuilt();
-        StartPre();
+        warm!.Begin(this, true); warmActive = true;   // the core charges up once and holds
+        StartCycle();
     }
 
-    private void StartPre()
+    private void StartCycle()
     {
-        stage = Stage.Pre;
-        RemoveBoard(post, ref postActive); RemoveBoard(final, ref finalActive);
-        pre!.Begin(this, true); preActive = true;
-        if (finishing) pre.SetSpeedRatio(this, FinaleSpeed);
+        stage = Stage.Cycle;
+        cycle!.Begin(this, true); cycleActive = true;
+    }
+
+    // At 100%: the core squashes and the dust fades (these boards replace what the loop was animating); the smash starts when this board completes.
+    private void StartCharge()
+    {
+        stage = Stage.Charge;
+        charge!.Begin(this, true); chargeActive = true;
     }
 
     private void StartBlast()
     {
-        IsFinalSmash = finishing;
-        if (finishing) { stage = Stage.Final; final!.Begin(this, true); finalActive = true; }
-        else { stage = Stage.Post; post!.Begin(this, true); postActive = true; }
+        IsFinalSmash = true;
+        stage = Stage.Final; final!.Begin(this, true); finalActive = true;
         Smashed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -379,8 +384,8 @@ public sealed class ScanActivity : Grid
     private void Stop()
     {
         if (!playing) return;
-        playing = false; finishing = false; stage = Stage.Idle;
-        RemoveBoard(pre, ref preActive); RemoveBoard(post, ref postActive); RemoveBoard(final, ref finalActive);
+        playing = false; finishing = false; stage = Stage.Idle; IsFinalSmash = false;
+        RemoveBoard(warm, ref warmActive); RemoveBoard(cycle, ref cycleActive); RemoveBoard(charge, ref chargeActive); RemoveBoard(final, ref finalActive);
         ReleaseAnimations();
         finished?.TrySetResult(); finished = null;
     }

@@ -5,7 +5,7 @@ namespace Hush;
 internal static class ReleaseNotes
 {
     // What is new in the installed version: at most about five one-line bullets, plain words, no technical detail. The long notes stay on the release page.
-    internal const string Current = "• A new cleaning animation\n• The percentage is always centered, and it says Done when finished\n• The finished gauge glows all around\n• Pro mode lights up the logo and the Pro button\n• The new icon shows right after an update";
+    internal const string Current = "• A Simple | Pro switch in the header\n• A Boost chip shows RAM, CPU and what to clean\n• The cleaning animation smashes only when it reaches 100%\n• Support Hush on Ko-fi from the About window";
 
     // The short list for a release found online: its "In brief" section (the release notes template has one), or else the first bullet lines.
     // At most five lines, each cut to one line's worth of text, with markdown marks removed.

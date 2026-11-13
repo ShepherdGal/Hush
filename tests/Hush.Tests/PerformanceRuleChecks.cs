@@ -38,7 +38,7 @@ internal static class PerformanceRuleChecks
         check(Text(Path.Combine(source, "MainWindow.xaml")).Contains(@"x:Name=""GlowUnderlay"" Width=""250"""),
             "Rule: the gauge button's glow sits on a disc behind the gauge (GlowUnderlay), never on the button, so animation inside the gauge never re-renders through a blur");
         // 4. Timers and per-frame hooks.
-        check(Only(new Regex(@"DispatcherTimer"), "MainWindow.xaml.cs", "SmartBoost/MainWindow.SmartBoost.cs"), "Rule: DispatcherTimer only in the scan status line and the Smart Boost timers (no new polling)");
+        check(Only(new Regex(@"DispatcherTimer"), "MainWindow.xaml.cs", "SmartBoost/MainWindow.SmartBoost.cs", "SmartBoost/MainWindow.BoostChip.cs"), "Rule: DispatcherTimer only in the scan status line, the Smart Boost timers and the Boost chip's 5-second timer (owner-approved, runs only while Hush is in front; no other polling)");
         check(Only(new Regex(@"CompositionTarget\.Rendering"), "UI/SmoothScroll.cs"), "Rule: a per-frame hook (CompositionTarget.Rendering) only in smooth scrolling, and only while a glide runs");
         // 5. One scrolling implementation.
         check(Only(new Regex(@"PreviewMouseWheel|MouseWheel\b"), "UI/SmoothScroll.cs", "MainWindow.xaml", "MainWindow.xaml.cs"), "Rule: mouse-wheel handling lives in SmoothScroll (no per-screen wheel code)");

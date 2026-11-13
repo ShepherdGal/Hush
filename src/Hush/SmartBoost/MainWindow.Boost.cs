@@ -42,6 +42,7 @@ public partial class MainWindow
     {
         // The bar is full when the Safe junk reaches the cleanup threshold chosen in Smart Boost.
         ShowMeter(TempFill, TempText, TempFraction(reading.Bytes) * 100, reading.Files == 0 ? "0 B" : Sizes.Format(reading.Bytes), ResourceSnapshot.TempAmber, ResourceSnapshot.TempRed, milliseconds);
+        UpdateBoostChip(reading);
         TempText.ToolTip = (reading.Files == 0 ? "No Safe temporary files are ready to clean." : $"{reading.Files:N0} Safe temporary files ({Sizes.Format(reading.Bytes)}) are ready to clean.");
     }
 
@@ -83,7 +84,7 @@ public partial class MainWindow
             BoostSweep.IsRunning = true;
 
             // Stage 1: temporary files.
-            BoostButton.Content = "Cleaning…";
+            BoostButton.Content = "Cleaning…"; SyncBoostChip();
             var clock = Stopwatch.StartNew();
             var cleanProgress = new Progress<double>(fraction => BoostSweep.Progress = 0.5 * fraction);
             var cleaned = await Task.Run(() => boostController.RunAutomaticBoost(token, cleanProgress));
@@ -98,7 +99,7 @@ public partial class MainWindow
             lastReading = after;
 
             // Stage 2: memory.
-            BoostButton.Content = "Freeing memory…";
+            BoostButton.Content = "Freeing memory…"; SyncBoostChip();
             BoostSweep.Progress = double.NaN;
             BoostSweep.FillOver(BoostStageMinimum == TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : BoostStageMinimum + TimeSpan.FromMilliseconds(400), 0.95);
             clock.Restart();
@@ -112,9 +113,9 @@ public partial class MainWindow
             MemoryText.Text = $"{afterPercent:0}%";
 
             // Done: the bar arrives at full, then a short, soft glow on the button and a one-line result.
-            await BoostSweep.CompleteAsync();
+            await Task.WhenAll(BoostSweep.CompleteAsync(), BoostChipBorder.CompleteAsync());
             BoostSweep.IsRunning = false;
-            BoostButton.Content = "Done";
+            BoostButton.Content = "Done"; SyncBoostChip();
             if (BoostDoneHold > TimeSpan.Zero) PulseBoostButton();
             string tempPart = cleaned == null ? "nothing to clean" : $"{Sizes.Format(cleaned.Bytes)} cleaned";
             string memoryPart = memory.ProgramsTrimmed == 0 ? "no memory released" : $"{Sizes.Format(memory.Released)} memory freed";
@@ -141,7 +142,7 @@ public partial class MainWindow
             BoostSweep.IsRunning = false;
             boosting = false;
             BoostButton.IsEnabled = true;
-            BoostButton.Content = "Boost";
+            BoostButton.Content = "Boost"; SyncBoostChip();
         }
     }
 

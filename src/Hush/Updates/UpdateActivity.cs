@@ -5,6 +5,15 @@ using System.Windows.Media.Animation;
 
 namespace Hush;
 
+// A second picture of a loading run: whatever shows it follows the same state as the shared loading bar.
+public interface ISweepFollower
+{
+    bool IsRunning { get; set; }
+    double Progress { get; set; }
+    void FillOver(TimeSpan duration, double to = 0.92);
+    Task CompleteAsync();
+}
+
 // The one loading line used everywhere in Hush (update check and download, Boost): a thin track with ONE bar that fills smoothly from empty to full.
 // Never a travelling or sweeping bar. Where real progress exists (Progress = 0..1: download bytes, files cleaned) the bar follows it, easing between reports.
 // Where it does not (Progress = NaN: the update check, freeing memory) the caller asks for FillOver(duration): the bar fills over the stage's minimum
@@ -38,9 +47,18 @@ public sealed class UpdateActivity : Decorator
         System.Windows.Automation.AutomationProperties.SetName(this, "Update request in progress");
     }
 
+    // Something else that plays the same run (the Boost chip beside the wordmark draws its own border while this Boost bar runs): running state, real progress and
+    // timed fills are passed on.
+    public ISweepFollower? Mirror { get; set; }
+
     private static void Changed(DependencyObject value, DependencyPropertyChangedEventArgs args)
     {
         var activity = (UpdateActivity)value;
+        if (activity.Mirror is { } mirror)
+        {
+            if (args.Property == IsRunningProperty) mirror.IsRunning = (bool)args.NewValue;
+            else if (args.Property == ProgressProperty) mirror.Progress = (double)args.NewValue;
+        }
         // A real value while the bar is already showing only retargets it, so it glides instead of restarting from empty.
         if (args.Property == ProgressProperty && activity.IsRunning && activity.IsLoaded && !double.IsNaN((double)args.NewValue)) activity.Retarget(Math.Clamp((double)args.NewValue, 0, 1), 240);
         else if (args.Property == ProgressProperty && activity.IsRunning && double.IsNaN((double)args.NewValue)) return; // back to "no real progress": keep what is drawn
@@ -62,6 +80,7 @@ public sealed class UpdateActivity : Decorator
     private (TimeSpan Duration, double To)? timed;
     public void FillOver(TimeSpan duration, double to = 0.92)
     {
+        Mirror?.FillOver(duration, to);
         timed = (duration, Math.Clamp(to, 0, 1));
         if (IsRunning && IsLoaded && ActualWidth > 0) PlayTimed();
     }

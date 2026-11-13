@@ -28,6 +28,12 @@ That's it. Nice and simple.
 
 Hush is completely free, with no ads, no accounts, and no tracking. Your cleanup information stays on your computer.
 
+## 💙 Support Hush
+
+Hush is free, and it stays free. If it helped you and you would like to say thanks, you can support its development on Ko-fi. It is completely optional.
+
+[![Support Hush on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/trueshepherdmusic)
+
 ## 📥 Download Hush
 
 **Latest version: https://github.com/ShepherdGal/Hush/releases/latest.** You only need one of these (each is a zip with one program inside):

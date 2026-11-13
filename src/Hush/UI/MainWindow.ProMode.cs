@@ -14,6 +14,15 @@ public sealed partial class MainWindow
 
     internal bool IsProMode => prefs.ProMode;
 
+    // The donation link in the About window (owner, November 13, 2026). Tests replace the opener so no browser is ever started.
+    internal const string SupportUrl = "https://ko-fi.com/trueshepherdmusic";
+    internal static Action<string> LinkOpener = url =>
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { /* no browser available: nothing to do */ }
+    };
+
+    private void Support_Click(object sender, RoutedEventArgs e) => LinkOpener(SupportUrl);
+
     private void InitializeProMode()
     {
         if (TestProMode is bool forced) prefs.ProMode = forced;
@@ -24,10 +33,14 @@ public sealed partial class MainWindow
     {
         bool pro = prefs.ProMode;
         ProModeButton.Tag = pro ? "On" : "Off";
-        ProModeButton.ToolTip = pro ? "Pro mode is on. Click to go back to Simple mode." : "Pro mode is off. Turn it on to see everything Hush can do.";
+        ProModeButton.ToolTip = pro ? "Pro mode is on." : "Pro mode is off. Turn it on to see everything Hush can do.";
         System.Windows.Automation.AutomationProperties.SetName(ProModeButton, pro ? "Pro mode, on" : "Pro mode, off");
-        // A tight glow around each letter of "Pro" and of the Hush wordmark while Pro is on (a picture drawn once, see LetterGlow; both are hidden in Simple mode).
-        ProGlow.Visibility = WordmarkGlow.Visibility = pro ? Visibility.Visible : Visibility.Collapsed;
+        SimpleModeButton.Tag = pro ? "Off" : "On";
+        SimpleModeButton.ToolTip = pro ? "Simple mode is off. Click to go back to the simple view." : "Simple mode is on.";
+        System.Windows.Automation.AutomationProperties.SetName(SimpleModeButton, pro ? "Simple mode, off" : "Simple mode, on");
+        MoveModeUnderline(animate: modeUnderlineReady);
+        // The chosen word has no glow (owner, November 13, 2026: just the normal accent color and the line); only the Hush wordmark keeps its glow while Pro is on.
+        WordmarkGlow.Visibility = pro ? Visibility.Visible : Visibility.Collapsed;
         // Settings: only the Info card (above) and Appearance stay in Simple mode; the red "Windows Update is off" line stays too, whatever the mode.
         var proOnly = new UIElement[] { SettingsColumns, SettingsServicesSection, SettingsTasksSection, SettingsPrivacySection, SettingsImpactSection, SettingsUpdateSection, SettingsFooter };
         foreach (var element in proOnly) element.Visibility = pro ? Visibility.Visible : Visibility.Collapsed;
@@ -43,10 +56,45 @@ public sealed partial class MainWindow
         return new ScanOptions(SmartBoostController.IsSafeTarget, ReportIntervalMs: LowResourceMode.IsActive ? LowResourceMode.ReportIntervalMs : 40, Background: LowResourceMode.IsActive);
     }
 
+    // The line under the chosen word. It is one pre-built rectangle moved by transforms only (position and length), on WPF's render thread; the spring is an
+    // ElasticEase that overshoots the target once and settles. No timer, no effect, nothing runs when the mode is not changing.
+    private bool modeUnderlineReady;
+
+    private void SimpleMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || BoostWorking || !IsProMode) return;
+        SetProMode(false);
+    }
+
+    private void ProModeSlot_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        MoveModeUnderline(animate: false);
+        modeUnderlineReady = true;
+    }
+
+    private void MoveModeUnderline(bool animate)
+    {
+        var target = prefs.ProMode ? ProModeButton : SimpleModeButton;
+        if (target.ActualWidth <= 0 || ProModeSlot.ActualWidth <= 0) return;
+        double inset = target.Padding.Left;
+        double x = target.TranslatePoint(new Point(0, 0), ProModeSlot).X + inset;
+        double scale = Math.Max(1, target.ActualWidth - inset - target.Padding.Right) / ModeUnderline.Width;
+        if (!animate)
+        {
+            ModeUnderlineShift.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
+            ModeUnderlineScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
+            ModeUnderlineShift.X = x; ModeUnderlineScale.ScaleX = scale;
+            return;
+        }
+        var spring = new System.Windows.Media.Animation.ElasticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Oscillations = 1, Springiness = 5 };
+        var duration = TimeSpan.FromMilliseconds(620);
+        ModeUnderlineShift.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(x, duration) { EasingFunction = spring, FillBehavior = System.Windows.Media.Animation.FillBehavior.HoldEnd });
+        ModeUnderlineScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, new System.Windows.Media.Animation.DoubleAnimation(scale, duration) { EasingFunction = spring, FillBehavior = System.Windows.Media.Animation.FillBehavior.HoldEnd });
+    }
+
     private async void ProMode_Click(object sender, RoutedEventArgs e)
     {
-        if (busy || BoostWorking) return;
-        if (IsProMode) { SetProMode(false); return; }
+        if (busy || BoostWorking || IsProMode) return;
         bool agreed = await AskConsent("Switch to Pro mode?",
             "Pro mode shows everything Hush can do: every kind of file it can clean, plus Windows tweaks, services and scheduled tasks.\n\n"
             + "These tools are powerful. A wrong choice can make Windows or a program behave differently, so Pro mode is meant for people who know what they're changing. "
