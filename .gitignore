@@ -1,0 +1,62 @@
+# Hush: only source, docs and tests belong in Git.
+# Release binaries go to GitHub Releases, never into the repository.
+
+# Build output
+bin/
+obj/
+artifacts/
+.build-home/
+TestResults/
+*.trx
+
+# Binaries and packages (publish them as release assets instead)
+*.exe
+*.zip
+*.msi
+*.nupkg
+packages/
+
+# Local backups, previews, references and test fixtures
+Backups/
+docs/Previews/
+tests/Hush.Tests/.fixtures-*/
+tests/Hush.Tests/.ui-fixture-*/
+
+# Logs, dumps and temporary files
+*.log
+*.jsonl
+*.dmp
+*.tmp
+
+# Runtime state that must never be committed
+settings.json
+install.json
+windows-settings.json
+
+# Secrets and credentials (Hush itself never stores any)
+.env
+.env.*
+!.env.example
+*.pfx
+*.snk
+*.key
+*.pem
+*.secrets.json
+update-token*
+.aws/
+NuGet.Config
+[Nn]u[Gg]et.[Cc]onfig
+
+# Editors and IDEs
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Operating system files
+Thumbs.db
+Desktop.ini
+.DS_Store

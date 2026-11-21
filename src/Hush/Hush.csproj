@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Hush</AssemblyName>
+    <RootNamespace>Hush</RootNamespace>
+    <Version>0.9.88</Version>
+    <Authors>ShepherdGal</Authors>
+    <Copyright>Copyright (c) 2026 ShepherdGal. MIT License.</Copyright>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Hush.ico</ApplicationIcon>
+    <!-- Run-time settings that keep Hush light (0.9): profile-guided tiering re-compiles hot code in the background for the first minutes of use,
+         which measured at about a full CPU core while a page first opened (0.3 s without it); a background-GC thread and its extra heap are not
+         needed by an app this size. -->
+    <TieredPGO>false</TieredPGO>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The same icon the executable carries, available to the windows themselves (taskbar, Alt+Tab). -->
+    <Resource Include="Assets\Hush.ico" />
+    <!-- The brush alone (no tile), for the About popup and Setup; made by Assets\MakeBrushMark.ps1 from the supplied artwork. -->
+    <Resource Include="Assets\Hush-brush.png" />
+    <InternalsVisibleTo Include="Hush.Tests" />
+  </ItemGroup>
+</Project>
